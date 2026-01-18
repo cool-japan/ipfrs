@@ -1,0 +1,75 @@
+//! gRPC Server Example
+//!
+//! This example demonstrates how to set up and run the IPFRS gRPC services.
+//!
+//! # Usage
+//!
+//! ```bash
+//! cargo run --example grpc_server
+//! ```
+//!
+//! Then connect with a gRPC client on localhost:50051
+
+use ipfrs_interface::{
+    BlockServiceImpl, BlockServiceServer, ChainedInterceptor, DagServiceImpl, DagServiceServer,
+    FileServiceImpl, FileServiceServer, TensorServiceImpl, TensorServiceServer,
+};
+use ipfrs_storage::{BlockStoreConfig, SledBlockStore};
+use std::sync::Arc;
+use tonic::transport::Server;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize tracing
+    tracing_subscriber::fmt::init();
+
+    let addr = "[::1]:50051".parse()?;
+    println!("Starting IPFRS gRPC Server on {}", addr);
+
+    // Create storage backend
+    let config = BlockStoreConfig::default().with_path("./grpc_data".into());
+    let storage = Arc::new(SledBlockStore::new(config)?);
+    println!("✓ Storage initialized");
+
+    // Create services
+    let block_service = BlockServiceImpl::new(storage.clone());
+    let dag_service = DagServiceImpl::new();
+    let file_service = FileServiceImpl::new();
+    let tensor_service = TensorServiceImpl::new();
+    println!("✓ Services created");
+
+    // Create interceptor chain with logging and metrics
+    let interceptor = ChainedInterceptor::new().with_logging().with_metrics();
+
+    println!("✓ Interceptors configured");
+
+    // Build and start server
+    println!("\nServer configuration:");
+    println!("  - BlockService: Raw block operations");
+    println!("  - DagService: DAG operations");
+    println!("  - FileService: File operations");
+    println!("  - TensorService: Tensor operations");
+    println!("\nListening on {}\n", addr);
+
+    Server::builder()
+        .add_service(BlockServiceServer::with_interceptor(
+            block_service,
+            interceptor.clone(),
+        ))
+        .add_service(DagServiceServer::with_interceptor(
+            dag_service,
+            interceptor.clone(),
+        ))
+        .add_service(FileServiceServer::with_interceptor(
+            file_service,
+            interceptor.clone(),
+        ))
+        .add_service(TensorServiceServer::with_interceptor(
+            tensor_service,
+            interceptor,
+        ))
+        .serve(addr)
+        .await?;
+
+    Ok(())
+}

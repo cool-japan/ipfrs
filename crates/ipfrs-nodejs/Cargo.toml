@@ -1,0 +1,39 @@
+[package]
+name = "ipfrs-nodejs"
+version = "0.1.0"
+edition = "2021"
+authors = ["IPFRS Contributors"]
+description = "Node.js bindings for IPFRS distributed content-addressed storage system"
+keywords = ["ipfs", "nodejs", "napi", "bindings", "distributed"]
+categories = ["api-bindings"]
+documentation = "https://docs.rs/ipfrs-nodejs"
+homepage = "https://github.com/cool-japan/ipfrs"
+repository = "https://github.com/cool-japan/ipfrs"
+license = "MIT OR Apache-2.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# IPFRS core dependencies
+ipfrs = { path = "../ipfrs", version = "0.1.0" }
+ipfrs-core = { path = "../ipfrs-core", version = "0.1.0" }
+ipfrs-semantic = { path = "../ipfrs-semantic", version = "0.1.0" }
+ipfrs-tensorlogic = { path = "../ipfrs-tensorlogic", version = "0.1.0" }
+
+# NAPI-RS for Node.js bindings
+napi = { version = "2.16", features = ["async", "napi8"] }
+napi-derive = "2.16"
+
+# Async runtime
+tokio = { version = "1.40", features = ["rt-multi-thread"] }
+
+# Synchronization
+parking_lot = "0.12"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[build-dependencies]
+napi-build = "2.1"

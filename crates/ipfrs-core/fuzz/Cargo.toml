@@ -1,0 +1,92 @@
+[package]
+name = "ipfrs-core-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+bytes = "1.9"
+multihash-codetable = "0.1"
+
+[dependencies.ipfrs-core]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_block_creation"
+path = "fuzz_targets/fuzz_block_creation.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_cid_parsing"
+path = "fuzz_targets/fuzz_cid_parsing.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_ipld_parsing"
+path = "fuzz_targets/fuzz_ipld_parsing.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_chunking"
+path = "fuzz_targets/fuzz_chunking.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_jose"
+path = "fuzz_targets/fuzz_jose.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_multibase"
+path = "fuzz_targets/fuzz_multibase.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_hash"
+path = "fuzz_targets/fuzz_hash.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_codec"
+path = "fuzz_targets/fuzz_codec.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_config"
+path = "fuzz_targets/fuzz_config.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_utils"
+path = "fuzz_targets/fuzz_utils.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_car"
+path = "fuzz_targets/fuzz_car.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_compression"
+path = "fuzz_targets/fuzz_compression.rs"
+test = false
+doc = false

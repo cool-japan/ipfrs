@@ -1,0 +1,118 @@
+syntax = "proto3";
+
+package ipfrs.block.v1;
+
+// BlockService provides operations for IPFS blocks
+service BlockService {
+  // GetBlock retrieves a block by its CID
+  rpc GetBlock(GetBlockRequest) returns (GetBlockResponse);
+
+  // PutBlock stores a block and returns its CID
+  rpc PutBlock(PutBlockRequest) returns (PutBlockResponse);
+
+  // HasBlock checks if a block exists
+  rpc HasBlock(HasBlockRequest) returns (HasBlockResponse);
+
+  // DeleteBlock removes a block from storage
+  rpc DeleteBlock(DeleteBlockRequest) returns (DeleteBlockResponse);
+
+  // BatchGetBlocks retrieves multiple blocks (server streaming)
+  rpc BatchGetBlocks(BatchGetBlocksRequest) returns (stream GetBlockResponse);
+
+  // BatchPutBlocks stores multiple blocks (client streaming)
+  rpc BatchPutBlocks(stream PutBlockRequest) returns (BatchPutBlocksResponse);
+
+  // StreamBlocks bidirectional streaming for blocks
+  rpc StreamBlocks(stream BlockStreamRequest) returns (stream BlockStreamResponse);
+}
+
+// GetBlockRequest requests a block by CID
+message GetBlockRequest {
+  string cid = 1;
+}
+
+// GetBlockResponse contains the block data
+message GetBlockResponse {
+  string cid = 1;
+  bytes data = 2;
+  uint64 size = 3;
+}
+
+// PutBlockRequest contains block data to store
+message PutBlockRequest {
+  bytes data = 1;
+  optional string format = 2; // e.g., "raw", "dag-cbor", "dag-json"
+}
+
+// PutBlockResponse contains the stored block's CID
+message PutBlockResponse {
+  string cid = 1;
+  uint64 size = 2;
+}
+
+// HasBlockRequest checks for block existence
+message HasBlockRequest {
+  string cid = 1;
+}
+
+// HasBlockResponse indicates if block exists
+message HasBlockResponse {
+  bool exists = 1;
+  optional uint64 size = 2;
+}
+
+// DeleteBlockRequest requests block deletion
+message DeleteBlockRequest {
+  string cid = 1;
+}
+
+// DeleteBlockResponse confirms deletion
+message DeleteBlockResponse {
+  bool deleted = 1;
+}
+
+// BatchGetBlocksRequest requests multiple blocks
+message BatchGetBlocksRequest {
+  repeated string cids = 1;
+}
+
+// BatchPutBlocksResponse contains results of batch put
+message BatchPutBlocksResponse {
+  repeated string cids = 1;
+  uint64 total_size = 2;
+  uint32 count = 3;
+}
+
+// BlockStreamRequest for bidirectional streaming
+message BlockStreamRequest {
+  oneof request {
+    GetBlockRequest get = 1;
+    PutBlockRequest put = 2;
+    HasBlockRequest has = 3;
+  }
+}
+
+// BlockStreamResponse for bidirectional streaming
+message BlockStreamResponse {
+  oneof response {
+    GetBlockResponse get = 1;
+    PutBlockResponse put = 2;
+    HasBlockResponse has = 3;
+    Error error = 4;
+  }
+}
+
+// Error message for failures
+message Error {
+  string message = 1;
+  ErrorCode code = 2;
+}
+
+// ErrorCode enumeration
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  ERROR_CODE_NOT_FOUND = 1;
+  ERROR_CODE_INVALID_CID = 2;
+  ERROR_CODE_STORAGE_ERROR = 3;
+  ERROR_CODE_INTERNAL = 4;
+}

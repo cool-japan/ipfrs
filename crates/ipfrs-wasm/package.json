@@ -1,0 +1,42 @@
+{
+  "name": "@ipfrs/wasm",
+  "version": "0.1.0",
+  "description": "WebAssembly bindings for IPFRS - content-addressed storage with semantic search and logic programming",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "ipfrs_wasm_bg.wasm",
+    "ipfrs_wasm.js",
+    "ipfrs_wasm.d.ts"
+  ],
+  "module": "index.js",
+  "sideEffects": [
+    "./index.js",
+    "./snippets/*"
+  ],
+  "license": "MIT OR Apache-2.0",
+  "keywords": [
+    "ipfs",
+    "content-addressed",
+    "semantic-search",
+    "logic-programming",
+    "wasm",
+    "webassembly",
+    "rust"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ipfrs/ipfrs.git"
+  },
+  "scripts": {
+    "build": "wasm-pack build --target web --out-dir pkg",
+    "build:nodejs": "wasm-pack build --target nodejs --out-dir pkg-node",
+    "build:bundler": "wasm-pack build --target bundler --out-dir pkg-bundler",
+    "test": "wasm-pack test --headless --firefox --chrome"
+  },
+  "devDependencies": {
+    "wasm-pack": "^0.12.0"
+  }
+}

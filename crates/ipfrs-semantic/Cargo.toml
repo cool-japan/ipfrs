@@ -1,0 +1,94 @@
+[package]
+name = "ipfrs-semantic"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Semantic search with HNSW vector indexing for content-addressed data"
+keywords = ["semantic-search", "vector", "hnsw", "embedding", "similarity"]
+categories = ["algorithms", "data-structures", "science"]
+documentation = "https://docs.rs/ipfrs-semantic"
+homepage.workspace = true
+
+[dependencies]
+# Local crates
+ipfrs-core = { workspace = true }
+ipfrs-network = { workspace = true }
+ipfrs-storage = { workspace = true }
+ipfrs-tensorlogic = { workspace = true }
+
+# Vector search
+hnsw_rs = { workspace = true }
+
+# Linear algebra
+nalgebra = { workspace = true }
+
+# Content addressing
+cid = { workspace = true }
+multihash = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+oxicode = { workspace = true }
+bytes = { workspace = true }
+
+# Async
+tokio = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Data structures
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+lru = { workspace = true }
+
+# Memory mapping
+memmap2 = { workspace = true }
+
+# UUID generation
+uuid = { workspace = true }
+
+# Random number generation
+rand = { workspace = true }
+
+# Parallelism
+rayon = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+rand = { workspace = true }
+multihash-codetable = { workspace = true }
+
+[[bench]]
+name = "simd_bench"
+harness = false
+
+[[bench]]
+name = "performance_bench"
+harness = false
+
+[[bench]]
+name = "latency_bench"
+harness = false
+
+[[bench]]
+name = "batch_bench"
+harness = false
+
+[[bench]]
+name = "learned_bench"
+harness = false
+
+[[bench]]
+name = "advanced_features_bench"
+harness = false

@@ -1,0 +1,48 @@
+[package]
+name = "ipfrs-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.ipfrs]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_auth_token"
+path = "fuzz_targets/fuzz_auth_token.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_auth_manager"
+path = "fuzz_targets/fuzz_auth_manager.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_block_operations"
+path = "fuzz_targets/fuzz_block_operations.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_cid_parsing"
+path = "fuzz_targets/fuzz_cid_parsing.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_dag_cbor"
+path = "fuzz_targets/fuzz_dag_cbor.rs"
+test = false
+doc = false

@@ -1,0 +1,56 @@
+[package]
+name = "ipfrs-network"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Peer-to-peer networking layer with libp2p and QUIC for IPFRS"
+keywords = ["ipfs", "p2p", "libp2p", "quic", "networking"]
+categories = ["network-programming"]
+documentation = "https://docs.rs/ipfrs-network"
+homepage.workspace = true
+
+[dependencies]
+# Local crates
+ipfrs-core = { workspace = true }
+
+# Networking
+libp2p = { workspace = true }
+libp2p-quic = { workspace = true }
+quinn = { workspace = true }
+
+# Async
+tokio = { workspace = true, features = ["sync"] }
+futures = { workspace = true }
+futures-util = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Data structures
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+
+# Content addressing
+cid = { workspace = true }
+multihash = { workspace = true }
+multihash-codetable = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Metrics
+prometheus = { workspace = true }
+
+# Random number generation
+rand = { workspace = true }
+
+[dev-dependencies]
+tracing-subscriber = { workspace = true }

@@ -1,0 +1,85 @@
+[package]
+name = "ipfrs-tensorlogic"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Zero-copy tensor operations and logic programming for content-addressed storage"
+keywords = ["tensor", "arrow", "safetensors", "logic", "zero-copy"]
+categories = ["science", "algorithms", "data-structures"]
+documentation = "https://docs.rs/ipfrs-tensorlogic"
+homepage.workspace = true
+
+[dependencies]
+# Local crates
+ipfrs-core = { workspace = true }
+ipfrs-storage = { workspace = true }
+
+# Content addressing
+cid = { workspace = true }
+multihash = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+oxicode = { workspace = true }
+bytes = { workspace = true }
+
+# Zero-copy tensor support
+arrow = { workspace = true }
+arrow-array = { workspace = true }
+arrow-buffer = { workspace = true }
+arrow-schema = { workspace = true }
+safetensors = { workspace = true }
+memmap2 = { workspace = true }
+
+# Async
+tokio = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Caching
+lru = { workspace = true }
+parking_lot = { workspace = true }
+
+# Parallelism
+rayon = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Testing
+rand = { workspace = true }
+
+# Device detection
+num_cpus = { workspace = true }
+
+# Global state
+once_cell = { workspace = true }
+
+# Zero-copy casting
+bytemuck = { workspace = true }
+
+# UUID generation
+uuid = { workspace = true }
+
+# PyTorch checkpoint support
+serde-pickle = { workspace = true }
+flate2 = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tempfile = { workspace = true }
+
+[[bench]]
+name = "tensor_bench"
+harness = false

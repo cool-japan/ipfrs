@@ -1,0 +1,68 @@
+[package]
+name = "ipfrs"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Next-generation distributed file system with content-addressing, semantic search, and logic programming"
+keywords = ["ipfs", "distributed", "semantic-search", "p2p", "storage"]
+categories = ["filesystem", "network-programming", "database-implementations"]
+documentation = "https://docs.rs/ipfrs"
+homepage.workspace = true
+
+[dependencies]
+# Local crates - unified API
+ipfrs-core = { workspace = true }
+ipfrs-network = { workspace = true }
+ipfrs-storage = { workspace = true }
+ipfrs-transport = { workspace = true }
+ipfrs-semantic = { workspace = true }
+ipfrs-interface = { workspace = true }
+ipfrs-tensorlogic = { workspace = true }
+
+# Re-export important types
+tokio = { workspace = true, features = ["fs"] }
+futures = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+bytes = { workspace = true }
+
+# Observability
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+
+# Utilities
+serde = { workspace = true }
+chrono = { workspace = true }
+parking_lot = { workspace = true }
+thiserror = { workspace = true }
+oxicode = { workspace = true }
+once_cell = { workspace = true }
+
+# Authentication
+uuid = { workspace = true }
+md5 = { workspace = true }
+urlencoding = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tempfile = { workspace = true }
+
+[[bench]]
+name = "block_operations"
+harness = false
+
+[[bench]]
+name = "semantic_search"
+harness = false
+
+[[bench]]
+name = "logic_queries"
+harness = false

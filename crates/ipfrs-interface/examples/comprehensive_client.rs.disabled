@@ -1,0 +1,205 @@
+//! Comprehensive IPFRS Client Example
+//!
+//! This example demonstrates how to interact with IPFRS using multiple protocols:
+//! - HTTP REST API (Kubo-compatible v0 and optimized v1)
+//! - gRPC services
+//! - WebSocket real-time events
+//!
+//! # Prerequisites
+//!
+//! Start the comprehensive server first:
+//! ```bash
+//! cargo run --example comprehensive_server
+//! ```
+//!
+//! Then run this client:
+//! ```bash
+//! cargo run --example comprehensive_client
+//! ```
+
+use ipfrs_interface::grpc::proto::block::{
+    block_service_client::BlockServiceClient, GetBlockRequest, PutBlockRequest,
+};
+use serde_json::json;
+use std::time::Duration;
+use tokio::time::sleep;
+use tonic::Request;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("=== IPFRS Comprehensive Client Demo ===\n");
+
+    // Give the server a moment to start if needed
+    sleep(Duration::from_secs(1)).await;
+
+    // ========================================
+    // Part 1: HTTP REST API (v0 - Kubo compatible)
+    // ========================================
+    println!("📡 Part 1: HTTP REST API (Kubo v0)");
+    println!("----------------------------------");
+
+    let http_client = reqwest::Client::new();
+    let test_data = b"Hello from IPFRS comprehensive client!";
+
+    // Upload a file using multipart form-data
+    println!("\n1. Uploading file via POST /api/v0/add...");
+    let form = reqwest::multipart::Form::new()
+        .part("file", reqwest::multipart::Part::bytes(test_data.to_vec()));
+
+    let response = http_client
+        .post("http://localhost:8080/api/v0/add")
+        .multipart(form)
+        .send()
+        .await?;
+
+    let add_result: serde_json::Value = response.json().await?;
+    let cid = add_result["Hash"]
+        .as_str()
+        .expect("Missing CID in response");
+    println!("   ✓ File uploaded, CID: {}", cid);
+
+    // Download the file via gateway
+    println!("\n2. Downloading via GET /ipfs/{{cid}}...");
+    let content = http_client
+        .get(format!("http://localhost:8080/ipfs/{}", cid))
+        .send()
+        .await?
+        .bytes()
+        .await?;
+    println!("   ✓ Downloaded {} bytes", content.len());
+    println!("   Content: {}", String::from_utf8_lossy(&content));
+
+    // Get node info
+    println!("\n3. Getting node info via POST /api/v0/id...");
+    let id_response = http_client
+        .post("http://localhost:8080/api/v0/id")
+        .send()
+        .await?
+        .json::<serde_json::Value>()
+        .await?;
+    println!("   ✓ Node ID: {}", id_response["ID"]);
+
+    // ========================================
+    // Part 2: HTTP v1 API (High-performance)
+    // ========================================
+    println!("\n\n📡 Part 2: HTTP v1 API (High-performance)");
+    println!("------------------------------------------");
+
+    // Batch block operations
+    println!("\n1. Batch checking blocks via POST /v1/block/batch/has...");
+    let batch_has_request = json!({
+        "cids": [cid, "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"]
+    });
+
+    let batch_response = http_client
+        .post("http://localhost:8080/v1/block/batch/has")
+        .json(&batch_has_request)
+        .send()
+        .await?
+        .json::<serde_json::Value>()
+        .await?;
+    println!("   ✓ Batch check results: {:?}", batch_response);
+
+    // Streaming download with chunked response
+    println!("\n2. Streaming download via GET /v1/stream/download/{{cid}}...");
+    let stream_response = http_client
+        .get(format!("http://localhost:8080/v1/stream/download/{}", cid))
+        .send()
+        .await?;
+
+    let chunk_size = stream_response
+        .headers()
+        .get("X-Chunk-Size")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+    println!("   ✓ Streaming with chunk size: {} bytes", chunk_size);
+
+    let streamed_content = stream_response.bytes().await?;
+    println!(
+        "   ✓ Received {} bytes via streaming",
+        streamed_content.len()
+    );
+
+    // ========================================
+    // Part 3: gRPC API
+    // ========================================
+    println!("\n\n📡 Part 3: gRPC API");
+    println!("-------------------");
+
+    // Connect to gRPC server
+    println!("\n1. Connecting to gRPC server at [::1]:50051...");
+    let mut grpc_client = BlockServiceClient::connect("http://[::1]:50051").await?;
+    println!("   ✓ Connected to gRPC server");
+
+    // Put a block via gRPC
+    println!("\n2. Storing block via gRPC PutBlock...");
+    let grpc_data = b"Hello from gRPC!";
+    let put_request = Request::new(PutBlockRequest {
+        data: grpc_data.to_vec(),
+        format: None,
+    });
+
+    let put_response = grpc_client.put_block(put_request).await?;
+    let grpc_cid = put_response.into_inner().cid;
+    println!("   ✓ Block stored with CID: {}", grpc_cid);
+
+    // Get the block back via gRPC
+    println!("\n3. Retrieving block via gRPC GetBlock...");
+    let get_request = Request::new(GetBlockRequest {
+        cid: grpc_cid.clone(),
+    });
+
+    let get_response = grpc_client.get_block(get_request).await?;
+    let retrieved = get_response.into_inner();
+    println!("   ✓ Retrieved {} bytes", retrieved.size);
+    println!("   Content: {}", String::from_utf8_lossy(&retrieved.data));
+
+    // ========================================
+    // Part 4: Metrics & Health
+    // ========================================
+    println!("\n\n📡 Part 4: Monitoring");
+    println!("---------------------");
+
+    // Health check
+    println!("\n1. Health check via GET /health...");
+    let health = http_client
+        .get("http://localhost:8080/health")
+        .send()
+        .await?
+        .text()
+        .await?;
+    println!("   ✓ Health status: {}", health);
+
+    // Metrics
+    println!("\n2. Getting metrics via GET /metrics...");
+    let metrics = http_client
+        .get("http://localhost:8080/metrics")
+        .send()
+        .await?
+        .text()
+        .await?;
+
+    // Count the number of metrics
+    let metric_count = metrics.lines().filter(|l| !l.starts_with('#')).count();
+    println!("   ✓ Retrieved {} metric entries", metric_count);
+    println!("   Sample metrics:");
+    for line in metrics.lines().filter(|l| !l.starts_with('#')).take(5) {
+        println!("     {}", line);
+    }
+
+    // ========================================
+    // Summary
+    // ========================================
+    println!("\n\n✅ Demo completed successfully!");
+    println!("\nDemonstrated features:");
+    println!("  ✓ HTTP v0 API (Kubo-compatible): upload, download, node info");
+    println!("  ✓ HTTP v1 API: batch operations, streaming downloads");
+    println!("  ✓ gRPC API: block storage and retrieval");
+    println!("  ✓ Monitoring: health checks and metrics");
+    println!("\nFor more advanced features, see:");
+    println!("  - GraphQL: http://localhost:8080/graphql");
+    println!("  - WebSocket events: ws://localhost:8080/ws");
+    println!("  - Tensor API: /v1/tensor/{{cid}}");
+
+    Ok(())
+}

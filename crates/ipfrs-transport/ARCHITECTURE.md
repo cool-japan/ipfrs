@@ -1,0 +1,845 @@
+# ipfrs-transport Architecture
+
+This document provides architectural diagrams and explanations for the ipfrs-transport crate.
+
+## Table of Contents
+1. [Component Overview](#component-overview)
+2. [Core Protocol Layers](#core-protocol-layers)
+3. [Message Flow Diagrams](#message-flow-diagrams)
+4. [State Machines](#state-machines)
+5. [Data Flow](#data-flow)
+6. [Concurrency Model](#concurrency-model)
+
+---
+
+## Component Overview
+
+The ipfrs-transport crate consists of several interconnected components:
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│                        Application Layer                            │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐  │
+│  │ Session  │  │ GraphSync│  │TensorSwap│  │ Gradient Exchange│  │
+│  │ Manager  │  │          │  │          │  │                  │  │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────────┬─────────┘  │
+└───────┼─────────────┼─────────────┼─────────────────┼─────────────┘
+        │             │             │                 │
+┌───────┼─────────────┼─────────────┼─────────────────┼─────────────┐
+│       │             │             │                 │              │
+│  ┌────▼─────────────▼─────────────▼─────────────────▼──────────┐  │
+│  │                 Exchange Layer (Bitswap)                     │  │
+│  │  ┌──────────────┐  ┌───────────────┐  ┌─────────────────┐  │  │
+│  │  │  Want List   │  │ Peer Manager  │  │ Message Handler │  │  │
+│  │  │   Manager    │  │   & Scoring   │  │   & Routing     │  │  │
+│  │  └──────────────┘  └───────────────┘  └─────────────────┘  │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │              Advanced Features Layer                          │  │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────────────┐ │  │
+│  │  │Prefetch  │ │Multicast │ │Erasure   │ │Content Routing │ │  │
+│  │  │Engine    │ │Manager   │ │Coding    │ │& CDN Edge      │ │  │
+│  │  └──────────┘ └──────────┘ └──────────┘ └────────────────┘ │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────┬─────────────────────────────────┘
+                                    │
+┌───────────────────────────────────▼─────────────────────────────────┐
+│                       Transport Layer                                │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  Multi-Transport Manager                                      │  │
+│  │    ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────────┐  │  │
+│  │    │  QUIC    │  │   TCP    │  │WebSocket │  │   NAT     │  │  │
+│  │    │ (quinn)  │  │ Fallback │  │ Gateway  │  │ Traversal │  │  │
+│  │    └──────────┘  └──────────┘  └──────────┘  └───────────┘  │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  Quality of Service                                           │  │
+│  │    ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────────┐  │  │
+│  │    │Throttle  │  │Partition │  │Recovery  │  │ Circuit   │  │  │
+│  │    │(Bandwidth│  │Detection │  │Strategies│  │ Breaker   │  │  │
+│  │    └──────────┘  └──────────┘  └──────────┘  └───────────┘  │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Core Protocol Layers
+
+### Layer Architecture
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│  Layer 4: Application Protocol                                 │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────┐  │
+│  │  Sessions    │  │  Tensor      │  │  Gradient          │  │
+│  │  (Batching)  │  │  Streaming   │  │  Aggregation       │  │
+│  └──────────────┘  └──────────────┘  └────────────────────┘  │
+└───────────────────────────────────────────────────────────────┘
+                           ▲
+                           │
+┌───────────────────────────────────────────────────────────────┐
+│  Layer 3: Block Exchange Protocol (Bitswap/TensorSwap)        │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │  Want List Management  │  Peer Selection  │  Ledgers     │ │
+│  ├──────────────────────────────────────────────────────────┤ │
+│  │  Block Requests/Responses │  Have/DontHave Notifications │ │
+│  └──────────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────┘
+                           ▲
+                           │
+┌───────────────────────────────────────────────────────────────┐
+│  Layer 2: Message Protocol                                     │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │  Message Serialization (bincode)                         │ │
+│  ├──────────────────────────────────────────────────────────┤ │
+│  │  Message Types: WantList, Block, Have, DontHave, Cancel │ │
+│  └──────────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────┘
+                           ▲
+                           │
+┌───────────────────────────────────────────────────────────────┐
+│  Layer 1: Transport Protocol                                   │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐ │
+│  │  QUIC    │  │   TCP    │  │WebSocket │  │ WebTransport │ │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────────┘ │
+└───────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Message Flow Diagrams
+
+### 1. Simple Block Request Flow
+
+```
+Peer A                          Peer B
+  │                               │
+  │  1. Want(CID, priority=100)   │
+  │─────────────────────────────>│
+  │                               │
+  │  2. Have(CID) [optional]      │
+  │<─────────────────────────────│
+  │                               │
+  │  3. Block(CID, data)          │
+  │<─────────────────────────────│
+  │                               │
+  │  4. Cancel(CID)               │
+  │─────────────────────────────>│
+  │                               │
+```
+
+### 2. Multi-Peer Request with Fallback
+
+```
+Client          Peer A          Peer B          Peer C
+  │               │               │               │
+  │ Want(CID)     │               │               │
+  │─────────────>│               │               │
+  │               │               │               │
+  │         DontHave(CID)         │               │
+  │<─────────────│               │               │
+  │               │               │               │
+  │        Want(CID)              │               │
+  │───────────────────────────────>│              │
+  │               │               │               │
+  │               │         DontHave(CID)         │
+  │<───────────────────────────────│              │
+  │               │               │               │
+  │        Want(CID)                              │
+  │───────────────────────────────────────────────>│
+  │               │               │               │
+  │                         Block(CID, data)      │
+  │<───────────────────────────────────────────────│
+  │               │               │               │
+  │ Cancel(CID)   │               │               │
+  │─────────────>│               │               │
+  │ Cancel(CID)   │               │               │
+  │───────────────────────────────>│              │
+  │               │               │               │
+```
+
+### 3. Tensor Streaming Flow
+
+```
+Client                             Server
+  │                                  │
+  │ 1. Want(TensorMetadata)          │
+  │─────────────────────────────────>│
+  │                                  │
+  │ 2. Metadata(chunks=[C1,C2,C3])   │
+  │<─────────────────────────────────│
+  │                                  │
+  │ 3. Want(C1, priority=High)       │
+  │─────────────────────────────────>│
+  │                                  │
+  │ 4. Want(C2, priority=Normal)     │
+  │─────────────────────────────────>│
+  │                                  │
+  │ 5. Want(C3, priority=Low)        │
+  │─────────────────────────────────>│
+  │                                  │
+  │ 6. Block(C1, data) [first]       │
+  │<─────────────────────────────────│
+  │                                  │
+  │ 7. Block(C2, data)               │
+  │<─────────────────────────────────│
+  │                                  │
+  │ 8. Block(C3, data)               │
+  │<─────────────────────────────────│
+  │                                  │
+  │ 9. Progress: 100%                │
+  │<─────────────────────────────────│
+  │                                  │
+```
+
+### 4. Session-based Block Exchange
+
+```
+Client                        Manager                       Peer Pool
+  │                              │                              │
+  │ 1. CreateSession([CID1..N])  │                              │
+  │─────────────────────────────>│                              │
+  │                              │                              │
+  │                              │ 2. SelectPeers()             │
+  │                              │─────────────────────────────>│
+  │                              │                              │
+  │                              │ 3. Peers=[A,B,C]             │
+  │                              │<─────────────────────────────│
+  │                              │                              │
+  │                              │ 4. Want(CID1) -> Peer A      │
+  │                              │─────────────────────────────>│
+  │                              │                              │
+  │                              │ 5. Want(CID2) -> Peer B      │
+  │                              │─────────────────────────────>│
+  │                              │                              │
+  │                              │ 6. Block(CID1)               │
+  │                              │<─────────────────────────────│
+  │                              │                              │
+  │ 7. Event(Progress: 50%)      │                              │
+  │<─────────────────────────────│                              │
+  │                              │                              │
+  │                              │ 8. Block(CID2)               │
+  │                              │<─────────────────────────────│
+  │                              │                              │
+  │ 9. Event(Completed)          │                              │
+  │<─────────────────────────────│                              │
+  │                              │                              │
+```
+
+### 5. GraphSync DAG Traversal
+
+```
+Client                             Server
+  │                                  │
+  │ 1. Request(RootCID, Selector)    │
+  │─────────────────────────────────>│
+  │                                  │
+  │  (Server traverses DAG using      │
+  │   selector to find all needed     │
+  │   blocks)                         │
+  │                                  │
+  │ 2. Response(Block1, Block2, ...)  │
+  │<─────────────────────────────────│
+  │                                  │
+  │ 3. Response(Block3, Block4, ...)  │
+  │<─────────────────────────────────│
+  │                                  │
+  │ 4. Response(Complete)             │
+  │<─────────────────────────────────│
+  │                                  │
+```
+
+### 6. Gradient Exchange in Federated Learning
+
+```
+Worker 1            Aggregator            Worker 2
+  │                      │                    │
+  │ 1. PushGradient(G1)  │                    │
+  │─────────────────────>│                    │
+  │                      │                    │
+  │                      │ 2. PushGradient(G2)│
+  │                      │<───────────────────│
+  │                      │                    │
+  │  (Aggregator waits   │                    │
+  │   for all workers)   │                    │
+  │                      │                    │
+  │ 3. PullGradient()    │                    │
+  │─────────────────────>│                    │
+  │                      │                    │
+  │ 4. AggregatedGrad    │                    │
+  │<─────────────────────│                    │
+  │                      │                    │
+  │                      │ 5. PullGradient()  │
+  │                      │<───────────────────│
+  │                      │                    │
+  │                      │ 6. AggregatedGrad  │
+  │                      │───────────────────>│
+  │                      │                    │
+```
+
+---
+
+## State Machines
+
+### 1. Peer Connection State Machine
+
+```
+                    ┌──────────┐
+          ┌────────▶│  Idle    │◀────────┐
+          │         └────┬─────┘         │
+          │              │               │
+          │         Connect()            │
+          │              │               │
+          │              ▼               │
+          │         ┌──────────┐         │
+          │         │Connecting│         │
+          │         └────┬─────┘         │
+          │              │               │
+          │    Success   │    Failure    │
+          │              │               │
+          │              ▼               │
+          │         ┌──────────┐         │
+          │         │Connected │         │
+          │         └────┬─────┘         │
+          │              │               │
+          │         Use Connection       │
+          │              │               │
+          │              ▼               │
+          │         ┌──────────┐         │
+    Disconnect()    │  Active  │    Timeout/Error
+          │         └────┬─────┘         │
+          │              │               │
+          │         Close/Idle           │
+          │              │               │
+          └──────────────┴───────────────┘
+```
+
+### 2. Want Request State Machine
+
+```
+                    ┌──────────┐
+          ┌────────▶│  Pending │
+          │         └────┬─────┘
+          │              │
+          │         Send Request
+          │              │
+          │              ▼
+          │         ┌──────────┐
+          │         │  Waiting │──────── Timeout ────┐
+          │         └────┬─────┘                     │
+          │              │                           │
+          │    Receive Block/Have                    │
+          │              │                           │
+          │              ▼                           ▼
+          │         ┌──────────┐              ┌──────────┐
+          │         │Receiving │              │  Failed  │
+          │         └────┬─────┘              └────┬─────┘
+          │              │                          │
+          │         Complete                        │
+          │              │                          │
+          │              ▼                          │
+          │         ┌──────────┐                    │
+          │         │Completed │                    │
+          │         └────┬─────┘                    │
+          │              │                          │
+          │         Archive/Clean                   │
+          │              │                          │
+          │              ▼                          ▼
+          └─────────── Idle ◀─────────────────── Retry
+```
+
+### 3. Session Lifecycle State Machine
+
+```
+                    ┌──────────┐
+                    │  Created │
+                    └────┬─────┘
+                         │
+                    Initialize
+                         │
+                         ▼
+                    ┌──────────┐
+             ┌─────▶│  Active  │◀─────┐
+             │      └────┬─────┘      │
+             │           │            │
+             │      PauseSession      │
+             │           │            │
+             │           ▼            │
+             │      ┌──────────┐     │
+             │      │  Paused  │     │
+             │      └────┬─────┘     │
+             │           │           │
+             │      ResumeSession    │
+             │           │           │
+             └───────────┴───────────┘
+                         │
+                    All Blocks
+                    Received
+                         │
+                         ▼
+                    ┌──────────┐
+                    │Completed │
+                    └────┬─────┘
+                         │
+                    CancelSession
+                         │
+                         ▼
+                    ┌──────────┐
+                    │Cancelled │
+                    └──────────┘
+```
+
+### 4. Circuit Breaker State Machine
+
+```
+                    ┌──────────┐
+             ┌─────▶│  Closed  │──────┐
+             │      └────┬─────┘      │
+             │           │            │
+             │      Failure Count     │
+             │      > Threshold       │
+             │           │            │
+             │           ▼            │
+             │      ┌──────────┐     │
+    Success  │      │   Open   │     │ Success
+    After    │      └────┬─────┘     │
+    Half-Open│           │           │
+             │      Timeout          │
+             │           │           │
+             │           ▼           │
+             │      ┌──────────┐    │
+             └──────│Half-Open │────┘
+                    └────┬─────┘
+                         │
+                    Failure
+                         │
+                         ▼
+                    ┌──────────┐
+                    │   Open   │
+                    └──────────┘
+```
+
+### 5. Network Partition Detection State Machine
+
+```
+                    ┌──────────┐
+                    │ Healthy  │
+                    └────┬─────┘
+                         │
+                    Failure Count
+                    > Threshold
+                         │
+                         ▼
+                    ┌──────────┐
+                    │Suspected │
+                    └────┬─────┘
+                         │
+                    More Failures
+                         │
+                         ▼
+                    ┌──────────┐
+             ┌─────▶│Partitioned│
+             │      └────┬─────┘
+             │           │
+             │      Success
+             │           │
+             │           ▼
+             │      ┌──────────┐
+             │      │Recovering│
+             │      └────┬─────┘
+             │           │
+             │      Stable Period
+             │           │
+             │           ▼
+             │      ┌──────────┐
+             └──────│ Healthy  │
+                    └──────────┘
+                         │
+                    New Failures
+                         │
+                         └──────────┐
+                                    ▼
+                               (cycle repeats)
+```
+
+---
+
+## Data Flow
+
+### Block Request Data Flow
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ Application                                                       │
+│   request_block(cid)                                             │
+└────────────────────────┬─────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ Session Manager                                                   │
+│   - Add to session                                               │
+│   - Prioritize request                                           │
+└────────────────────────┬─────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ Want List Manager                                                 │
+│   - Add to priority queue (heap)                                 │
+│   - Deduplicate via HashMap                                      │
+│   - Set timeout                                                  │
+└────────────────────────┬─────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ Peer Manager                                                      │
+│   - Select best peer (scoring)                                   │
+│   - Check peer availability                                      │
+│   - Update ledger                                                │
+└────────────────────────┬─────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ Transport Layer                                                   │
+│   - Serialize message                                            │
+│   - Select transport (QUIC/TCP/WebSocket)                        │
+│   - Send over network                                            │
+└────────────────────────┬─────────────────────────────────────────┘
+                         │
+                         │ (Network)
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ Remote Peer                                                       │
+│   - Process request                                              │
+│   - Lookup block                                                 │
+│   - Return Block or DontHave                                     │
+└────────────────────────┬─────────────────────────────────────────┘
+                         │
+                         │ (Network)
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ Transport Layer (Receive)                                         │
+│   - Deserialize message                                          │
+│   - Validate checksum                                            │
+│   - Route to handler                                             │
+└────────────────────────┬─────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ Message Handler                                                   │
+│   - Process Block message                                        │
+│   - Validate CID                                                 │
+│   - Store in cache                                               │
+└────────────────────────┬─────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ Session Manager (Callback)                                        │
+│   - Mark block received                                          │
+│   - Update progress                                              │
+│   - Emit event                                                   │
+│   - Check if session complete                                    │
+└────────────────────────┬─────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ Application (Callback)                                            │
+│   - Process received block                                       │
+│   - Update UI/progress bar                                       │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Tensor Streaming Data Flow
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ Application                                                       │
+│   stream_tensor(root_cid)                                        │
+└────────────────────────┬─────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ TensorSwap Manager                                                │
+│   - Parse tensor metadata                                        │
+│   - Extract chunk CIDs                                           │
+│   - Compute priorities (earlier chunks = higher priority)        │
+└────────────────────────┬─────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ Priority Scheduler                                                │
+│   - Check computation graph dependencies                         │
+│   - Apply deadline-based boosting                                │
+│   - Order chunks by priority                                     │
+└────────────────────────┬─────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ Parallel Requester                                                │
+│   - Split into concurrent requests                               │
+│   - Apply backpressure limits                                    │
+│   - Request chunks in parallel                                   │
+└────────────────────────┬─────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ Chunk Assembly                                                    │
+│   - Receive chunks (possibly out-of-order)                       │
+│   - Track received status                                        │
+│   - Compute progress                                             │
+│   - Reassemble tensor                                            │
+└────────────────────────┬─────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ Application (Streaming)                                           │
+│   - Receive progress events                                      │
+│   - Process chunks as they arrive (optional)                     │
+│   - Get final tensor                                             │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Concurrency Model
+
+### Thread Architecture
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                    Async Runtime (Tokio)                        │
+└────────────────────────────────────────────────────────────────┘
+                             │
+        ┌────────────────────┼────────────────────┐
+        │                    │                    │
+        ▼                    ▼                    ▼
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│   Accept     │   │   Send       │   │   Receive    │
+│   Loop       │   │   Loop       │   │   Loop       │
+│  (incoming)  │   │  (outgoing)  │   │  (process)   │
+└──────┬───────┘   └──────┬───────┘   └──────┬───────┘
+       │                  │                  │
+       │                  │                  │
+       ▼                  ▼                  ▼
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  Connection  │   │  Message     │   │  Message     │
+│  Handler     │   │  Queue       │   │  Handler     │
+│  (spawn)     │   │  (mpsc)      │   │  (spawn)     │
+└──────────────┘   └──────────────┘   └──────────────┘
+```
+
+### Shared State Management
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                      Shared State                               │
+│                                                                 │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │ Want List (Arc<ConcurrentWantList>)                     │   │
+│  │   - Mutex-protected heap for priorities                 │   │
+│  │   - DashMap for CID lookups                            │   │
+│  └────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │ Peer Manager (Arc<PeerManager>)                         │   │
+│  │   - DashMap for per-peer metrics                       │   │
+│  │   - RwLock for scoring algorithm                       │   │
+│  └────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │ Session Manager (Arc<SessionManager>)                   │   │
+│  │   - DashMap for active sessions                        │   │
+│  │   - Mutex for session state transitions                │   │
+│  └────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │ Metrics (Arc<MetricsCollector>)                         │   │
+│  │   - Atomic counters                                     │   │
+│  │   - Lock-free updates                                   │   │
+│  └────────────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### Lock Hierarchy
+
+To prevent deadlocks, locks are acquired in a consistent order:
+
+```
+1. Session Manager (outer)
+   │
+   ├─▶ 2. Want List Manager
+   │     │
+   │     └─▶ 3. Individual Want Entry
+   │
+   └─▶ 2. Peer Manager
+         │
+         └─▶ 3. Individual Peer Metrics
+```
+
+**Rules:**
+- Never hold a lock while calling into another module
+- Use `Arc` and `DashMap` for fine-grained locking
+- Prefer atomic operations where possible
+- Use channels for cross-task communication
+
+### Message Passing
+
+```
+┌──────────────┐        mpsc         ┌──────────────┐
+│   Producer   │─────────────────────▶│   Consumer   │
+│   (Sender)   │                      │  (Receiver)  │
+└──────────────┘                      └──────────────┘
+
+Examples:
+- Block requests: UI → Session Manager
+- Block responses: Network → Message Handler
+- Progress events: Session Manager → UI
+- Metrics updates: All modules → Metrics Collector
+```
+
+---
+
+## Performance Considerations
+
+### Hot Path Optimization
+
+```
+Request Path (optimized for latency):
+
+  User Request
+      │
+      ▼
+  ┌────────────────────┐
+  │ Want List (O(1))   │  ← DashMap lookup
+  │ check duplicate    │
+  └────────┬───────────┘
+           │
+           ▼
+  ┌────────────────────┐
+  │ Priority Queue     │  ← Heap insert O(log n)
+  │ insert             │
+  └────────┬───────────┘
+           │
+           ▼
+  ┌────────────────────┐
+  │ Peer Selection     │  ← Cached scores
+  │ (precomputed)      │
+  └────────┬───────────┘
+           │
+           ▼
+  ┌────────────────────┐
+  │ Send (zero-copy)   │  ← Bytes forwarding
+  └────────────────────┘
+```
+
+### Memory Management
+
+```
+Block Storage:
+┌────────────────────────────────────────────────────────────┐
+│                                                             │
+│  Incoming Block → Bytes (reference counted)                │
+│                     │                                       │
+│                     ├─▶ Cache (Arc<Bytes>)                 │
+│                     │                                       │
+│                     ├─▶ Forward to Peer (clone Arc)        │
+│                     │                                       │
+│                     └─▶ Application (clone Arc)            │
+│                                                             │
+│  No data copying, only reference count increments          │
+└────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Integration Points
+
+### Integration with ipfrs-core
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ ipfrs-transport                                           │
+│  Uses:                                                    │
+│    - Cid (content addressing)                            │
+│    - Block (data structure)                              │
+│    - Tensor (metadata)                                   │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Integration with ipfrs-storage
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ ipfrs-transport                                           │
+│  Interacts with:                                          │
+│    - Blockstore (read/write blocks)                      │
+│    - Cache (LRU eviction)                                │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Integration with ipfrs-network
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ ipfrs-transport                                           │
+│  Uses:                                                    │
+│    - Peer discovery                                      │
+│    - DHT for content routing                             │
+│    - libp2p protocols                                    │
+└──────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Error Handling Flow
+
+```
+Error Detection
+     │
+     ▼
+┌──────────────┐
+│ Retry Logic  │
+│ (exponential │
+│  backoff)    │
+└──────┬───────┘
+       │
+       ▼ (still failing)
+┌──────────────┐
+│Circuit Breaker│
+│ opens         │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│ Fallback Peer│
+│ selection     │
+└──────┬───────┘
+       │
+       ▼ (no fallback)
+┌──────────────┐
+│ Error to     │
+│ Application  │
+└──────────────┘
+```
+
+---
+
+## Summary
+
+The ipfrs-transport architecture is designed for:
+- **High throughput**: Zero-copy forwarding, parallel requests
+- **Low latency**: Lock-free data structures, precomputed scores
+- **Reliability**: Circuit breakers, retry logic, fallback strategies
+- **Scalability**: Async I/O, fine-grained locking, lock hierarchies
+- **Flexibility**: Multi-transport support, pluggable strategies
+
+Key design principles:
+1. Layered architecture with clear separation of concerns
+2. Shared-nothing where possible (message passing)
+3. Fine-grained locking where sharing is necessary
+4. Zero-copy data forwarding for performance
+5. Graceful degradation under failures

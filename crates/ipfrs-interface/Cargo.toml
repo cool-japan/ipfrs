@@ -1,0 +1,107 @@
+[package]
+name = "ipfrs-interface"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "HTTP, gRPC, GraphQL and Python interfaces for IPFRS distributed storage"
+keywords = ["http", "grpc", "graphql", "api", "interface"]
+categories = ["web-programming", "api-bindings"]
+documentation = "https://docs.rs/ipfrs-interface"
+homepage.workspace = true
+
+[features]
+default = []
+python = ["pyo3"]
+
+[dependencies]
+# Local crates
+ipfrs-core = { workspace = true }
+ipfrs-storage = { workspace = true }
+ipfrs-semantic = { workspace = true }
+ipfrs-tensorlogic = { workspace = true }
+ipfrs-network = { workspace = true }
+
+# Zero-copy data structures
+arrow = { workspace = true }
+arrow-array = { workspace = true }
+arrow-buffer = { workspace = true }
+arrow-schema = { workspace = true }
+safetensors = { workspace = true }
+bytes = { workspace = true }
+memmap2 = { workspace = true }
+
+# Async
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+futures = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Web server
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["compression-gzip", "compression-br", "compression-deflate"] }
+hyper = { workspace = true }
+http-body-util = { workspace = true }
+axum-server = { workspace = true }
+rustls = { workspace = true }
+rustls-pemfile = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+base64 = { workspace = true }
+
+# GraphQL
+async-graphql = { workspace = true }
+async-graphql-axum = { workspace = true }
+
+# Authentication & Authorization
+jsonwebtoken = { workspace = true }
+bcrypt = { workspace = true }
+uuid = { workspace = true }
+dashmap = { workspace = true }
+rand = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+urlencoding = { workspace = true }
+
+# Streaming
+async-stream = { workspace = true }
+
+# Metrics
+prometheus = { workspace = true }
+lazy_static = { workspace = true }
+
+# gRPC
+tonic = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
+
+# Python bindings (optional)
+# Note: "extension-module" feature is for building Python extensions.
+# For tests, use "auto-initialize" instead to enable proper linking.
+pyo3 = { workspace = true, optional = true }
+
+[build-dependencies]
+tonic-build = { workspace = true }
+prost-build = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+flate2 = { workspace = true }
+tracing-subscriber = { workspace = true }
+reqwest = { workspace = true, features = ["multipart"] }
+tempfile = { workspace = true }
+
+[[bench]]
+name = "http_benchmarks"
+harness = false

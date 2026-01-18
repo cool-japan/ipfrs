@@ -1,0 +1,178 @@
+syntax = "proto3";
+
+package ipfrs.tensor.v1;
+
+// TensorService provides tensor-specific operations for ML/AI workloads
+service TensorService {
+  // GetTensor retrieves a tensor by CID
+  rpc GetTensor(GetTensorRequest) returns (stream TensorChunk);
+
+  // PutTensor stores a tensor
+  rpc PutTensor(stream PutTensorRequest) returns (PutTensorResponse);
+
+  // GetTensorInfo retrieves tensor metadata without data
+  rpc GetTensorInfo(GetTensorInfoRequest) returns (TensorInfo);
+
+  // SliceTensor retrieves a slice of a tensor
+  rpc SliceTensor(SliceTensorRequest) returns (stream TensorChunk);
+
+  // GetTensorStats returns statistics for a tensor
+  rpc GetTensorStats(GetTensorStatsRequest) returns (TensorStatsResponse);
+
+  // StreamTensors bidirectional streaming for tensor operations
+  rpc StreamTensors(stream TensorStreamRequest) returns (stream TensorStreamResponse);
+}
+
+// GetTensorRequest requests a tensor
+message GetTensorRequest {
+  string cid = 1;
+  optional TensorFormat format = 2; // Desired output format
+}
+
+// TensorChunk represents a chunk of tensor data
+message TensorChunk {
+  bytes data = 1;
+  uint64 offset = 2;
+  bool is_last = 3;
+  optional TensorMetadata metadata = 4; // Only in first chunk
+}
+
+// PutTensorRequest for streaming tensor upload
+message PutTensorRequest {
+  oneof data {
+    TensorMetadata metadata = 1;
+    bytes chunk = 2;
+  }
+}
+
+// PutTensorResponse contains the stored tensor's CID
+message PutTensorResponse {
+  string cid = 1;
+  uint64 size = 2;
+}
+
+// GetTensorInfoRequest requests tensor metadata
+message GetTensorInfoRequest {
+  string cid = 1;
+}
+
+// TensorInfo contains tensor metadata
+message TensorInfo {
+  string cid = 1;
+  TensorMetadata metadata = 2;
+  uint64 size = 3;
+}
+
+// TensorMetadata describes a tensor
+message TensorMetadata {
+  repeated uint64 shape = 1;
+  DataType dtype = 2;
+  TensorLayout layout = 3;
+  optional string name = 4;
+  TensorFormat format = 5; // Storage format
+}
+
+// DataType enumeration for tensor elements
+enum DataType {
+  DATA_TYPE_UNSPECIFIED = 0;
+  DATA_TYPE_F32 = 1;
+  DATA_TYPE_F64 = 2;
+  DATA_TYPE_I8 = 3;
+  DATA_TYPE_I16 = 4;
+  DATA_TYPE_I32 = 5;
+  DATA_TYPE_I64 = 6;
+  DATA_TYPE_U8 = 7;
+  DATA_TYPE_U16 = 8;
+  DATA_TYPE_U32 = 9;
+  DATA_TYPE_U64 = 10;
+  DATA_TYPE_BF16 = 11; // Brain floating point
+  DATA_TYPE_F16 = 12;  // Half precision
+  DATA_TYPE_BOOL = 13;
+}
+
+// TensorLayout specifies memory layout
+enum TensorLayout {
+  TENSOR_LAYOUT_UNSPECIFIED = 0;
+  TENSOR_LAYOUT_ROW_MAJOR = 1; // C-style, default
+  TENSOR_LAYOUT_COLUMN_MAJOR = 2; // Fortran-style
+}
+
+// TensorFormat specifies storage format
+enum TensorFormat {
+  TENSOR_FORMAT_UNSPECIFIED = 0;
+  TENSOR_FORMAT_SAFETENSORS = 1;
+  TENSOR_FORMAT_ARROW = 2;
+  TENSOR_FORMAT_RAW = 3; // Raw binary
+}
+
+// SliceTensorRequest requests a tensor slice
+message SliceTensorRequest {
+  string cid = 1;
+  repeated SliceRange ranges = 2; // One per dimension
+  optional TensorFormat format = 3;
+}
+
+// SliceRange specifies a range in one dimension
+message SliceRange {
+  optional uint64 start = 1; // Inclusive, default 0
+  optional uint64 end = 2;   // Exclusive, default dimension size
+  optional uint64 step = 3;  // Step size, default 1
+}
+
+// GetTensorStatsRequest requests tensor statistics
+message GetTensorStatsRequest {
+  string cid = 1;
+  bool compute_histogram = 2;
+  optional uint32 num_bins = 3; // For histogram
+}
+
+// TensorStatsResponse contains tensor statistics
+message TensorStatsResponse {
+  double min = 1;
+  double max = 2;
+  double mean = 3;
+  double std_dev = 4;
+  uint64 num_elements = 5;
+  optional Histogram histogram = 6;
+}
+
+// Histogram represents value distribution
+message Histogram {
+  repeated uint64 counts = 1;
+  repeated double bin_edges = 2;
+}
+
+// TensorStreamRequest for bidirectional streaming
+message TensorStreamRequest {
+  oneof request {
+    GetTensorRequest get = 1;
+    PutTensorRequest put = 2;
+    SliceTensorRequest slice = 3;
+  }
+}
+
+// TensorStreamResponse for bidirectional streaming
+message TensorStreamResponse {
+  oneof response {
+    TensorChunk chunk = 1;
+    PutTensorResponse put = 2;
+    Error error = 3;
+  }
+}
+
+// Error message for failures
+message Error {
+  string message = 1;
+  ErrorCode code = 2;
+}
+
+// ErrorCode enumeration
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  ERROR_CODE_NOT_FOUND = 1;
+  ERROR_CODE_INVALID_CID = 2;
+  ERROR_CODE_INVALID_SLICE = 3;
+  ERROR_CODE_UNSUPPORTED_FORMAT = 4;
+  ERROR_CODE_STORAGE_ERROR = 5;
+  ERROR_CODE_INTERNAL = 6;
+}

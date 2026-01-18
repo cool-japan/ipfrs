@@ -1,0 +1,876 @@
+openapi: 3.0.3
+info:
+  title: IPFRS HTTP Gateway API
+  description: |
+    High-performance IPFS-compatible HTTP Gateway and API for IPFRS.
+
+    ## Features
+    - Kubo-compatible v0 API endpoints
+    - High-speed v1 API with batch operations
+    - gRPC interface for advanced use cases
+    - WebSocket support for real-time updates
+    - Zero-copy tensor API for ML workloads
+
+    ## Authentication
+    Most endpoints support optional Bearer token authentication.
+    Include the token in the Authorization header:
+    ```
+    Authorization: Bearer <your-token>
+    ```
+  version: 0.1.0
+  contact:
+    name: IPFRS Project
+  license:
+    name: MIT OR Apache-2.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://gateway.ipfrs.io
+    description: Production gateway
+
+tags:
+  - name: Kubo v0
+    description: IPFS Kubo-compatible API endpoints
+  - name: High-Speed v1
+    description: Optimized high-performance API
+  - name: Gateway
+    description: HTTP gateway for content retrieval
+  - name: Streaming
+    description: Chunked upload/download endpoints
+  - name: Tensor
+    description: Zero-copy tensor operations
+  - name: WebSocket
+    description: Real-time WebSocket API
+  - name: Admin
+    description: Administrative endpoints
+
+paths:
+  # Gateway endpoints
+  /ipfs/{cid}:
+    get:
+      summary: Get content by CID
+      description: Retrieve content via the IPFS HTTP gateway
+      tags: [Gateway]
+      parameters:
+        - name: cid
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Content Identifier (CID)
+          example: QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco
+        - name: Range
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Byte range for partial content
+          example: bytes=0-1023
+      responses:
+        '200':
+          description: Content retrieved successfully
+          headers:
+            Content-Type:
+              schema:
+                type: string
+              description: MIME type of content
+            ETag:
+              schema:
+                type: string
+              description: CID-based ETag for caching
+            Cache-Control:
+              schema:
+                type: string
+              description: Caching directives
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '206':
+          description: Partial content (range request)
+          headers:
+            Content-Range:
+              schema:
+                type: string
+              example: bytes 0-1023/2048
+        '304':
+          description: Not Modified (cached content is still valid)
+        '400':
+          description: Invalid CID format
+        '404':
+          description: Content not found
+        '416':
+          description: Range not satisfiable
+
+  /health:
+    get:
+      summary: Health check
+      description: Check if the server is running
+      tags: [Admin]
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  # Kubo v0 API
+  /api/v0/add:
+    post:
+      summary: Add file
+      description: Upload a file to IPFS
+      tags: [Kubo v0]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: File added successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  Hash:
+                    type: string
+                    description: CID of the added file
+                  Size:
+                    type: integer
+                    description: Size in bytes
+
+  /api/v0/cat:
+    post:
+      summary: Cat file
+      description: Download a file from IPFS
+      tags: [Kubo v0]
+      parameters:
+        - name: arg
+          in: query
+          required: true
+          schema:
+            type: string
+          description: CID of the file to retrieve
+      responses:
+        '200':
+          description: File content
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /api/v0/block/get:
+    post:
+      summary: Get block
+      description: Retrieve a raw IPFS block
+      tags: [Kubo v0]
+      parameters:
+        - name: arg
+          in: query
+          required: true
+          schema:
+            type: string
+          description: CID of the block
+      responses:
+        '200':
+          description: Raw block data
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /api/v0/block/put:
+    post:
+      summary: Put block
+      description: Store a raw IPFS block
+      tags: [Kubo v0]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                block:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Block stored successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  Hash:
+                    type: string
+                  Size:
+                    type: integer
+
+  /api/v0/dag/get:
+    post:
+      summary: Get DAG node
+      description: Retrieve a DAG node with optional path
+      tags: [Kubo v0]
+      parameters:
+        - name: arg
+          in: query
+          required: true
+          schema:
+            type: string
+          description: CID and optional path
+      responses:
+        '200':
+          description: DAG node data
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v0/dag/put:
+    post:
+      summary: Put DAG node
+      description: Store a DAG node
+      tags: [Kubo v0]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: DAG node stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  Cid:
+                    type: object
+                    properties:
+                      '/':
+                        type: string
+
+  /api/v0/id:
+    post:
+      summary: Node identity
+      description: Get node identity information
+      tags: [Kubo v0]
+      responses:
+        '200':
+          description: Node identity
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ID:
+                    type: string
+                  PublicKey:
+                    type: string
+                  Addresses:
+                    type: array
+                    items:
+                      type: string
+                  AgentVersion:
+                    type: string
+                  ProtocolVersion:
+                    type: string
+
+  /api/v0/version:
+    post:
+      summary: Version info
+      description: Get IPFS version information
+      tags: [Kubo v0]
+      responses:
+        '200':
+          description: Version information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  Version:
+                    type: string
+                  Commit:
+                    type: string
+                  System:
+                    type: string
+                  Golang:
+                    type: string
+
+  /api/v0/swarm/peers:
+    post:
+      summary: List peers
+      description: Get list of connected peers
+      tags: [Kubo v0]
+      responses:
+        '200':
+          description: Peer list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  Peers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        Peer:
+                          type: string
+                        Addr:
+                          type: string
+
+  /api/v0/stats/bw:
+    post:
+      summary: Bandwidth stats
+      description: Get bandwidth statistics
+      tags: [Kubo v0]
+      responses:
+        '200':
+          description: Bandwidth statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  TotalIn:
+                    type: integer
+                  TotalOut:
+                    type: integer
+                  RateIn:
+                    type: number
+                  RateOut:
+                    type: number
+
+  /api/v0/pin/add:
+    post:
+      summary: Pin content
+      description: Pin content to keep it cached
+      tags: [Kubo v0]
+      parameters:
+        - name: arg
+          in: query
+          required: true
+          schema:
+            type: string
+          description: CID to pin
+      responses:
+        '200':
+          description: Content pinned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  Pins:
+                    type: array
+                    items:
+                      type: string
+
+  # High-speed v1 API
+  /v1/stream/upload:
+    post:
+      summary: Streaming upload
+      description: Upload large files with chunking and progress tracking
+      tags: [Streaming]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Upload complete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cid:
+                    type: string
+                  size:
+                    type: integer
+                  chunks_received:
+                    type: integer
+
+  /v1/stream/download/{cid}:
+    get:
+      summary: Streaming download
+      description: Download content with chunked streaming
+      tags: [Streaming]
+      parameters:
+        - name: cid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: chunk_size
+          in: query
+          schema:
+            type: integer
+            default: 65536
+          description: Chunk size in bytes
+      responses:
+        '200':
+          description: Content stream
+          headers:
+            X-Chunk-Size:
+              schema:
+                type: integer
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /v1/progress/{operation_id}:
+    get:
+      summary: Progress updates
+      description: Server-Sent Events stream for operation progress
+      tags: [Streaming]
+      parameters:
+        - name: operation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: object
+                properties:
+                  event:
+                    type: string
+                  data:
+                    type: object
+
+  /v1/block/batch/get:
+    post:
+      summary: Batch get blocks
+      description: Retrieve multiple blocks in parallel
+      tags: [High-Speed v1]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cids:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Blocks retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  blocks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        cid:
+                          type: string
+                        data:
+                          type: string
+                          format: byte
+
+  /v1/block/batch/put:
+    post:
+      summary: Batch put blocks
+      description: Store multiple blocks in a single transaction
+      tags: [High-Speed v1]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                blocks:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      data:
+                        type: string
+                        format: byte
+                transaction_mode:
+                  type: string
+                  enum: [atomic, best_effort]
+                  default: best_effort
+      responses:
+        '200':
+          description: Blocks stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cids:
+                    type: array
+                    items:
+                      type: string
+                  transaction_id:
+                    type: string
+
+  /v1/block/batch/has:
+    post:
+      summary: Batch check blocks
+      description: Check existence of multiple blocks
+      tags: [High-Speed v1]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cids:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Existence results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        cid:
+                          type: string
+                        exists:
+                          type: boolean
+
+  # Tensor API
+  /v1/tensor/{cid}:
+    get:
+      summary: Get tensor
+      description: Zero-copy tensor retrieval with optional slicing
+      tags: [Tensor]
+      parameters:
+        - name: cid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: slice
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Tensor slice specification (e.g., "0:10,5:15")
+      responses:
+        '200':
+          description: Tensor data
+          headers:
+            X-Tensor-Shape:
+              schema:
+                type: string
+              example: "[100, 50]"
+            X-Tensor-Dtype:
+              schema:
+                type: string
+              example: F32
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /v1/tensor/{cid}/info:
+    get:
+      summary: Get tensor metadata
+      description: Retrieve only tensor metadata without data
+      tags: [Tensor]
+      parameters:
+        - name: cid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tensor metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  shape:
+                    type: array
+                    items:
+                      type: integer
+                  dtype:
+                    type: string
+                  size:
+                    type: integer
+                  layout:
+                    type: string
+                    enum: [RowMajor, ColumnMajor]
+
+  # WebSocket
+  /ws:
+    get:
+      summary: WebSocket connection
+      description: Upgrade to WebSocket for real-time updates
+      tags: [WebSocket]
+      responses:
+        '101':
+          description: Switching Protocols
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from /api/v0/auth/login
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service authentication
+
+  schemas:
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: "Content not found"
+        code:
+          type: string
+          description: Error code
+          example: "NOT_FOUND"
+        request_id:
+          type: string
+          description: Unique request identifier for debugging
+          example: "550e8400-e29b-41d4-a716-446655440000"
+
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          example: "alice"
+        password:
+          type: string
+          format: password
+          example: "secret123"
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT access token
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        expires_in:
+          type: integer
+          description: Token expiration time in seconds
+          example: 86400
+
+    RegisterRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+          example: "alice"
+        password:
+          type: string
+          format: password
+          minLength: 8
+          example: "secret123"
+
+    BlockInfo:
+      type: object
+      properties:
+        cid:
+          type: string
+          description: Content Identifier
+          example: "QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco"
+        size:
+          type: integer
+          description: Block size in bytes
+          example: 1234
+        data:
+          type: string
+          format: byte
+          description: Base64-encoded block data
+
+    BatchGetRequest:
+      type: object
+      required:
+        - cids
+      properties:
+        cids:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          maxItems: 1000
+          example: ["QmXoyp...", "QmYabcd..."]
+
+    BatchGetResponse:
+      type: object
+      properties:
+        blocks:
+          type: array
+          items:
+            $ref: '#/components/schemas/BlockInfo'
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              cid:
+                type: string
+              error:
+                type: string
+
+    BatchPutRequest:
+      type: object
+      required:
+        - blocks
+      properties:
+        blocks:
+          type: array
+          items:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: string
+                format: byte
+                description: Base64-encoded block data
+          minItems: 1
+          maxItems: 1000
+        transaction_mode:
+          type: string
+          enum: [atomic, best_effort]
+          default: best_effort
+          description: |
+            - atomic: All blocks succeed or all fail
+            - best_effort: Continue on individual failures
+
+    BatchPutResponse:
+      type: object
+      properties:
+        cids:
+          type: array
+          items:
+            type: string
+          description: CIDs of successfully stored blocks
+        transaction_id:
+          type: string
+          description: Transaction ID for atomic operations
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              index:
+                type: integer
+              error:
+                type: string
+
+    TensorMetadata:
+      type: object
+      properties:
+        shape:
+          type: array
+          items:
+            type: integer
+          example: [100, 50]
+        dtype:
+          type: string
+          enum: [F32, F64, I32, I64, U8, U16, U32, U64]
+          example: "F32"
+        size:
+          type: integer
+          description: Total size in bytes
+          example: 20000
+        layout:
+          type: string
+          enum: [RowMajor, ColumnMajor]
+          default: RowMajor
+        num_elements:
+          type: integer
+          description: Total number of tensor elements
+          example: 5000
+
+    ProgressEvent:
+      type: object
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        status:
+          type: string
+          enum: [started, in_progress, completed, failed]
+        progress:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Progress from 0.0 to 1.0
+          example: 0.65
+        bytes_processed:
+          type: integer
+          example: 65536
+        total_bytes:
+          type: integer
+          example: 100000
+        message:
+          type: string
+          example: "Uploading chunk 3 of 5"
+
+security:
+  - BearerAuth: []
+  - ApiKeyAuth: []
+  - {}

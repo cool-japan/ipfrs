@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc ee30678afc39894b1aa8e88ea4280709f371905c4ac8bfd97f237f3a038e5bec # shrinks to ipld = Bytes([]), secret = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+cc 61ed6316a052d2b955587c32f7a5ac496feaed14147a509f94f1cc1d72549f6e # shrinks to ipld = Float(2.02115559141555e-308), secret = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+cc 2ce50abc73c0eade616abbc6cccbd93448ebf729ff48b7c7e4f85ed62fc69cba # shrinks to byte = 0, len = 100
+cc f2916719ca0ec7409886e2a1dfbb82681be165790b4158bc2fedd7fbef967f3e # shrinks to data = [0, 1]

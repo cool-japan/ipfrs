@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package ipfrs.file.v1;
+
+// FileService provides file operations
+service FileService {
+  // AddFile adds a file to IPFS
+  rpc AddFile(stream AddFileRequest) returns (AddFileResponse);
+
+  // GetFile retrieves a file from IPFS
+  rpc GetFile(GetFileRequest) returns (stream FileChunk);
+
+  // ListDirectory lists contents of a directory
+  rpc ListDirectory(ListDirectoryRequest) returns (ListDirectoryResponse);
+
+  // GetFileInfo gets metadata about a file
+  rpc GetFileInfo(GetFileInfoRequest) returns (GetFileInfoResponse);
+
+  // PinFile pins a file in IPFS
+  rpc PinFile(PinFileRequest) returns (PinFileResponse);
+
+  // UnpinFile unpins a file
+  rpc UnpinFile(UnpinFileRequest) returns (UnpinFileResponse);
+}
+
+// AddFileRequest for streaming file upload
+message AddFileRequest {
+  oneof data {
+    FileMetadata metadata = 1;
+    bytes chunk = 2;
+  }
+}
+
+// FileMetadata contains file metadata
+message FileMetadata {
+  string name = 1;
+  optional uint64 size = 2;
+  optional string mime_type = 3;
+  optional ChunkingStrategy chunking = 4;
+}
+
+// ChunkingStrategy specifies how to chunk the file
+message ChunkingStrategy {
+  string strategy = 1; // "size", "rabin", "buzhash"
+  optional uint32 chunk_size = 2; // For size-based chunking
+}
+
+// AddFileResponse contains the added file's CID
+message AddFileResponse {
+  string cid = 1;
+  uint64 size = 2;
+  uint32 num_blocks = 3;
+}
+
+// GetFileRequest requests a file
+message GetFileRequest {
+  string cid = 1;
+  optional uint64 offset = 2; // Byte offset to start from
+  optional uint64 length = 3; // Number of bytes to read
+}
+
+// FileChunk represents a chunk of file data
+message FileChunk {
+  bytes data = 1;
+  uint64 offset = 2;
+  bool is_last = 3;
+}
+
+// ListDirectoryRequest lists directory contents
+message ListDirectoryRequest {
+  string cid = 1; // CID of directory
+}
+
+// ListDirectoryResponse contains directory entries
+message ListDirectoryResponse {
+  repeated DirectoryEntry entries = 1;
+}
+
+// DirectoryEntry represents a file or directory
+message DirectoryEntry {
+  string name = 1;
+  string cid = 2;
+  EntryType type = 3;
+  uint64 size = 4;
+}
+
+// EntryType specifies file or directory
+enum EntryType {
+  ENTRY_TYPE_UNSPECIFIED = 0;
+  ENTRY_TYPE_FILE = 1;
+  ENTRY_TYPE_DIRECTORY = 2;
+  ENTRY_TYPE_SYMLINK = 3;
+}
+
+// GetFileInfoRequest requests file metadata
+message GetFileInfoRequest {
+  string cid = 1;
+}
+
+// GetFileInfoResponse contains file metadata
+message GetFileInfoResponse {
+  string cid = 1;
+  uint64 size = 2;
+  uint32 num_blocks = 3;
+  optional string mime_type = 4;
+  bool is_directory = 5;
+}
+
+// PinFileRequest requests file pinning
+message PinFileRequest {
+  string cid = 1;
+  bool recursive = 2; // Pin all linked blocks
+}
+
+// PinFileResponse confirms pinning
+message PinFileResponse {
+  bool pinned = 1;
+  uint32 blocks_pinned = 2;
+}
+
+// UnpinFileRequest requests unpinning
+message UnpinFileRequest {
+  string cid = 1;
+  bool recursive = 2;
+}
+
+// UnpinFileResponse confirms unpinning
+message UnpinFileResponse {
+  bool unpinned = 1;
+  uint32 blocks_unpinned = 2;
+}

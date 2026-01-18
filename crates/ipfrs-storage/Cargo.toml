@@ -1,0 +1,108 @@
+[package]
+name = "ipfrs-storage"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Storage backends and block management for IPFRS content-addressed system"
+keywords = ["ipfs", "storage", "blockstore", "sled", "database"]
+categories = ["database-implementations", "filesystem"]
+documentation = "https://docs.rs/ipfrs-storage"
+homepage.workspace = true
+
+[dependencies]
+# Local crates
+ipfrs-core = { workspace = true }
+
+# Storage backends
+sled = { workspace = true }
+parity-db = { workspace = true }
+
+# Content addressing
+cid = { workspace = true }
+multihash = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+bytes = { workspace = true }
+oxicode = { workspace = true }
+
+# Async
+tokio = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Utilities
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
+lru = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+fastrand = { workspace = true }
+sysinfo = { workspace = true }
+
+# S3 and HTTP support
+aws-config = { workspace = true, optional = true }
+aws-sdk-s3 = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+url = { workspace = true, optional = true }
+
+# Memory-mapped I/O
+memmap2 = { workspace = true, optional = true }
+
+# Encryption
+chacha20poly1305 = { workspace = true, optional = true }
+aes-gcm = { workspace = true, optional = true }
+argon2 = { workspace = true, optional = true }
+zeroize = { workspace = true, optional = true }
+
+# Compression
+zstd = { workspace = true, optional = true }
+lz4 = { workspace = true, optional = true }
+snap = { workspace = true, optional = true }
+
+# GraphQL
+async-graphql = { workspace = true, optional = true }
+chrono = { workspace = true }
+
+# QUIC transport
+quinn = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+rcgen = { workspace = true, optional = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tempfile = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true, features = ["multipart"] }
+serde_json = { workspace = true }
+
+[features]
+default = []
+s3 = ["aws-config", "aws-sdk-s3"]
+gateway = ["reqwest", "url"]
+mmap = ["memmap2"]
+encryption = ["chacha20poly1305", "aes-gcm", "argon2", "zeroize"]
+compression = ["zstd", "lz4", "snap"]
+graphql = ["async-graphql"]
+quic = ["quinn", "rustls", "rcgen"]
+kubo_bench = []
+
+[[bench]]
+name = "blockstore_bench"
+harness = false
+
+[[bench]]
+name = "kubo_comparison"
+harness = false

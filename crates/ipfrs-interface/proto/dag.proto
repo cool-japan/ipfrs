@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package ipfrs.dag.v1;
+
+// DagService provides operations for IPLD DAG nodes
+service DagService {
+  // GetDag retrieves a DAG node by CID
+  rpc GetDag(GetDagRequest) returns (GetDagResponse);
+
+  // PutDag stores a DAG node
+  rpc PutDag(PutDagRequest) returns (PutDagResponse);
+
+  // ResolvePath resolves an IPLD path
+  rpc ResolvePath(ResolvePathRequest) returns (ResolvePathResponse);
+
+  // TraverseDag traverses a DAG from a starting CID
+  rpc TraverseDag(TraverseDagRequest) returns (stream DagNode);
+
+  // GetDagStats returns statistics for a DAG
+  rpc GetDagStats(GetDagStatsRequest) returns (GetDagStatsResponse);
+}
+
+// GetDagRequest requests a DAG node
+message GetDagRequest {
+  string cid = 1;
+  optional string path = 2; // Optional IPLD path within the DAG
+}
+
+// GetDagResponse contains the DAG node data
+message GetDagResponse {
+  string cid = 1;
+  bytes data = 2;
+  string format = 3; // e.g., "dag-cbor", "dag-json", "dag-pb"
+  uint64 size = 4;
+}
+
+// PutDagRequest contains DAG node data to store
+message PutDagRequest {
+  bytes data = 1;
+  string format = 2; // e.g., "dag-cbor", "dag-json", "dag-pb"
+  optional bool pin = 3; // Whether to pin the DAG
+}
+
+// PutDagResponse contains the stored DAG's CID
+message PutDagResponse {
+  string cid = 1;
+  uint64 size = 2;
+}
+
+// ResolvePathRequest resolves an IPLD path
+message ResolvePathRequest {
+  string path = 1; // e.g., "/ipfs/QmHash/path/to/node"
+}
+
+// ResolvePathResponse contains the resolved node
+message ResolvePathResponse {
+  string cid = 1;
+  bytes data = 2;
+  string remaining_path = 3;
+}
+
+// TraverseDagRequest requests DAG traversal
+message TraverseDagRequest {
+  string root_cid = 1;
+  optional uint32 max_depth = 2; // Maximum depth to traverse
+  optional TraversalOrder order = 3;
+}
+
+// TraversalOrder specifies how to traverse the DAG
+enum TraversalOrder {
+  TRAVERSAL_ORDER_UNSPECIFIED = 0;
+  TRAVERSAL_ORDER_DEPTH_FIRST = 1;
+  TRAVERSAL_ORDER_BREADTH_FIRST = 2;
+}
+
+// DagNode represents a node in the DAG
+message DagNode {
+  string cid = 1;
+  bytes data = 2;
+  repeated string links = 3; // CIDs of linked nodes
+  uint32 depth = 4; // Depth from root
+}
+
+// GetDagStatsRequest requests DAG statistics
+message GetDagStatsRequest {
+  string root_cid = 1;
+}
+
+// GetDagStatsResponse contains DAG statistics
+message GetDagStatsResponse {
+  uint64 total_size = 1;
+  uint32 num_blocks = 2;
+  uint32 max_depth = 3;
+  uint32 num_links = 4;
+}

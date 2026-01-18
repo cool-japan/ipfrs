@@ -1,0 +1,39 @@
+[package]
+name = "ipfrs-python"
+version = "0.1.0"
+edition = "2021"
+authors = ["IPFRS Contributors"]
+description = "Python bindings for IPFRS distributed content-addressed storage system"
+keywords = ["ipfs", "python", "pyo3", "bindings", "distributed"]
+categories = ["api-bindings"]
+documentation = "https://docs.rs/ipfrs-python"
+homepage = "https://github.com/cool-japan/ipfrs"
+repository = "https://github.com/cool-japan/ipfrs"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "ipfrs"
+crate-type = ["cdylib"]
+
+[dependencies]
+# IPFRS core dependencies
+ipfrs = { path = "../ipfrs", version = "0.1.0" }
+ipfrs-core = { path = "../ipfrs-core", version = "0.1.0" }
+ipfrs-semantic = { path = "../ipfrs-semantic", version = "0.1.0" }
+ipfrs-tensorlogic = { path = "../ipfrs-tensorlogic", version = "0.1.0" }
+
+# PyO3 for Python bindings
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py38"] }
+
+# Async runtime (for blocking on async Rust functions)
+tokio = { version = "1.40", features = ["rt-multi-thread"] }
+
+# Synchronization
+parking_lot = "0.12"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[build-dependencies]
+pyo3-build-config = "0.23"

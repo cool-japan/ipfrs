@@ -1,0 +1,168 @@
+//! Comprehensive IPFRS Server Example
+//!
+//! This example demonstrates how to set up a full-featured IPFRS server with:
+//! - HTTP Gateway (Kubo-compatible v0 API + optimized v1 API)
+//! - gRPC services (Block, DAG, File, Tensor)
+//! - WebSocket real-time events
+//! - GraphQL API
+//! - Authentication & authorization
+//! - Rate limiting
+//! - Compression
+//! - Metrics
+//! - TLS/HTTPS (optional)
+//!
+//! # Usage
+//!
+//! ```bash
+//! cargo run --example comprehensive_server
+//! ```
+//!
+//! Then access:
+//! - HTTP API: http://localhost:8080/api/v0/*
+//! - v1 API: http://localhost:8080/v1/*
+//! - Gateway: http://localhost:8080/ipfs/{cid}
+//! - GraphQL Playground: http://localhost:8080/graphql
+//! - WebSocket: ws://localhost:8080/ws
+//! - gRPC: localhost:50051
+//! - Metrics: http://localhost:8080/metrics
+
+use ipfrs_interface::{
+    BlockServiceImpl, BlockServiceServer, ChainedInterceptor, DagServiceImpl, DagServiceServer,
+    FileServiceImpl, FileServiceServer, Gateway, GatewayConfig, TensorServiceImpl,
+    TensorServiceServer,
+};
+use ipfrs_storage::{BlockStoreConfig, SledBlockStore};
+use std::sync::Arc;
+use tonic::transport::Server as GrpcServer;
+use tracing::info;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize logging
+    tracing_subscriber::fmt().init();
+
+    info!("Starting comprehensive IPFRS server...");
+
+    // Create storage backend
+    let storage_config = BlockStoreConfig::default()
+        .with_path("./ipfrs_data".into())
+        .with_cache_mb(100); // 100MB cache
+
+    let storage = Arc::new(SledBlockStore::new(storage_config.clone())?);
+    info!("✓ Storage initialized at ./ipfrs_data");
+
+    // Start HTTP/WebSocket gateway in background
+    let gateway_handle = {
+        tokio::spawn(async move {
+            info!("Starting HTTP/WebSocket gateway on 0.0.0.0:8080");
+
+            // Use production preset for optimized settings
+            let config = GatewayConfig::production()
+                .with_compression_level(ipfrs_interface::CompressionLevel::Balanced)
+                .with_cache_mb(100);
+
+            // Validate configuration before starting
+            config.validate()?;
+
+            let gateway = Gateway::new(config)?.with_graphql();
+
+            // Optional: Enable authentication
+            // let gateway = gateway.with_auth(b"your-secret-key", Some("admin123"))?;
+
+            info!("✓ HTTP gateway configured");
+            info!("  - Kubo API: http://0.0.0.0:8080/api/v0/*");
+            info!("  - v1 API: http://0.0.0.0:8080/v1/*");
+            info!("  - Gateway: http://0.0.0.0:8080/ipfs/{{cid}}");
+            info!("  - GraphQL: http://0.0.0.0:8080/graphql");
+            info!("  - WebSocket: ws://0.0.0.0:8080/ws");
+            info!("  - Metrics: http://0.0.0.0:8080/metrics");
+            info!("  - Health: http://0.0.0.0:8080/health");
+
+            gateway.start().await
+        })
+    };
+
+    // Start gRPC server in background
+    let grpc_handle = {
+        let storage = storage.clone();
+        tokio::spawn(async move {
+            info!("Starting gRPC server on [::1]:50051");
+
+            let grpc_addr = "[::1]:50051".parse()?;
+
+            // Create gRPC services
+            let block_service = BlockServiceImpl::new(storage);
+            let dag_service = DagServiceImpl::new();
+            let file_service = FileServiceImpl::new();
+            let tensor_service = TensorServiceImpl::new();
+
+            // Create interceptor chain with logging and metrics
+            let interceptor = ChainedInterceptor::new().with_logging().with_metrics();
+            // Optional: Add authentication
+            // .with_auth("your-secret-key");
+
+            info!("✓ gRPC services configured");
+            info!("  - BlockService: Raw block operations");
+            info!("  - DagService: DAG operations");
+            info!("  - FileService: File operations");
+            info!("  - TensorService: Tensor operations");
+
+            // Build and start gRPC server
+            GrpcServer::builder()
+                .add_service(BlockServiceServer::with_interceptor(
+                    block_service,
+                    interceptor.clone(),
+                ))
+                .add_service(DagServiceServer::with_interceptor(
+                    dag_service,
+                    interceptor.clone(),
+                ))
+                .add_service(FileServiceServer::with_interceptor(
+                    file_service,
+                    interceptor.clone(),
+                ))
+                .add_service(TensorServiceServer::with_interceptor(
+                    tensor_service,
+                    interceptor,
+                ))
+                .serve(grpc_addr)
+                .await?;
+
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+        })
+    };
+
+    info!("\n🚀 IPFRS Server is ready!");
+    info!("\nExample commands:");
+    info!("  # Upload a file (Kubo API)");
+    info!("  curl -X POST -F \"file=@myfile.txt\" http://localhost:8080/api/v0/add");
+    info!("\n  # Download via gateway");
+    info!("  curl http://localhost:8080/ipfs/<CID>");
+    info!("\n  # Batch block operations (v1 API)");
+    info!("  curl -X POST -H \"Content-Type: application/json\" \\");
+    info!("    -d '{{\"cids\":[\"<CID1>\",\"<CID2>\"]}}' \\");
+    info!("    http://localhost:8080/v1/block/batch/get");
+    info!("\n  # GraphQL playground");
+    info!("  Open http://localhost:8080/graphql in your browser");
+    info!("\n  # Check metrics");
+    info!("  curl http://localhost:8080/metrics");
+    info!("\n  # Health check");
+    info!("  curl http://localhost:8080/health");
+    info!("\nPress Ctrl+C to stop the server\n");
+
+    // Wait for both servers
+    tokio::select! {
+        result = gateway_handle => {
+            if let Err(e) = result {
+                eprintln!("HTTP gateway error: {}", e);
+            }
+        }
+        result = grpc_handle => {
+            if let Err(e) = result {
+                eprintln!("gRPC server error: {}", e);
+            }
+        }
+    }
+
+    Ok(())
+}

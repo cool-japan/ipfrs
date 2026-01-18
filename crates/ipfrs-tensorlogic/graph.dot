@@ -1,0 +1,36 @@
+digraph ComputationGraph {
+  rankdir=TB;
+  node [shape=box, style=filled];
+
+  "matmul1" [label="matmul1\nMatMul", fillcolor="orange", shape=box];
+  "dropout" [label="dropout\nDropout(0.10)", fillcolor="plum", shape=box];
+  "weights2" [label="weights2\nConst(cid:bafkreig)", fillcolor="lightblue", shape=box];
+  "input" [label="input\nInput(x)", fillcolor="lightblue", shape=ellipse];
+  "matmul2" [label="matmul2\nMatMul", fillcolor="orange", shape=box];
+  "bias1" [label="bias1\nConst(cid:bafkreid)", fillcolor="lightblue", shape=box];
+  "output" [label="output\nSoftmax(axis=-1)", fillcolor="lightgreen", shape=doubleoctagon];
+  "relu" [label="relu\nReLU", fillcolor="lightgreen", shape=box];
+  "layer_norm" [label="layer_norm\nLayerNorm(ε=1.0e-5)", fillcolor="lightcoral", shape=box];
+  "add1" [label="add1\nAdd", fillcolor="yellow", shape=box];
+  "weights1" [label="weights1\nConst(cid:bafkreia)", fillcolor="lightblue", shape=box];
+
+  "input" -> "matmul1";
+  "weights1" -> "matmul1";
+  "layer_norm" -> "dropout";
+  "dropout" -> "matmul2";
+  "weights2" -> "matmul2";
+  "matmul2" -> "output";
+  "add1" -> "relu";
+  "relu" -> "layer_norm";
+  "matmul1" -> "add1";
+  "bias1" -> "add1";
+
+  subgraph cluster_legend {
+    label="Legend";
+    style=filled;
+    fillcolor=lightgrey;
+    legend_input [label="Input", shape=ellipse, fillcolor=lightblue];
+    legend_output [label="Output", shape=doubleoctagon, fillcolor=lightgreen];
+    legend_compute [label="Compute", shape=box, fillcolor=lightyellow];
+  }
+}

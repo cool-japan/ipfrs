@@ -1,0 +1,73 @@
+//! gRPC Client Example
+//!
+//! This example demonstrates how to use the IPFRS gRPC client.
+//!
+//! # Prerequisites
+//!
+//! Start the gRPC server first:
+//! ```bash
+//! cargo run --example grpc_server
+//! ```
+//!
+//! Then run this client:
+//! ```bash
+//! cargo run --example grpc_client
+//! ```
+
+use ipfrs_interface::grpc::proto::block::{
+    block_service_client::BlockServiceClient, GetBlockRequest, HasBlockRequest, PutBlockRequest,
+};
+use tonic::Request;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Connecting to IPFRS gRPC Server...");
+
+    // Connect to server
+    let mut client = BlockServiceClient::connect("http://[::1]:50051").await?;
+    println!("✓ Connected to server\n");
+
+    // Example 1: Put a block
+    println!("Example 1: Storing a block");
+    let data = b"Hello, IPFRS gRPC!";
+    let request = Request::new(PutBlockRequest {
+        data: data.to_vec(),
+        format: None, // Use default format
+    });
+
+    let response = client.put_block(request).await?;
+    let put_response = response.into_inner();
+
+    let cid = put_response.cid;
+    println!("  ✓ Block stored with CID: {}", cid);
+    println!("  Size: {} bytes\n", put_response.size);
+
+    // Example 2: Check if block exists
+    println!("Example 2: Checking if block exists");
+    let request = Request::new(HasBlockRequest { cid: cid.clone() });
+    let response = client.has_block(request).await?;
+    let has_response = response.into_inner();
+
+    println!("  ✓ Block exists: {}\n", has_response.exists);
+
+    // Example 3: Retrieve the block
+    println!("Example 3: Retrieving the block");
+    let request = Request::new(GetBlockRequest { cid: cid.clone() });
+    let response = client.get_block(request).await?;
+    let get_response = response.into_inner();
+
+    let retrieved_data = get_response.data;
+    let retrieved_str = String::from_utf8_lossy(&retrieved_data);
+    println!("  ✓ Retrieved data: {}", retrieved_str);
+    println!("  CID: {}", get_response.cid);
+    println!("  Size: {} bytes\n", get_response.size);
+
+    // Verify data matches
+    if retrieved_data == data {
+        println!("✓ Success! Data matches original");
+    } else {
+        println!("✗ Error: Data mismatch");
+    }
+
+    Ok(())
+}

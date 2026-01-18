@@ -1,0 +1,67 @@
+[package]
+name = "ipfrs-transport"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Transport protocols and zero-copy data exchange for IPFRS distributed system"
+keywords = ["transport", "quic", "websocket", "p2p", "protocol"]
+categories = ["network-programming"]
+documentation = "https://docs.rs/ipfrs-transport"
+homepage.workspace = true
+
+[dependencies]
+# Local crates
+ipfrs-core = { workspace = true }
+ipfrs-network = { workspace = true }
+ipfrs-storage = { workspace = true }
+
+# Networking
+libp2p = { workspace = true }
+quinn = { workspace = true }
+tokio-tungstenite = { workspace = true }
+
+# TLS/Crypto for QUIC
+rustls = { workspace = true }
+rcgen = { workspace = true }
+
+# Zero-copy serialization
+safetensors = { workspace = true }
+bytes = { workspace = true }
+
+# Content addressing
+cid = { workspace = true }
+multihash = { workspace = true }
+
+# Async
+tokio = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Data structures
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+oxicode = { workspace = true }
+
+# Random number generation
+rand = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "transport_bench"
+harness = false

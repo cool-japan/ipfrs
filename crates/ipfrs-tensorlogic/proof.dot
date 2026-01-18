@@ -1,0 +1,12 @@
+digraph ProofTree {
+  rankdir=TB;
+  node [shape=box, style="filled,rounded"];
+
+  node_0 [label="Predicate { name: \"ancestor\", args: [Const(String(\"Alice\")), Const(String(\"Carol\"))] }", fillcolor="lightyellow"];
+  node_1 [label="parent(Alice, Bob)", fillcolor="lightgray"];
+  node_0 -> node_1;
+  node_2 [label="ancestor(Bob, Carol)", fillcolor="lightgray"];
+  node_0 -> node_2;
+  node_0_rule [label="Rule: ancestor_transitive", shape=note, fillcolor="lightyellow"];
+  node_0_rule -> node_0 [style=dashed];
+}
