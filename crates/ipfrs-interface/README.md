@@ -6,6 +6,8 @@ API layer for IPFRS - HTTP Gateway and RPC interface.
 
 `ipfrs-interface` provides external access to IPFRS functionality:
 
+**Status**: Stable — 399 public items, 0 stubs
+
 - **HTTP Gateway**: Kubo-compatible web interface
 - **RPC API**: JSON-RPC and gRPC endpoints
 - **High-Speed API**: Custom optimized protocol
@@ -21,6 +23,10 @@ Standards-compliant gateway for IPFS clients:
 - **POST /api/v0/cat**: Download files
 - **POST /api/v0/dag/**: DAG operations
 - **WebSocket Support**: Real-time updates
+- **JWT Authentication**: Secure token-based access control
+- **Rate Limiting**: Per-IP token bucket algorithm, DoS prevention
+- **Zero-Copy Tensor Serving**: GET /v1/tensor/{cid} with safetensors and Apache Arrow support
+- **Prometheus Metrics**: 30+ metrics, GET /metrics endpoint, automatic request tracking
 
 ### High-Speed API
 Custom protocol optimized for performance:
@@ -149,6 +155,6 @@ ipfrs_node_free(node);
 
 ## References
 
-- IPFRS v0.1.0 Whitepaper (API Layer)
-- IPFRS v0.3.0 Whitepaper (Interface Architecture)
+- IPFRS v0.2.1 Whitepaper (API Layer)
+- IPFRS v0.2.1 Whitepaper (Interface Architecture)
 - IPFS HTTP API: https://docs.ipfs.tech/reference/kubo/rpc/

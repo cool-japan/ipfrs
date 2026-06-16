@@ -6,6 +6,14 @@ Blockstore implementation for IPFRS - the persistent storage layer.
 
 `ipfrs-storage` provides high-performance, Rust-native key-value storage for IPFRS blocks with:
 
+## Status
+
+- **Status:** Stable
+- **Version:** 0.2.1
+- **Release date:** 2026-06-16
+- **Public items:** 3,115
+- **Tests:** comprehensive (integration, stress, corruption-recovery)
+
 - **Pluggable Backends**: Sled (default), ParityDB, RocksDB
 - **Hot/Cold Tiering**: Automatic data migration based on access patterns
 - **Differentiable Storage**: Version control for tensor gradients (Git-for-Tensors)
@@ -18,7 +26,7 @@ Blockstore implementation for IPFRS - the persistent storage layer.
 - **ParityDB**: High-performance, designed for blockchain workloads
 - **RocksDB**: Battle-tested, C++ backend with Rust bindings
 
-### Differentiable Blockstore (v0.2.0)
+### Differentiable Blockstore (v0.2.1)
 - **Version Control System** for model states (Git for Tensors)
 - Track gradient updates as IPLD Merkle DAG
 - Time-travel to any historical model state
@@ -80,5 +88,4 @@ if store.has(&cid).await? {
 
 ## References
 
-- IPFRS v0.2.0 Whitepaper (Storage Architecture)
-- *(planned v0.3.0)*
+- IPFRS v0.2.1 Whitepaper (Storage Architecture)

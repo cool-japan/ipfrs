@@ -306,7 +306,7 @@ pub fn compute_cid(data: &[u8]) -> String {
 /// Return the ipfrs-wasm version string.
 #[wasm_bindgen]
 pub fn version() -> String {
-    "ipfrs-wasm 0.2.0".to_string()
+    "ipfrs-wasm 0.2.1".to_string()
 }
 
 /// Verify that `data` matches `cid` (i.e., recomputing the CID yields the
@@ -773,7 +773,7 @@ mod tests {
     fn test_version() {
         let v = version();
         assert!(v.contains("ipfrs-wasm"));
-        assert!(v.contains("0.2.0"));
+        assert!(v.contains("0.2.1"));
     }
 
     #[test]
@@ -809,7 +809,7 @@ mod tests {
         let parsed: serde_json::Value =
             serde_json::from_str(pkg_json).expect("pkg/package.json must be valid JSON");
         assert_eq!(parsed["name"], "@cool-japan/ipfrs");
-        assert_eq!(parsed["version"], "0.2.0");
+        assert_eq!(parsed["version"], "0.2.1");
         assert_eq!(parsed["license"], "Apache-2.0");
         // Verify required file entries are present
         let files = parsed["files"].as_array().expect("files must be an array");

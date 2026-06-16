@@ -2,9 +2,9 @@
 
 ![IPFRS](ipfrs.jpg)
 
-**Version:** 0.2.0 "Network Release"
+**Version:** 0.2.1-dev (0.2.0 "Network Release" — released 2026-06-15)
 
-**Status:** Production Ready — P2P Networking Available
+**Status:** Production Ready — 0.2.0 released; 0.2.1 in development
 
 A next-generation distributed file system built in Rust, combining content-addressed storage with semantic search and logic programming capabilities.
 
@@ -46,7 +46,7 @@ IPFRS revolutionizes distributed storage by adding **intelligence** to content-a
 
 ## 📦 Installation
 
-### From Source (Recommended for 0.2.0)
+### From Source (Recommended for 0.2.0 — latest release)
 
 ```bash
 git clone https://github.com/cool-japan/ipfrs.git
@@ -491,6 +491,25 @@ cargo test --test integration
 
 ---
 
+## 📦 Crate Status
+
+| Crate | Status | Public Items | Stubs |
+|-------|--------|-------------|-------|
+| ipfrs-core | Stable | 525 | 0 |
+| ipfrs-storage | Stable | 3,115 | 0 |
+| ipfrs-network | Stable | 3,526 | 0 |
+| ipfrs-transport | Stable | 930 | 0 |
+| ipfrs-semantic | Stable | 2,710 | 0 |
+| ipfrs-tensorlogic | Alpha | 3,402 | 1 |
+| ipfrs-interface | Stable | 399 | 0 |
+| ipfrs (meta-crate) | Stable | 235 | 0 |
+| ipfrs-cli | Stable | 107 | 0 |
+| ipfrs-wasm | Alpha | — | — |
+| ipfrs-nodejs | Alpha | — | — |
+| ipfrs-python | Alpha | — | — |
+
+---
+
 ## 📊 Performance
 
 ### Benchmarks (0.2.0)
@@ -659,6 +678,6 @@ By fusing Rust's robust implementation (The Body) with TensorLogic's flexible re
 
 ---
 
-**Status**: v0.2.0 - Production Ready (P2P Networking Available)
+**Status**: v0.2.0 released 2026-06-15 — v0.2.1 in development
 
-🎉 **v0.2.0 released 2026-06-15 — P2P networking, distributed inference, and ML agent types now available.**
+🎉 **v0.2.0 released 2026-06-15 — P2P networking, distributed inference, and ML agent types now available. v0.2.1 in development (~628K Rust lines across 1005 files).**

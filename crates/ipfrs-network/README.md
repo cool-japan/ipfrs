@@ -4,7 +4,7 @@ Production-ready P2P networking layer for IPFRS built on rust-libp2p.
 
 ## Overview
 
-`ipfrs-network` provides comprehensive networking capabilities for IPFRS with 48 modules covering all aspects of P2P networking:
+`ipfrs-network` provides comprehensive networking capabilities for IPFRS with 48 modules and 3,526 public API items covering all aspects of P2P networking:
 
 - **Core Networking**: libp2p-based swarm with QUIC and TCP transports
 - **Peer Discovery**: Kademlia DHT, mDNS, Bootstrap nodes, Semantic DHT

@@ -11,6 +11,8 @@ Main library crate for IPFRS (Inter-Planet File RUST System).
 - **Plugin Architecture**: Extensible component system
 - **High-Level API**: Simplified interface to all features
 
+**Status**: Stable — 235 public items, 0 stubs
+
 ## Key Features
 
 ### Unified Node
@@ -52,6 +54,17 @@ Use IPFRS as a library in your application:
 - Direct API access
 - Custom configuration
 - Resource control
+
+### Operations & Maintenance
+Production-grade operational capabilities:
+
+- **GC (Garbage Collection)**: Reclaim storage by removing unpinned, unreferenced blocks
+- **fsck**: File-system consistency checks — detect and report repository integrity issues
+- **Pin Manager**: Pin and unpin CIDs to prevent GC from removing content; recursive and direct pin modes
+- **Health Checks**: Liveness and readiness probes with component-level status; Kubernetes-compatible endpoints
+- **TLS**: HTTPS support with certificate management for secure API and peer connections
+- **Auth (Authentication & Authorization)**: API keys, JWT tokens, OAuth (basic), RBAC, and resource permissions
+- **Diagnostics**: Real-time `node.diagnostics()` with per-component health, resource usage, and automated recommendations
 
 ### Plugin System
 Extensible architecture:
@@ -168,11 +181,11 @@ Control which components to include:
 
 ```toml
 [dependencies]
-ipfrs = { version = "0.2.0", features = ["full"] }
+ipfrs = { version = "0.2.1", features = ["full"] }
 
 # Or selectively enable features:
 ipfrs = {
-    version = "0.2.0",
+    version = "0.2.1",
     features = ["storage", "network", "tensorlogic"]
 }
 ```
@@ -210,5 +223,5 @@ Available features:
 
 ## References
 
-- IPFRS v0.2.0 Whitepaper (Network Architecture)
+- IPFRS v0.2.1 Whitepaper (Network Architecture) — 2026-06-16
 - IPFRS v0.3.0 Whitepaper (Intelligence/Unified Architecture) *(planned)*

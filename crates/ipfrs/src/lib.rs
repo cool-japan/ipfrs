@@ -1,6 +1,6 @@
 //! IPFRS - Inter-Planet File RUST System
 //!
-//! Version: 0.2.0 "Network Release"
+//! Version: 0.2.1 "Network Release"
 //!
 //! A next-generation distributed file system built in Rust, combining:
 //! - High-performance zero-copy data transport

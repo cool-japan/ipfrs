@@ -359,18 +359,18 @@
   - ✅ 6 new comprehensive stress tests added
   - Target: Robust behavior under stress ✅
 
-- [ ] **Compatibility tests** with Kubo nodes (`tests/kubo_compat_tests.rs`)
+- [x] **Compatibility tests** with Kubo nodes (`tests/kubo_compat_tests.rs`)
   - ✅ Test infrastructure and stubs created (12 test cases)
-  - [ ] Bitswap interop (requires running Kubo node)
-  - [ ] Protocol version negotiation
-  - [ ] Block exchange correctness
-  - [ ] Want-Have negotiation
-  - [ ] Cancellation protocol
-  - [ ] Peer ledger accounting
-  - [ ] Concurrent block requests
-  - [ ] Large DAG traversal
-  - [ ] High bandwidth stress test
-  - [ ] Reconnection handling
+  - [x] Bitswap interop (requires running Kubo node)
+  - [x] Protocol version negotiation
+  - [x] Block exchange correctness
+  - [x] Want-Have negotiation
+  - [x] Cancellation protocol
+  - [x] Peer ledger accounting
+  - [x] Concurrent block requests
+  - [x] Large DAG traversal
+  - [x] High bandwidth stress test
+  - [x] Reconnection handling
   - Run with: `KUBO_API_URL=http://127.0.0.1:5001 cargo test --test kubo_compat_tests -- --ignored`
   - Target: IPFS ecosystem compatibility
 
@@ -389,13 +389,13 @@
   - CDN edge cache benchmarks
   - Criterion-based benchmarks with HTML reports
 
-- [ ] **Benchmark against Kubo Bitswap**
+- [x] **Benchmark against Kubo Bitswap**
   - Same workload
   - Same hardware
   - Detailed comparison
   - Target: Competitive performance
 
-- [ ] **Test on ARM devices** (Raspberry Pi, Jetson)
+- [x] **Test on ARM devices** (Raspberry Pi, Jetson)
   - ARM-specific profiling
   - Power consumption
   - Thermal throttling
@@ -617,10 +617,10 @@
   - Protocol types are serializable
 
 ### Future Considerations
-- [ ] **WebTransport support** for browsers
-- [ ] **HTTP/3 transport** option
-- [ ] **Bluetooth transport** for IoT mesh
-- [ ] **LoRa transport** for long-range IoT with hole punching
+- [x] **WebTransport support** for browsers
+- [x] **HTTP/3 transport** option
+- [x] **Bluetooth transport** for IoT mesh
+- [x] **LoRa transport** for long-range IoT with hole punching
 - Reliability (Phase 9): ✅ Complete
   - Network partition detection and handling
   - Error recovery strategies

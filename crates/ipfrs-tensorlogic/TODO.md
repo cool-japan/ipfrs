@@ -1,4 +1,4 @@
-# ipfrs-tensorlogic TODO
+# ipfrs-tensorlogic TODO — v0.2.1 (2026-06-16)
 
 ## ✅ Completed (Phases 1-2)
 
@@ -736,7 +736,7 @@
 
 ---
 
-## Future Considerations (IPFRS 0.2.0+ Vision)
+## Future Considerations (IPFRS 0.2.1+ Vision)
 
 ### Distributed Inference (Priority: High)
 - **Peer-to-peer model sharding**: Split large models across network nodes

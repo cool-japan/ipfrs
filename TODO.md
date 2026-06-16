@@ -1,8 +1,8 @@
 # IPFRS TODO
 
-**Current Version:** 0.2.0 "Network Release"
+**Current Version:** 0.2.1 "Unreleased"
 **Next Target:** 0.3.0 "Intelligence Release"
-**Date:** 2026-06-15
+**Date:** 2026-06-16
 
 ---
 
@@ -1078,7 +1078,7 @@ Verification (all green): `cargo build -p ipfrs-core` (default + `--all-features
 
 ---
 
-*Updated: 2026-06-15*
+*Updated: 2026-06-16*
 
 ## Stubs to implement (added 2026-06-12 by /cooljapan-stub-check)
 

@@ -16,7 +16,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["TensorLogic Architect"]
 license = "Apache-2.0"
@@ -202,14 +202,14 @@ sysinfo = "0.39"
 fastrand = "2.4"
 
 # Internal IPFRS crates
-ipfrs-core = { path = "crates/ipfrs-core", version = "0.2.0" }
-ipfrs-storage = { path = "crates/ipfrs-storage", version = "0.2.0" }
-ipfrs-network = { path = "crates/ipfrs-network", version = "0.2.0" }
-ipfrs-tensorlogic = { path = "crates/ipfrs-tensorlogic", version = "0.2.0" }
-ipfrs-transport = { path = "crates/ipfrs-transport", version = "0.2.0" }
-ipfrs-semantic = { path = "crates/ipfrs-semantic", version = "0.2.0" }
-ipfrs-interface = { path = "crates/ipfrs-interface", version = "0.2.0" }
-ipfrs = { path = "crates/ipfrs", version = "0.2.0" }
+ipfrs-core = { path = "crates/ipfrs-core", version = "0.2.1" }
+ipfrs-storage = { path = "crates/ipfrs-storage", version = "0.2.1" }
+ipfrs-network = { path = "crates/ipfrs-network", version = "0.2.1" }
+ipfrs-tensorlogic = { path = "crates/ipfrs-tensorlogic", version = "0.2.1" }
+ipfrs-transport = { path = "crates/ipfrs-transport", version = "0.2.1" }
+ipfrs-semantic = { path = "crates/ipfrs-semantic", version = "0.2.1" }
+ipfrs-interface = { path = "crates/ipfrs-interface", version = "0.2.1" }
+ipfrs = { path = "crates/ipfrs", version = "0.2.1" }
 num_cpus = "1.17"
 lazy_static = "1.5"
 bytemuck = "1.25"

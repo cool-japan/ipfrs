@@ -1,4 +1,4 @@
-# ipfrs-semantic TODO
+# ipfrs-semantic TODO — v0.2.1 (2026-06-16)
 
 ## ✅ Completed (Phases 1-3)
 
@@ -905,7 +905,7 @@
 
 ## Future Considerations
 
-### IPFRS 0.2.0+ Vision
+### IPFRS 0.2.1+ Vision
 - **Distributed Inference**: Semantic search as routing layer for TensorLogic distributed inference
 - **Edge Deployment**: HNSW index optimized for Raspberry Pi / NVIDIA Jetson
 - **Quantized Embeddings**: INT8/binary embeddings for memory-constrained environments
@@ -919,6 +919,8 @@
 ---
 
 ## Summary
+
+Last updated: 2026-06-16
 
 ### Overall Completion Status
 

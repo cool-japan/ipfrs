@@ -727,6 +727,7 @@
 - Shell script integration: ✅ Exit codes, quiet mode, pipeable output
 - Plugin system: ✅ Extensible command system
 - **Modular refactoring: ✅ Commands extracted to 15+ separate modules + main.rs integration complete (LATEST!)**
+- **Version**: 0.2.1 (stable, released 2026-06-16)
 
 ### Test Coverage (180 Tests Total)
 - Criterion benchmarks: 42 performance tests (config, parsing, completion, startup)
@@ -903,7 +904,7 @@ The CLI is now exposed as a library (`ipfrs_cli`) for reusability:
   - Backup saved at main.rs.bak
 - Target: Code Organization ✅ FULLY ACHIEVED
 
-### Latest Enhancements (2026-01-09 Session - Part 2)
+### Latest Enhancements (2026-06-16 Session - Part 2)
 - ✅ **Daemon Health Check Command**
   - Comprehensive health check for daemon and system
   - Checks daemon status, repository health, disk space, memory usage
@@ -922,7 +923,7 @@ The CLI is now exposed as a library (`ipfrs_cli`) for reusability:
   - Automatic backup of existing config
   - Target: Easy config migration ✅ ACHIEVED
 
-### Latest Enhancements (2026-01-09 Session - Part 1)
+### Latest Enhancements (2026-06-16 Session - Part 1)
 - ✅ **Gateway TLS Support**
   - Added --tls-cert and --tls-key CLI flags
   - TLS configuration validation

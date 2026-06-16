@@ -1,4 +1,4 @@
-//! Node.js bindings for IPFRS v0.2.0
+//! Node.js bindings for IPFRS v0.2.1
 //!
 //! This module provides JavaScript/TypeScript bindings for IPFRS using NAPI-RS.
 //! It exposes two independent surface areas:

@@ -1,3 +1,4 @@
+<!-- Version: 0.2.1 | Updated: 2026-06-16 -->
 # ipfrs-core TODO
 
 ## ✅ Completed (Phases 1-3)

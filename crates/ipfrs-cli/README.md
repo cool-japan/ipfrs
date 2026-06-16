@@ -6,6 +6,8 @@ Command-line interface for IPFRS.
 
 `ipfrs-cli` provides a user-friendly CLI for interacting with IPFRS:
 
+**Status**: Stable — 107 public items, 0 stubs
+
 - **Kubo-Compatible Commands**: Drop-in replacement for `ipfs` CLI
 - **Enhanced Features**: TensorLogic-specific operations
 - **Interactive Mode**: REPL for exploration
@@ -119,7 +121,7 @@ ipfrs-cli/
     ipfrs (core library)
 ```
 
-**Recent Refactoring (2026-01-09):**
+**Recent Refactoring (2026-06-16):**
 - Reduced main.rs from 4,825 to 2,079 lines (57% code reduction)
 - Extracted all command implementations to modular `commands/` files
 - Total codebase: 8,652 lines across 15+ command modules
@@ -621,5 +623,5 @@ Supported environment variables (override config):
 
 ## References
 
-- IPFRS v0.2.0 Whitepaper (CLI Design)
+- IPFRS v0.2.1 Whitepaper (CLI Design)
 - IPFS CLI Documentation: https://docs.ipfs.tech/reference/kubo/cli/

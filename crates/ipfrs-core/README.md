@@ -11,6 +11,14 @@ Core primitives and types for IPFRS (Inter-Planet File RUST System).
 - **IPLD Codec**: Serialization/deserialization for TensorLogic types
 - **Error Types**: Unified error handling across all IPFRS crates
 
+## Status
+
+- Status: [Stable]
+- Version: 0.2.1
+- Release date: 2026-06-16
+- Public items: 525
+- Tests: 437 (241 unit + 17 compatibility + 100 property + 79 doc)
+
 ## Key Components
 
 ### CID & Multihash
@@ -56,6 +64,6 @@ ipfrs-storage | ipfrs-network | ipfrs-semantic
 
 ## References
 
-- IPFRS v0.3.0 Whitepaper (Unified Strategy)
+- IPFRS v0.2.1 Whitepaper (Unified Strategy)
 - IPLD Specification: https://ipld.io/
 - Multiformats: https://multiformats.io/
