@@ -310,7 +310,7 @@ impl RegressionDetector {
         }
 
         let mut sorted = values.to_vec();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let min = sorted[0];
         let max = sorted[sorted.len() - 1];
@@ -365,7 +365,9 @@ mod tests {
             index_size: 100000,
         };
 
-        detector.set_baseline(metrics).unwrap();
+        detector
+            .set_baseline(metrics)
+            .expect("test: set_baseline should succeed with valid metrics");
         assert!(detector.baseline.is_some());
     }
 
@@ -379,9 +381,13 @@ mod tests {
             memory_mb: 512.0,
             index_size: 100000,
         };
-        detector.set_baseline(baseline.clone()).unwrap();
+        detector
+            .set_baseline(baseline.clone())
+            .expect("test: set_baseline should succeed with valid metrics");
 
-        let report = detector.check_regression(&baseline).unwrap();
+        let report = detector
+            .check_regression(&baseline)
+            .expect("test: check_regression should succeed when baseline is set");
         assert!(!report.has_regression);
         assert_eq!(report.issues.len(), 0);
     }
@@ -396,7 +402,9 @@ mod tests {
             memory_mb: 512.0,
             index_size: 100000,
         };
-        detector.set_baseline(baseline).unwrap();
+        detector
+            .set_baseline(baseline)
+            .expect("test: set_baseline should succeed with valid metrics");
 
         // 50% slower latency
         let current = PerformanceMetrics {
@@ -407,7 +415,9 @@ mod tests {
             index_size: 100000,
         };
 
-        let report = detector.check_regression(&current).unwrap();
+        let report = detector
+            .check_regression(&current)
+            .expect("test: check_regression should succeed when baseline is set");
         assert!(report.has_regression);
         assert!(report
             .issues
@@ -425,7 +435,9 @@ mod tests {
             memory_mb: 512.0,
             index_size: 100000,
         };
-        detector.set_baseline(baseline).unwrap();
+        detector
+            .set_baseline(baseline)
+            .expect("test: set_baseline should succeed with valid metrics");
 
         // 20% lower throughput
         let current = PerformanceMetrics {
@@ -436,7 +448,9 @@ mod tests {
             index_size: 100000,
         };
 
-        let report = detector.check_regression(&current).unwrap();
+        let report = detector
+            .check_regression(&current)
+            .expect("test: check_regression should succeed when baseline is set");
         assert!(report.has_regression);
         assert!(report.issues.iter().any(|i| i.metric == "throughput_qps"));
     }
@@ -451,7 +465,9 @@ mod tests {
             memory_mb: 512.0,
             index_size: 100000,
         };
-        detector.set_baseline(baseline).unwrap();
+        detector
+            .set_baseline(baseline)
+            .expect("test: set_baseline should succeed with valid metrics");
 
         // 30% more memory
         let current = PerformanceMetrics {
@@ -462,7 +478,9 @@ mod tests {
             index_size: 100000,
         };
 
-        let report = detector.check_regression(&current).unwrap();
+        let report = detector
+            .check_regression(&current)
+            .expect("test: check_regression should succeed when baseline is set");
         assert!(report.has_regression);
         assert!(report.issues.iter().any(|i| i.metric == "memory_mb"));
     }
@@ -519,7 +537,9 @@ mod tests {
             memory_mb: 512.0,
             index_size: 100000,
         };
-        detector.set_baseline(baseline).unwrap();
+        detector
+            .set_baseline(baseline)
+            .expect("test: set_baseline should succeed with valid metrics");
 
         // 30% slower - should not trigger with 50% threshold
         let current = PerformanceMetrics {
@@ -530,7 +550,9 @@ mod tests {
             index_size: 100000,
         };
 
-        let report = detector.check_regression(&current).unwrap();
+        let report = detector
+            .check_regression(&current)
+            .expect("test: check_regression should succeed when baseline is set");
         assert!(!report.has_regression);
     }
 }

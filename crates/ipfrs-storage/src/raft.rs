@@ -18,7 +18,7 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
-//!     let store = SledBlockStore::new("/tmp/raft-node-1")?;
+//!     let store = SledBlockStore::new(std::env::temp_dir().join("raft-node-1"))?;
 //!     let config = RaftConfig::default();
 //!
 //!     let mut node = RaftNode::new(
@@ -346,7 +346,7 @@ impl<S: BlockStore + Send + Sync + 'static> RaftNode<S> {
 
     /// Get a random election timeout
     fn random_election_timeout(config: &RaftConfig) -> Duration {
-        use rand::Rng;
+        use rand::RngExt;
         let min = config.election_timeout_min.as_millis() as u64;
         let max = config.election_timeout_max.as_millis() as u64;
         let timeout_ms = rand::rng().random_range(min..=max);

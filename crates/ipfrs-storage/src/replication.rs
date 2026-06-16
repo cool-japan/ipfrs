@@ -346,98 +346,140 @@ mod tests {
     use crate::blockstore::{BlockStoreConfig, SledBlockStore};
     use bytes::Bytes;
     use ipfrs_core::Block;
-    use std::path::PathBuf;
 
     #[tokio::test]
     async fn test_full_sync() {
         let source_config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-replication-source"),
+            path: std::env::temp_dir().join("ipfrs-replication-source"),
             cache_size: 10 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&source_config.path);
 
         let target_config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-replication-target"),
+            path: std::env::temp_dir().join("ipfrs-replication-target"),
             cache_size: 10 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&target_config.path);
 
-        let source = Arc::new(SledBlockStore::new(source_config).unwrap());
-        let target = Arc::new(SledBlockStore::new(target_config).unwrap());
+        let source =
+            Arc::new(SledBlockStore::new(source_config).expect("source store should be created"));
+        let target =
+            Arc::new(SledBlockStore::new(target_config).expect("target store should be created"));
 
         // Add blocks to source
-        let block1 = Block::new(Bytes::from("block 1")).unwrap();
-        let block2 = Block::new(Bytes::from("block 2")).unwrap();
-        source.put(&block1).await.unwrap();
-        source.put(&block2).await.unwrap();
+        let block1 = Block::new(Bytes::from("block 1")).expect("block 1 should be created");
+        let block2 = Block::new(Bytes::from("block 2")).expect("block 2 should be created");
+        source
+            .put(&block1)
+            .await
+            .expect("block 1 should be put in source");
+        source
+            .put(&block2)
+            .await
+            .expect("block 2 should be put in source");
 
         // Sync
         let replicator = Replicator::new(source.clone(), target.clone());
-        let result = replicator.sync(SyncStrategy::Full, None).await.unwrap();
+        let result = replicator
+            .sync(SyncStrategy::Full, None)
+            .await
+            .expect("full sync should succeed");
 
         assert_eq!(result.blocks_synced, 2);
         assert_eq!(result.conflicts, 0);
-        assert!(target.has(block1.cid()).await.unwrap());
-        assert!(target.has(block2.cid()).await.unwrap());
+        assert!(target
+            .has(block1.cid())
+            .await
+            .expect("target should have block 1"));
+        assert!(target
+            .has(block2.cid())
+            .await
+            .expect("target should have block 2"));
     }
 
     #[tokio::test]
     async fn test_incremental_sync() {
         let source_config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-replication-inc-source"),
+            path: std::env::temp_dir().join("ipfrs-replication-inc-source"),
             cache_size: 10 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&source_config.path);
 
         let target_config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-replication-inc-target"),
+            path: std::env::temp_dir().join("ipfrs-replication-inc-target"),
             cache_size: 10 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&target_config.path);
 
-        let source = Arc::new(SledBlockStore::new(source_config).unwrap());
-        let target = Arc::new(SledBlockStore::new(target_config).unwrap());
+        let source = Arc::new(
+            SledBlockStore::new(source_config).expect("test: source store should be created"),
+        );
+        let target = Arc::new(
+            SledBlockStore::new(target_config).expect("test: target store should be created"),
+        );
 
         // Add some blocks to both
-        let block1 = Block::new(Bytes::from("block 1")).unwrap();
-        source.put(&block1).await.unwrap();
-        target.put(&block1).await.unwrap();
+        let block1 = Block::new(Bytes::from("block 1")).expect("test: block 1 should be created");
+        source
+            .put(&block1)
+            .await
+            .expect("test: block 1 should be put in source");
+        target
+            .put(&block1)
+            .await
+            .expect("test: block 1 should be put in target");
 
         // Add unique block to source
-        let block2 = Block::new(Bytes::from("block 2")).unwrap();
-        source.put(&block2).await.unwrap();
+        let block2 = Block::new(Bytes::from("block 2")).expect("test: block 2 should be created");
+        source
+            .put(&block2)
+            .await
+            .expect("test: block 2 should be put in source");
 
         // Incremental sync should only copy block2
         let replicator = Replicator::new(source.clone(), target.clone());
         let result = replicator
             .sync(SyncStrategy::Incremental, None)
             .await
-            .unwrap();
+            .expect("test: incremental sync should succeed");
 
         assert_eq!(result.blocks_synced, 1);
-        assert!(target.has(block2.cid()).await.unwrap());
+        assert!(target
+            .has(block2.cid())
+            .await
+            .expect("test: target should have block 2"));
     }
 
     #[tokio::test]
     async fn test_conflict_resolution() {
         let source_config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-replication-conflict-source"),
+            path: std::env::temp_dir().join("ipfrs-replication-conflict-source"),
             cache_size: 10 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&source_config.path);
 
         let target_config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-replication-conflict-target"),
+            path: std::env::temp_dir().join("ipfrs-replication-conflict-target"),
             cache_size: 10 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&target_config.path);
 
-        let source = Arc::new(SledBlockStore::new(source_config).unwrap());
-        let target = Arc::new(SledBlockStore::new(target_config).unwrap());
+        let source = Arc::new(
+            SledBlockStore::new(source_config)
+                .expect("test: conflict source store should be created"),
+        );
+        let target = Arc::new(
+            SledBlockStore::new(target_config)
+                .expect("test: conflict target store should be created"),
+        );
 
         // Add same CID with different content (simulate conflict)
-        let block1 = Block::new(Bytes::from("source version")).unwrap();
-        source.put(&block1).await.unwrap();
+        let block1 = Block::new(Bytes::from("source version"))
+            .expect("test: source version block should be created");
+        source
+            .put(&block1)
+            .await
+            .expect("test: source version block should be put in source");
 
         // Note: In a real conflict scenario, we'd have same CID with different data
         // For this test, we'll just verify the conflict handling works
@@ -445,7 +487,7 @@ mod tests {
         let result = replicator
             .sync(SyncStrategy::Full, Some(ConflictStrategy::KeepSource))
             .await
-            .unwrap();
+            .expect("test: conflict resolution sync should succeed");
 
         assert!(result.blocks_synced > 0);
     }

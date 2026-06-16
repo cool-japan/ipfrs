@@ -447,10 +447,10 @@ mod tests {
             .arg_var("X")
             .build();
 
-        let is_provable = QueryUtils::is_provable(&query, &kb).unwrap();
+        let is_provable = QueryUtils::is_provable(&query, &kb).expect("test: should succeed");
         assert!(is_provable);
 
-        let count = QueryUtils::count_solutions(&query, &kb).unwrap();
+        let count = QueryUtils::count_solutions(&query, &kb).expect("test: should succeed");
         assert_eq!(count, 1);
     }
 }

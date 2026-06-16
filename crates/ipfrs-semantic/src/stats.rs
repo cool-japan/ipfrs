@@ -59,7 +59,7 @@ impl IndexStats {
         self.insert_count.fetch_add(1, Ordering::Relaxed);
         self.insert_latencies
             .write()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .record(duration.as_micros() as u64);
     }
 
@@ -73,11 +73,14 @@ impl IndexStats {
         self.search_count.fetch_add(1, Ordering::Relaxed);
         self.search_latencies
             .write()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .record(duration.as_micros() as u64);
 
         // Record query details
-        let mut queries = self.recent_queries.write().unwrap();
+        let mut queries = self
+            .recent_queries
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
         if queries.len() >= self.max_recent_queries {
             queries.pop_front();
         }
@@ -104,8 +107,14 @@ impl IndexStats {
 
     /// Get a snapshot of current statistics
     pub fn snapshot(&self) -> StatsSnapshot {
-        let search_latencies = self.search_latencies.read().unwrap();
-        let insert_latencies = self.insert_latencies.read().unwrap();
+        let search_latencies = self
+            .search_latencies
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
+        let insert_latencies = self
+            .insert_latencies
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
 
         let cache_hits = self.cache_hits.load(Ordering::Relaxed);
         let cache_misses = self.cache_misses.load(Ordering::Relaxed);
@@ -138,18 +147,27 @@ impl IndexStats {
         self.insert_count.store(0, Ordering::Relaxed);
         self.delete_count.store(0, Ordering::Relaxed);
         self.search_count.store(0, Ordering::Relaxed);
-        self.search_latencies.write().unwrap().reset();
-        self.insert_latencies.write().unwrap().reset();
+        self.search_latencies
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .reset();
+        self.insert_latencies
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .reset();
         self.cache_hits.store(0, Ordering::Relaxed);
         self.cache_misses.store(0, Ordering::Relaxed);
-        self.recent_queries.write().unwrap().clear();
+        self.recent_queries
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 
     /// Get recent query records
     pub fn recent_queries(&self) -> Vec<QueryRecord> {
         self.recent_queries
             .read()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .iter()
             .cloned()
             .collect()

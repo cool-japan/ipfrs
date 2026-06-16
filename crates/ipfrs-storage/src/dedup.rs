@@ -472,7 +472,6 @@ impl<S: BlockStore> BlockStore for DedupBlockStore<S> {
 mod tests {
     use super::*;
     use crate::blockstore::{BlockStoreConfig, SledBlockStore};
-    use std::path::PathBuf;
 
     #[test]
     fn test_chunking_config() {
@@ -513,8 +512,10 @@ mod tests {
         );
 
         // Check that chunk CIDs would be the same
-        let chunk_block1 = Block::new(bytes::Bytes::copy_from_slice(&chunks[0])).unwrap();
-        let chunk_block2 = Block::new(bytes::Bytes::copy_from_slice(&chunks2[0])).unwrap();
+        let chunk_block1 = Block::new(bytes::Bytes::copy_from_slice(&chunks[0]))
+            .expect("creating block from chunk data should succeed");
+        let chunk_block2 = Block::new(bytes::Bytes::copy_from_slice(&chunks2[0]))
+            .expect("creating block from identical chunk data should succeed");
         assert_eq!(
             chunk_block1.cid(),
             chunk_block2.cid(),
@@ -588,24 +589,31 @@ mod tests {
     #[tokio::test]
     async fn test_dedup_blockstore_basic() {
         let config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-test-dedup-basic"),
+            path: std::env::temp_dir().join("ipfrs-test-dedup-basic"),
             cache_size: 1024 * 1024,
         };
 
         // Clean up
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let inner = SledBlockStore::new(config).unwrap();
+        let inner = SledBlockStore::new(config).expect("creating sled block store should succeed");
         let store = DedupBlockStore::with_defaults(inner);
 
         // Store a block
         let data = bytes::Bytes::from(vec![1u8; 100 * 1024]); // 100KB
-        let block = Block::new(data.clone()).unwrap();
+        let block = Block::new(data.clone()).expect("creating block from byte data should succeed");
 
-        store.put(&block).await.unwrap();
+        store
+            .put(&block)
+            .await
+            .expect("storing block should succeed");
 
         // Retrieve it
-        let retrieved = store.get(block.cid()).await.unwrap().unwrap();
+        let retrieved = store
+            .get(block.cid())
+            .await
+            .expect("get should not error")
+            .expect("block should be present after put");
         assert_eq!(retrieved.data(), block.data());
 
         // Check stats
@@ -617,14 +625,14 @@ mod tests {
     #[tokio::test]
     async fn test_dedup_duplicate_blocks() {
         let config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-test-dedup-duplicates"),
+            path: std::env::temp_dir().join("ipfrs-test-dedup-duplicates"),
             cache_size: 1024 * 1024,
         };
 
         // Clean up
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let inner = SledBlockStore::new(config).unwrap();
+        let inner = SledBlockStore::new(config).expect("creating sled block store should succeed");
         // Use custom config optimized for dedup testing
         let chunk_config = ChunkingConfig {
             min_chunk_size: 32 * 1024,    // 32KB min
@@ -643,22 +651,30 @@ mod tests {
         }
         // chunk_data is now 40KB of patterned data
 
-        let block1 = Block::new(bytes::Bytes::from(chunk_data.clone())).unwrap();
+        let block1 = Block::new(bytes::Bytes::from(chunk_data.clone()))
+            .expect("creating block1 from patterned data should succeed");
 
         // Create block2 with the same pattern repeated - FastCDC should find same chunks
         let mut data2 = chunk_data.clone();
         data2.extend_from_slice(&chunk_data); // 80KB total
-        let block2 = Block::new(bytes::Bytes::from(data2)).unwrap();
+        let block2 = Block::new(bytes::Bytes::from(data2))
+            .expect("creating block2 from doubled pattern should succeed");
 
         // Store block1
-        store.put(&block1).await.unwrap();
+        store
+            .put(&block1)
+            .await
+            .expect("storing block1 should succeed");
 
         let stats_after_first = store.stats();
         let first_chunks = stats_after_first.unique_chunks;
         assert!(first_chunks >= 1, "Expected at least 1 chunk");
 
         // Store block2 - should reuse chunks from block1 where content matches
-        store.put(&block2).await.unwrap();
+        store
+            .put(&block2)
+            .await
+            .expect("storing block2 should succeed");
 
         let stats = store.stats();
         assert_eq!(stats.blocks_stored, 2);
@@ -671,8 +687,16 @@ mod tests {
         );
 
         // Verify both blocks can be retrieved correctly
-        let retrieved1 = store.get(block1.cid()).await.unwrap().unwrap();
-        let retrieved2 = store.get(block2.cid()).await.unwrap().unwrap();
+        let retrieved1 = store
+            .get(block1.cid())
+            .await
+            .expect("get block1 should not error")
+            .expect("block1 should be present after put");
+        let retrieved2 = store
+            .get(block2.cid())
+            .await
+            .expect("get block2 should not error")
+            .expect("block2 should be present after put");
 
         assert_eq!(retrieved1.data(), block1.data());
         assert_eq!(retrieved2.data(), block2.data());
@@ -681,47 +705,53 @@ mod tests {
     #[tokio::test]
     async fn test_dedup_delete() {
         let config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-test-dedup-delete"),
+            path: std::env::temp_dir().join("ipfrs-test-dedup-delete"),
             cache_size: 1024 * 1024,
         };
 
         // Clean up
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let inner = SledBlockStore::new(config).unwrap();
+        let inner = SledBlockStore::new(config).expect("test: SledBlockStore::new should succeed");
         let store = DedupBlockStore::with_defaults(inner);
 
         // Store a block
         let data = bytes::Bytes::from(vec![3u8; 200 * 1024]);
-        let block = Block::new(data).unwrap();
+        let block = Block::new(data).expect("test: Block::new should succeed");
 
-        store.put(&block).await.unwrap();
+        store.put(&block).await.expect("test: put should succeed");
 
         let stats_before = store.stats();
         assert_eq!(stats_before.blocks_stored, 1);
 
         // Delete it
-        store.delete(block.cid()).await.unwrap();
+        store
+            .delete(block.cid())
+            .await
+            .expect("test: delete should succeed");
 
         let stats_after = store.stats();
         assert_eq!(stats_after.blocks_stored, 0);
 
         // Should not be retrievable
-        let retrieved = store.get(block.cid()).await.unwrap();
+        let retrieved = store
+            .get(block.cid())
+            .await
+            .expect("test: get after delete should succeed");
         assert!(retrieved.is_none());
     }
 
     #[tokio::test]
     async fn test_dedup_reference_counting() {
         let config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-test-dedup-refcount"),
+            path: std::env::temp_dir().join("ipfrs-test-dedup-refcount"),
             cache_size: 1024 * 1024,
         };
 
         // Clean up
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let inner = SledBlockStore::new(config).unwrap();
+        let inner = SledBlockStore::new(config).expect("test: SledBlockStore::new should succeed");
         let chunk_config = ChunkingConfig {
             min_chunk_size: 16 * 1024,
             target_chunk_size: 64 * 1024,
@@ -736,9 +766,12 @@ mod tests {
         let data2 = data1.clone(); // Same content
         let data3: Vec<u8> = (0..10240).map(|i| ((i + 100) % 256) as u8).collect(); // 10KB different
 
-        let block1 = Block::new(bytes::Bytes::from(data1)).unwrap();
-        let block2 = Block::new(bytes::Bytes::from(data2)).unwrap();
-        let block3 = Block::new(bytes::Bytes::from(data3)).unwrap();
+        let block1 = Block::new(bytes::Bytes::from(data1))
+            .expect("test: Block::new for data1 should succeed");
+        let block2 = Block::new(bytes::Bytes::from(data2))
+            .expect("test: Block::new for data2 should succeed");
+        let block3 = Block::new(bytes::Bytes::from(data3))
+            .expect("test: Block::new for data3 should succeed");
 
         // block1 and block2 have same content, so same CID
         assert_eq!(block1.cid(), block2.cid());
@@ -746,13 +779,19 @@ mod tests {
         assert_ne!(block1.cid(), block3.cid());
 
         // Store block1
-        store.put(&block1).await.unwrap();
+        store
+            .put(&block1)
+            .await
+            .expect("test: put block1 should succeed");
         let stats1 = store.stats();
         assert_eq!(stats1.unique_chunks, 1, "block1 should be 1 chunk");
         assert_eq!(stats1.blocks_stored, 1);
 
         // Store block2 (same CID as block1) - idempotent, no-op
-        store.put(&block2).await.unwrap();
+        store
+            .put(&block2)
+            .await
+            .expect("test: put block2 should succeed");
         let stats2 = store.stats();
         // Same CID means same data - put() is idempotent, no changes
         assert_eq!(
@@ -766,20 +805,34 @@ mod tests {
         );
 
         // Store block3 (different) - should create new chunk
-        store.put(&block3).await.unwrap();
+        store
+            .put(&block3)
+            .await
+            .expect("test: put block3 should succeed");
         let stats3 = store.stats();
         assert_eq!(stats3.unique_chunks, 2, "block3 adds a new unique chunk");
         assert_eq!(stats3.blocks_stored, 2, "Now have 2 different blocks");
 
         // Verify retrieval
-        let retrieved1 = store.get(block1.cid()).await.unwrap().unwrap();
+        let retrieved1 = store
+            .get(block1.cid())
+            .await
+            .expect("test: get block1 should succeed")
+            .expect("test: block1 should be present");
         assert_eq!(retrieved1.data(), block1.data());
 
-        let retrieved3 = store.get(block3.cid()).await.unwrap().unwrap();
+        let retrieved3 = store
+            .get(block3.cid())
+            .await
+            .expect("test: get block3 should succeed")
+            .expect("test: block3 should be present");
         assert_eq!(retrieved3.data(), block3.data());
 
         // Delete block1/block2 (same CID) - should free its chunk
-        store.delete(block1.cid()).await.unwrap();
+        store
+            .delete(block1.cid())
+            .await
+            .expect("test: delete block1 should succeed");
         let stats_after_delete = store.stats();
         assert_eq!(
             stats_after_delete.unique_chunks, 1,
@@ -788,7 +841,10 @@ mod tests {
         assert_eq!(stats_after_delete.blocks_stored, 1);
 
         // Delete block3 - should free remaining chunk
-        store.delete(block3.cid()).await.unwrap();
+        store
+            .delete(block3.cid())
+            .await
+            .expect("test: delete block3 should succeed");
 
         let stats_final = store.stats();
         assert_eq!(stats_final.unique_chunks, 0);

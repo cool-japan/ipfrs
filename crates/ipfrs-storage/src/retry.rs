@@ -300,10 +300,7 @@ mod tests {
                 async move {
                     let count = c.fetch_add(1, Ordering::SeqCst);
                     if count < 2 {
-                        Err(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "Transient failure",
-                        ))
+                        Err(std::io::Error::other("Transient failure"))
                     } else {
                         Ok("success")
                     }
@@ -321,12 +318,7 @@ mod tests {
         let policy = RetryPolicy::exponential(Duration::from_millis(10), 3);
 
         let result = policy
-            .retry(|| async {
-                Err::<&str, std::io::Error>(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Always fails",
-                ))
-            })
+            .retry(|| async { Err::<&str, std::io::Error>(std::io::Error::other("Always fails")) })
             .await;
 
         assert!(result.is_err());
@@ -402,7 +394,7 @@ mod tests {
         for _ in 0..10 {
             let delay = policy.calculate_delay(1);
             let ms = delay.as_millis();
-            assert!(ms >= 50 && ms <= 100);
+            assert!((50..=100).contains(&ms));
         }
     }
 
@@ -413,12 +405,7 @@ mod tests {
 
         let start = std::time::Instant::now();
         let result = policy
-            .retry(|| async {
-                Err::<&str, std::io::Error>(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Always fails",
-                ))
-            })
+            .retry(|| async { Err::<&str, std::io::Error>(std::io::Error::other("Always fails")) })
             .await;
 
         let elapsed = start.elapsed();

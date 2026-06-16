@@ -520,12 +520,18 @@ mod tests {
     #[test]
     fn test_record_usage() {
         let config = MemoryMonitorConfig::default();
-        let monitor = MemoryMonitor::new(config).unwrap();
+        let monitor = MemoryMonitor::new(config)
+            .expect("test: MemoryMonitor::new should succeed with default config");
 
         let result = monitor.record_usage("test", 1000);
         assert!(result.is_ok());
 
-        assert_eq!(monitor.get_usage("test").unwrap(), 1000);
+        assert_eq!(
+            monitor
+                .get_usage("test")
+                .expect("test: get_usage should return recorded value"),
+            1000
+        );
         assert_eq!(monitor.total_usage(), 1000);
     }
 
@@ -533,7 +539,8 @@ mod tests {
     fn test_budget_exceeded() {
         let mut config = MemoryMonitorConfig::default();
         config.component_budgets.insert("test".to_string(), 500);
-        let monitor = MemoryMonitor::new(config).unwrap();
+        let monitor = MemoryMonitor::new(config)
+            .expect("test: MemoryMonitor::new should succeed with component budget config");
 
         let result = monitor.record_usage("test", 1000);
         assert!(matches!(result, Err(MemoryMonitorError::BudgetExceeded(_))));
@@ -545,9 +552,12 @@ mod tests {
             total_budget: Some(1000),
             ..Default::default()
         };
-        let monitor = MemoryMonitor::new(config).unwrap();
+        let monitor = MemoryMonitor::new(config)
+            .expect("test: MemoryMonitor::new should succeed with total_budget config");
 
-        monitor.record_usage("test1", 500).unwrap();
+        monitor
+            .record_usage("test1", 500)
+            .expect("test: record_usage test1 500 should succeed within budget");
         let result = monitor.record_usage("test2", 600);
         assert!(matches!(result, Err(MemoryMonitorError::BudgetExceeded(_))));
     }
@@ -559,11 +569,14 @@ mod tests {
             cleanup_threshold: 0.8,
             ..Default::default()
         };
-        let monitor = MemoryMonitor::new(config).unwrap();
+        let monitor = MemoryMonitor::new(config)
+            .expect("test: MemoryMonitor::new should succeed with cleanup threshold config");
 
         assert!(!monitor.needs_cleanup());
 
-        monitor.record_usage("test", 850).unwrap();
+        monitor
+            .record_usage("test", 850)
+            .expect("test: record_usage test 850 should succeed (under budget)");
         assert!(monitor.needs_cleanup());
     }
 
@@ -582,10 +595,15 @@ mod tests {
     #[test]
     fn test_stats() {
         let config = MemoryMonitorConfig::default();
-        let monitor = MemoryMonitor::new(config).unwrap();
+        let monitor = MemoryMonitor::new(config)
+            .expect("test: MemoryMonitor::new should succeed with default config in test_stats");
 
-        monitor.record_usage("test1", 500).unwrap();
-        monitor.record_usage("test2", 300).unwrap();
+        monitor
+            .record_usage("test1", 500)
+            .expect("test: record_usage test1 500 should succeed in test_stats");
+        monitor
+            .record_usage("test2", 300)
+            .expect("test: record_usage test2 300 should succeed in test_stats");
 
         let stats = monitor.stats();
         assert_eq!(stats.total_usage, 800);
@@ -603,7 +621,8 @@ mod tests {
     #[test]
     fn test_component_names() {
         let config = MemoryMonitorConfig::low_memory();
-        let monitor = MemoryMonitor::new(config).unwrap();
+        let monitor = MemoryMonitor::new(config)
+            .expect("test: MemoryMonitor::new should succeed with low_memory config");
 
         let names = monitor.component_names();
         assert!(names.contains(&"peer_store".to_string()));
@@ -613,9 +632,13 @@ mod tests {
     #[test]
     fn test_reset_stats() {
         let config = MemoryMonitorConfig::default();
-        let monitor = MemoryMonitor::new(config).unwrap();
+        let monitor = MemoryMonitor::new(config).expect(
+            "test: MemoryMonitor::new should succeed with default config in test_reset_stats",
+        );
 
-        monitor.record_usage("test", 1000).unwrap();
+        monitor
+            .record_usage("test", 1000)
+            .expect("test: record_usage test 1000 should succeed in test_reset_stats");
         let stats1 = monitor.stats();
         assert_eq!(stats1.peak_usage, 1000);
 
@@ -627,7 +650,9 @@ mod tests {
     #[test]
     fn test_mark_cleanup() {
         let config = MemoryMonitorConfig::default();
-        let monitor = MemoryMonitor::new(config).unwrap();
+        let monitor = MemoryMonitor::new(config).expect(
+            "test: MemoryMonitor::new should succeed with default config in test_mark_cleanup",
+        );
 
         let stats1 = monitor.stats();
         assert_eq!(stats1.cleanup_count, 0);

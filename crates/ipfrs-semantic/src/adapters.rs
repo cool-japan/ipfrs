@@ -602,14 +602,19 @@ mod tests {
             dimension: 4,
             ..Default::default()
         };
-        let mut backend = IpfrsBackend::new(config).unwrap();
+        let mut backend = IpfrsBackend::new(config)
+            .expect("test: backend creation with valid config should succeed");
 
         let cid = Cid::default();
         let vector = vec![1.0, 2.0, 3.0, 4.0];
-        backend.insert(cid, &vector, None).unwrap();
+        backend
+            .insert(cid, &vector, None)
+            .expect("test: insert with valid vector should succeed");
 
         let query = vec![1.1, 2.1, 3.1, 4.1];
-        let results = backend.search(&query, 1, None).unwrap();
+        let results = backend
+            .search(&query, 1, None)
+            .expect("test: search should succeed");
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].cid, cid);
@@ -623,18 +628,23 @@ mod tests {
             dimension: 3,
             ..Default::default()
         };
-        let mut backend = IpfrsBackend::new(config).unwrap();
+        let mut backend = IpfrsBackend::new(config)
+            .expect("test: backend creation with valid config should succeed");
 
         let cid = Cid::default();
         let vector = vec![1.0, 2.0, 3.0];
         let mut metadata = Metadata::new();
         metadata.set("key", MetadataValue::String("value".to_string()));
 
-        backend.insert(cid, &vector, Some(metadata)).unwrap();
+        backend
+            .insert(cid, &vector, Some(metadata))
+            .expect("test: insert with metadata should succeed");
 
-        let retrieved = backend.get(&cid).unwrap();
+        let retrieved = backend
+            .get(&cid)
+            .expect("test: get after insert should return Some");
         assert!(retrieved.is_some());
-        let (_, meta) = retrieved.unwrap();
+        let (_, meta) = retrieved.expect("test: retrieved value should be Some after insert");
         assert!(meta.is_some());
     }
 
@@ -646,7 +656,8 @@ mod tests {
             dimension: 2,
             ..Default::default()
         };
-        let mut backend = IpfrsBackend::new(config).unwrap();
+        let mut backend = IpfrsBackend::new(config)
+            .expect("test: backend creation with valid config should succeed");
 
         // Create unique CIDs for each item
         let cid1 = Cid::new_v1(0x55, Code::Sha2_256.digest(b"test_batch_1"));
@@ -659,8 +670,10 @@ mod tests {
             (cid3, vec![5.0, 6.0], None),
         ];
 
-        backend.insert_batch(&items).unwrap();
-        assert_eq!(backend.count().unwrap(), 3);
+        backend
+            .insert_batch(&items)
+            .expect("test: batch insert should succeed");
+        assert_eq!(backend.count().expect("test: count should succeed"), 3);
     }
 
     #[test]
@@ -669,16 +682,19 @@ mod tests {
             dimension: 2,
             ..Default::default()
         };
-        let mut backend = IpfrsBackend::new(config).unwrap();
+        let mut backend = IpfrsBackend::new(config)
+            .expect("test: backend creation with valid config should succeed");
 
         let cid = Cid::default();
         let vector = vec![1.0, 2.0];
-        backend.insert(cid, &vector, None).unwrap();
+        backend
+            .insert(cid, &vector, None)
+            .expect("test: insert with valid vector should succeed");
 
-        assert_eq!(backend.count().unwrap(), 1);
+        assert_eq!(backend.count().expect("test: count should succeed"), 1);
 
-        backend.delete(&cid).unwrap();
-        assert_eq!(backend.count().unwrap(), 0);
+        backend.delete(&cid).expect("test: delete should succeed");
+        assert_eq!(backend.count().expect("test: count should succeed"), 0);
     }
 
     #[test]
@@ -687,16 +703,24 @@ mod tests {
             dimension: 2,
             ..Default::default()
         };
-        let mut backend = IpfrsBackend::new(config).unwrap();
+        let mut backend = IpfrsBackend::new(config)
+            .expect("test: backend creation with valid config should succeed");
 
         let cid = Cid::default();
         let vector1 = vec![1.0, 2.0];
-        backend.insert(cid, &vector1, None).unwrap();
+        backend
+            .insert(cid, &vector1, None)
+            .expect("test: insert with valid vector should succeed");
 
         let vector2 = vec![3.0, 4.0];
-        backend.update(&cid, &vector2, None).unwrap();
+        backend
+            .update(&cid, &vector2, None)
+            .expect("test: update should succeed");
 
-        let retrieved = backend.get(&cid).unwrap().unwrap();
+        let retrieved = backend
+            .get(&cid)
+            .expect("test: get after update should return Some")
+            .expect("test: retrieved option should be Some");
         assert_eq!(retrieved.0, vector2);
     }
 
@@ -708,19 +732,24 @@ mod tests {
             dimension: 2,
             ..Default::default()
         };
-        let mut backend = IpfrsBackend::new(config).unwrap();
+        let mut backend = IpfrsBackend::new(config)
+            .expect("test: backend creation with valid config should succeed");
 
         // Create unique CIDs for each item
         let cid1 = Cid::new_v1(0x55, Code::Sha2_256.digest(b"test_clear_1"));
         let cid2 = Cid::new_v1(0x55, Code::Sha2_256.digest(b"test_clear_2"));
 
-        backend.insert(cid1, &[1.0, 2.0], None).unwrap();
-        backend.insert(cid2, &[3.0, 4.0], None).unwrap();
+        backend
+            .insert(cid1, &[1.0, 2.0], None)
+            .expect("test: first insert should succeed");
+        backend
+            .insert(cid2, &[3.0, 4.0], None)
+            .expect("test: second insert should succeed");
 
-        assert_eq!(backend.count().unwrap(), 2);
+        assert_eq!(backend.count().expect("test: count should succeed"), 2);
 
-        backend.clear().unwrap();
-        assert_eq!(backend.count().unwrap(), 0);
+        backend.clear().expect("test: clear should succeed");
+        assert_eq!(backend.count().expect("test: count should succeed"), 0);
     }
 
     #[test]
@@ -729,10 +758,15 @@ mod tests {
             dimension: 2,
             ..Default::default()
         };
-        let mut backend = IpfrsBackend::new(config).unwrap();
+        let mut backend = IpfrsBackend::new(config)
+            .expect("test: backend creation with valid config should succeed");
 
-        backend.insert(Cid::default(), &[1.0, 2.0], None).unwrap();
-        backend.search(&[1.0, 2.0], 1, None).unwrap();
+        backend
+            .insert(Cid::default(), &[1.0, 2.0], None)
+            .expect("test: insert should succeed");
+        backend
+            .search(&[1.0, 2.0], 1, None)
+            .expect("test: search should succeed");
 
         let stats = backend.stats();
         assert_eq!(stats.insertions, 1);
@@ -747,7 +781,7 @@ mod tests {
             dimension: 2,
             ..Default::default()
         };
-        let backend = IpfrsBackend::new(config).unwrap();
+        let backend = IpfrsBackend::new(config).expect("test: backend creation should succeed");
 
         registry.register("test".to_string(), Box::new(backend));
 
@@ -769,20 +803,31 @@ mod tests {
             dimension: 3,
             ..Default::default()
         };
-        let mut backend = IpfrsBackend::new(config.clone()).unwrap();
+        let mut backend =
+            IpfrsBackend::new(config.clone()).expect("test: backend creation should succeed");
 
         let cid = Cid::default();
         let vector = vec![1.0, 2.0, 3.0];
-        backend.insert(cid, &vector, None).unwrap();
+        backend
+            .insert(cid, &vector, None)
+            .expect("test: insert should succeed");
 
         // Export
-        let json = BackendMigration::export_to_json(&backend, &[cid]).unwrap();
+        let json = BackendMigration::export_to_json(&backend, &[cid])
+            .expect("test: export to JSON should succeed");
         assert!(!json.is_empty());
 
         // Import to new backend
-        let mut backend2 = IpfrsBackend::new(config).unwrap();
-        let count = BackendMigration::import_from_json(&mut backend2, &json).unwrap();
+        let mut backend2 =
+            IpfrsBackend::new(config).expect("test: second backend creation should succeed");
+        let count = BackendMigration::import_from_json(&mut backend2, &json)
+            .expect("test: import from JSON should succeed");
         assert_eq!(count, 1);
-        assert_eq!(backend2.count().unwrap(), 1);
+        assert_eq!(
+            backend2
+                .count()
+                .expect("test: count after import should succeed"),
+            1
+        );
     }
 }

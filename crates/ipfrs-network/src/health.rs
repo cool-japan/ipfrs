@@ -141,7 +141,7 @@ impl HealthChecker {
             components,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .expect("system time is after UNIX epoch")
                 .as_secs(),
             uptime_secs: metrics.uptime().as_secs(),
         };
@@ -415,7 +415,9 @@ mod tests {
         let metrics = NetworkMetrics::new();
 
         let health1 = checker.check_health(&metrics, None);
-        let last = checker.last_health().unwrap();
+        let last = checker
+            .last_health()
+            .expect("test: last health should be stored after check");
 
         assert_eq!(health1.timestamp, last.timestamp);
         assert_eq!(health1.score, last.score);

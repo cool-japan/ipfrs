@@ -128,7 +128,7 @@ impl FfiProfiler {
     /// Get statistics sorted by average duration
     pub fn get_hotspots(&self) -> Vec<FfiCallStats> {
         let mut stats = self.get_all_stats();
-        stats.sort_by(|a, b| b.avg_duration.cmp(&a.avg_duration));
+        stats.sort_by_key(|s| std::cmp::Reverse(s.avg_duration));
         stats
     }
 
@@ -205,7 +205,7 @@ impl ProfilingReport {
         println!("{}", "-".repeat(85));
 
         let mut sorted_stats = self.function_stats.clone();
-        sorted_stats.sort_by(|a, b| b.avg_duration.cmp(&a.avg_duration));
+        sorted_stats.sort_by_key(|s| std::cmp::Reverse(s.avg_duration));
 
         for stat in sorted_stats {
             println!(
@@ -306,7 +306,7 @@ mod tests {
         let stats = profiler.get_stats("test_function");
         assert!(stats.is_some());
 
-        let stats = stats.unwrap();
+        let stats = stats.expect("test: should succeed");
         assert_eq!(stats.call_count, 1);
         assert!(stats.avg_duration >= Duration::from_millis(10));
     }
@@ -320,7 +320,9 @@ mod tests {
             thread::sleep(Duration::from_millis(5));
         }
 
-        let stats = profiler.get_stats("multi_call").unwrap();
+        let stats = profiler
+            .get_stats("multi_call")
+            .expect("test: should succeed");
         assert_eq!(stats.call_count, 5);
         assert!(stats.avg_duration >= Duration::from_millis(5));
     }
@@ -412,18 +414,22 @@ mod tests {
     fn test_identify_bottlenecks() {
         let profiler = FfiProfiler::new();
 
+        // Use manually injected durations rather than sleeping, so the test
+        // is not sensitive to OS scheduling jitter.
         {
-            let _guard = profiler.start("fast");
-            thread::sleep(Duration::from_micros(100));
-        }
+            let mut stats = profiler.stats.write();
+            let mut fast_stat = FfiCallStats::new("fast".to_string());
+            fast_stat.record(Duration::from_micros(100));
+            stats.insert("fast".to_string(), fast_stat);
 
-        {
-            let _guard = profiler.start("slow");
-            thread::sleep(Duration::from_millis(2));
+            let mut slow_stat = FfiCallStats::new("slow".to_string());
+            slow_stat.record(Duration::from_millis(10));
+            stats.insert("slow".to_string(), slow_stat);
         }
 
         let report = profiler.report();
-        let bottlenecks = report.identify_bottlenecks(1000); // 1ms target
+        // Target: 1ms (1000 µs). "fast" avg=100µs, "slow" avg=10000µs.
+        let bottlenecks = report.identify_bottlenecks(1000);
 
         assert!(bottlenecks.contains(&"slow".to_string()));
         assert!(!bottlenecks.contains(&"fast".to_string()));

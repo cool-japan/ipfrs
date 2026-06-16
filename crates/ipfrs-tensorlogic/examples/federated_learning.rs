@@ -6,7 +6,7 @@
 //! - Differential privacy with noise addition
 
 use ipfrs_tensorlogic::{GradientAggregator, GradientCompressor, GradientVerifier};
-use rand::Rng;
+use rand::RngExt;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Federated Learning Example ===\n");

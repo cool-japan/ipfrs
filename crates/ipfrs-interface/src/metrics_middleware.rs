@@ -135,14 +135,21 @@ mod tests {
             .route("/test", get(test_handler))
             .layer(axum::middleware::from_fn(metrics_middleware_streaming));
 
-        let request = Request::builder().uri("/test").body(Body::empty()).unwrap();
+        let request = Request::builder()
+            .uri("/test")
+            .body(Body::empty())
+            .expect("test: request construction should succeed");
 
-        let response = app.oneshot(request).await.unwrap();
+        let response = app
+            .oneshot(request)
+            .await
+            .expect("test: handler should respond without error");
 
         assert_eq!(response.status(), StatusCode::OK);
 
         // Verify metrics were recorded
-        let metrics = crate::metrics::encode_metrics().unwrap();
+        let metrics =
+            crate::metrics::encode_metrics().expect("test: metrics encoding should succeed");
         assert!(metrics.contains("ipfrs_http_requests_total"));
         assert!(metrics.contains("ipfrs_http_request_duration_seconds"));
     }

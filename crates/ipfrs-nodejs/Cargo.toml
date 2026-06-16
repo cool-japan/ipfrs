@@ -1,39 +1,50 @@
 [package]
 name = "ipfrs-nodejs"
-version = "0.1.0"
-edition = "2021"
-authors = ["IPFRS Contributors"]
+version.workspace = true
+edition.workspace = true
+authors = ["COOLJAPAN OU (Team Kitasan)"]
 description = "Node.js bindings for IPFRS distributed content-addressed storage system"
 keywords = ["ipfs", "nodejs", "napi", "bindings", "distributed"]
 categories = ["api-bindings"]
 documentation = "https://docs.rs/ipfrs-nodejs"
-homepage = "https://github.com/cool-japan/ipfrs"
-repository = "https://github.com/cool-japan/ipfrs"
-license = "MIT OR Apache-2.0"
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # IPFRS core dependencies
-ipfrs = { path = "../ipfrs", version = "0.1.0" }
-ipfrs-core = { path = "../ipfrs-core", version = "0.1.0" }
-ipfrs-semantic = { path = "../ipfrs-semantic", version = "0.1.0" }
-ipfrs-tensorlogic = { path = "../ipfrs-tensorlogic", version = "0.1.0" }
+ipfrs.workspace = true
+ipfrs-core.workspace = true
+ipfrs-semantic.workspace = true
+ipfrs-tensorlogic.workspace = true
 
 # NAPI-RS for Node.js bindings
-napi = { version = "2.16", features = ["async", "napi8"] }
-napi-derive = "2.16"
+napi.workspace = true
+napi-derive.workspace = true
 
 # Async runtime
-tokio = { version = "1.40", features = ["rt-multi-thread"] }
+tokio.workspace = true
 
 # Synchronization
-parking_lot = "0.12"
+parking_lot.workspace = true
 
 # Serialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde.workspace = true
+serde_json.workspace = true
+
+# Hash for CID computation
+sha2.workspace = true
+
+# Byte buffer
+bytes.workspace = true
 
 [build-dependencies]
-napi-build = "2.1"
+napi-build.workspace = true
+
+[features]
+default = []
+# Enable NAPI-RS bindings (set automatically by napi-build when building a .node addon)
+napi = []

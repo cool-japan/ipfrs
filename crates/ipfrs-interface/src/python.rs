@@ -179,9 +179,9 @@ impl PyClient {
     ///
     /// Example:
     ///     >>> print(client.version())
-    ///     ipfrs-interface 0.1.0
+    ///     ipfrs-interface 0.2.0
     fn version(&self) -> String {
-        "ipfrs-interface 0.1.0".to_string()
+        "ipfrs-interface 0.2.0".to_string()
     }
 
     /// Python context manager support: __enter__
@@ -247,7 +247,7 @@ fn ipfrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyBlockInfo>()?;
 
     // Add module-level constants
-    m.add("__version__", "0.1.0")?;
+    m.add("__version__", "0.2.0")?;
     m.add("__author__", "IPFRS Team")?;
 
     Ok(())
@@ -260,33 +260,39 @@ mod tests {
     #[test]
     fn test_client_creation() {
         Python::attach(|_py| {
-            let client = PyClient::new(None).unwrap();
-            assert_eq!(client.version(), "ipfrs-interface 0.1.0");
+            let client = PyClient::new(None).expect("test: client creation should succeed");
+            assert_eq!(client.version(), "ipfrs-interface 0.2.0");
         });
     }
 
     #[test]
     fn test_add_and_get() {
         Python::attach(|py| {
-            let client = PyClient::new(None).unwrap();
+            let client = PyClient::new(None).expect("test: client creation should succeed");
 
             // Add data
             let data = b"Hello, IPFRS!";
-            let cid = client.add(data).unwrap();
+            let cid = client
+                .add(data)
+                .expect("test: add data should return a CID");
             assert!(cid.starts_with("bafkreidummy"));
 
             // Get data back
-            let retrieved = client.get(py, &cid).unwrap();
+            let retrieved = client
+                .get(py, &cid)
+                .expect("test: get by CID should return data");
             let bytes = retrieved.as_bytes();
-            assert!(bytes.len() > 0);
+            assert!(!bytes.is_empty());
         });
     }
 
     #[test]
     fn test_has() {
         Python::attach(|_py| {
-            let client = PyClient::new(None).unwrap();
-            let exists = client.has("bafkreitest123").unwrap();
+            let client = PyClient::new(None).expect("test: client creation should succeed");
+            let exists = client
+                .has("bafkreitest123")
+                .expect("test: has should return a boolean presence check");
             assert!(exists);
         });
     }
@@ -294,7 +300,7 @@ mod tests {
     #[test]
     fn test_empty_data() {
         Python::attach(|_py| {
-            let client = PyClient::new(None).unwrap();
+            let client = PyClient::new(None).expect("test: client creation should succeed");
             let result = client.add(&[]);
             assert!(result.is_err());
         });
@@ -303,7 +309,7 @@ mod tests {
     #[test]
     fn test_empty_cid() {
         Python::attach(|py| {
-            let client = PyClient::new(None).unwrap();
+            let client = PyClient::new(None).expect("test: client creation should succeed");
 
             let result = client.get(py, "");
             assert!(result.is_err());

@@ -599,7 +599,8 @@ mod tests {
             vec![3.0, 4.0, 5.0],
         ];
 
-        let avg = average_embedding(&embeddings).unwrap();
+        let avg = average_embedding(&embeddings)
+            .expect("test: non-empty uniform-dim embeddings should average successfully");
         assert_eq!(avg, vec![2.0, 3.0, 4.0]);
     }
 
@@ -632,7 +633,8 @@ mod tests {
 
     #[test]
     fn test_health_check() {
-        let index = VectorIndex::with_defaults(128).unwrap();
+        let index = VectorIndex::with_defaults(128)
+            .expect("test: VectorIndex::with_defaults should succeed");
         let health = health_check(&index);
 
         // Empty index may not be healthy depending on implementation
@@ -644,7 +646,8 @@ mod tests {
     fn test_batch_delete() {
         use multihash_codetable::{Code, MultihashDigest};
 
-        let mut index = VectorIndex::with_defaults(768).unwrap();
+        let mut index = VectorIndex::with_defaults(768)
+            .expect("test: VectorIndex::with_defaults should succeed");
 
         // Insert some test vectors
         let mut cids = Vec::new();
@@ -652,13 +655,16 @@ mod tests {
             let data = format!("test_vector_{}", i);
             let hash = Code::Sha2_256.digest(data.as_bytes());
             let cid = Cid::new_v1(0x55, hash);
-            index.insert(&cid, &vec![i as f32 * 0.1; 768]).unwrap();
+            index
+                .insert(&cid, &vec![i as f32 * 0.1; 768])
+                .expect("test: inserting valid vector into index should succeed");
             cids.push(cid);
         }
 
         // Delete first 3 CIDs
         let to_delete = &cids[0..3];
-        let result = batch_delete(&mut index, to_delete).unwrap();
+        let result = batch_delete(&mut index, to_delete)
+            .expect("test: batch_delete should succeed for existing CIDs");
 
         assert_eq!(result.deleted, 3);
         assert_eq!(result.not_found, 0);
@@ -670,14 +676,16 @@ mod tests {
     fn test_batch_delete_not_found() {
         use multihash_codetable::{Code, MultihashDigest};
 
-        let mut index = VectorIndex::with_defaults(768).unwrap();
+        let mut index = VectorIndex::with_defaults(768)
+            .expect("test: VectorIndex::with_defaults should succeed");
 
         // Create a CID that's not in the index
         let data = "nonexistent";
         let hash = Code::Sha2_256.digest(data.as_bytes());
         let cid = Cid::new_v1(0x55, hash);
 
-        let result = batch_delete(&mut index, &[cid]).unwrap();
+        let result = batch_delete(&mut index, &[cid])
+            .expect("test: batch_delete should succeed even when CID not found");
 
         assert_eq!(result.deleted, 0);
         assert_eq!(result.not_found, 1);
@@ -689,19 +697,24 @@ mod tests {
         // Test identical vectors
         let vec1 = vec![1.0, 2.0, 3.0];
         let vec2 = vec![1.0, 2.0, 3.0];
-        let sim = cosine_similarity(&vec1, &vec2).unwrap();
+        let sim = cosine_similarity(&vec1, &vec2)
+            .expect("test: cosine_similarity of same-dimension vectors should return Some");
         assert!((sim - 1.0).abs() < 1e-6);
 
         // Test orthogonal vectors
         let vec3 = vec![1.0, 0.0, 0.0];
         let vec4 = vec![0.0, 1.0, 0.0];
-        let sim2 = cosine_similarity(&vec3, &vec4).unwrap();
+        let sim2 = cosine_similarity(&vec3, &vec4).expect(
+            "test: cosine_similarity of same-dimension orthogonal vectors should return Some",
+        );
         assert!(sim2.abs() < 1e-6); // Should be ~0
 
         // Test parallel vectors (same direction, different magnitude)
         let vec5 = vec![1.0, 2.0, 3.0];
         let vec6 = vec![2.0, 4.0, 6.0];
-        let sim3 = cosine_similarity(&vec5, &vec6).unwrap();
+        let sim3 = cosine_similarity(&vec5, &vec6).expect(
+            "test: cosine_similarity of same-dimension parallel vectors should return Some",
+        );
         assert!((sim3 - 1.0).abs() < 1e-6);
     }
 
@@ -740,13 +753,16 @@ mod tests {
     fn test_export_index_stats() {
         use multihash_codetable::{Code, MultihashDigest};
 
-        let mut index = VectorIndex::with_defaults(768).unwrap();
+        let mut index = VectorIndex::with_defaults(768)
+            .expect("test: VectorIndex::with_defaults should succeed");
 
         // Add a vector
         let data = "test_vector";
         let hash = Code::Sha2_256.digest(data.as_bytes());
         let cid = Cid::new_v1(0x55, hash);
-        index.insert(&cid, &vec![0.5; 768]).unwrap();
+        index
+            .insert(&cid, &vec![0.5; 768])
+            .expect("test: inserting valid vector into index should succeed");
 
         let stats = export_index_stats(&index);
 

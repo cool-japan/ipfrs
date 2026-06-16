@@ -127,7 +127,7 @@ where
         }
     }
 
-    Err(last_error.unwrap())
+    Err(last_error.expect("loop ran at least max_attempts times so last_error is set"))
 }
 
 /// Circuit breaker state
@@ -381,7 +381,7 @@ mod tests {
         .await;
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "Success");
+        assert_eq!(result.expect("test: retry should succeed"), "Success");
         assert_eq!(attempts.load(Ordering::Relaxed), 2);
     }
 
@@ -482,7 +482,10 @@ mod tests {
         let result = breaker.call(|| async { Ok::<_, String>("Success") }).await;
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "Success");
+        assert_eq!(
+            result.expect("test: circuit breaker call should succeed"),
+            "Success"
+        );
     }
 
     #[tokio::test]

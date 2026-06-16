@@ -179,7 +179,9 @@ impl Default for StunConfig {
     fn default() -> Self {
         Self {
             // Use Google Public STUN server IP (resolves to stun.l.google.com)
-            server: "74.125.250.129:19302".parse().unwrap(),
+            server: "74.125.250.129:19302"
+                .parse()
+                .expect("static socket addr literal must parse"),
             timeout: Duration::from_secs(3),
             retries: 3,
         }
@@ -325,8 +327,11 @@ impl NatTraversalManager {
                         NatType::PortRestrictedCone
                     };
 
-                    *self.nat_type.write().unwrap() = nat_type;
-                    self.stats.write().unwrap().nat_type = nat_type;
+                    *self.nat_type.write().unwrap_or_else(|e| e.into_inner()) = nat_type;
+                    self.stats
+                        .write()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .nat_type = nat_type;
 
                     return Ok(nat_type);
                 }
@@ -350,14 +355,20 @@ impl NatTraversalManager {
         // Simplified STUN implementation
         // In production, implement RFC 5389 STUN protocol
 
-        self.stats.write().unwrap().stun_requests += 1;
+        self.stats
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .stun_requests += 1;
 
         // Create UDP socket
         let _socket = UdpSocket::bind("0.0.0.0:0").await?;
 
         // In real implementation: send STUN binding request
         // For now, return a dummy address
-        self.stats.write().unwrap().stun_responses += 1;
+        self.stats
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .stun_responses += 1;
 
         Ok(config.server)
     }
@@ -389,7 +400,10 @@ impl NatTraversalManager {
         }
 
         // Store local candidates
-        *self.local_candidates.write().unwrap() = candidates.clone();
+        *self
+            .local_candidates
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = candidates.clone();
 
         // Emit events
         for candidate in &candidates {
@@ -461,7 +475,10 @@ impl NatTraversalManager {
             // In production, implement TURN allocation (RFC 5766)
             // For now, add placeholder
 
-            self.stats.write().unwrap().turn_allocations += 1;
+            self.stats
+                .write()
+                .unwrap_or_else(|e| e.into_inner())
+                .turn_allocations += 1;
 
             candidates.push(IceCandidate {
                 candidate_type: CandidateType::Relay,
@@ -481,13 +498,22 @@ impl NatTraversalManager {
 
     /// Add remote ICE candidate
     pub fn add_remote_candidate(&self, candidate: IceCandidate) {
-        self.remote_candidates.write().unwrap().push(candidate);
+        self.remote_candidates
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(candidate);
     }
 
     /// Form candidate pairs
     pub fn form_candidate_pairs(&self) {
-        let local_candidates = self.local_candidates.read().unwrap();
-        let remote_candidates = self.remote_candidates.read().unwrap();
+        let local_candidates = self
+            .local_candidates
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
+        let remote_candidates = self
+            .remote_candidates
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
         let mut pairs = Vec::new();
 
         for local in local_candidates.iter() {
@@ -509,12 +535,15 @@ impl NatTraversalManager {
         }
 
         // Sort by priority (highest first)
-        pairs.sort_by(|a, b| b.priority.cmp(&a.priority));
+        pairs.sort_by_key(|p| std::cmp::Reverse(p.priority));
 
         // Limit number of pairs
         pairs.truncate(self.config.max_candidate_pairs);
 
-        *self.candidate_pairs.write().unwrap() = pairs;
+        *self
+            .candidate_pairs
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = pairs;
     }
 
     /// Perform connectivity checks
@@ -523,13 +552,19 @@ impl NatTraversalManager {
 
         loop {
             if start.elapsed() > self.config.hole_punch_timeout {
-                self.stats.write().unwrap().hole_punch_failures += 1;
+                self.stats
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .hole_punch_failures += 1;
                 return Err(NatTraversalError::HolePunchTimeout);
             }
 
             // Get next pair to check
             let pair = {
-                let mut pairs = self.candidate_pairs.write().unwrap();
+                let mut pairs = self
+                    .candidate_pairs
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner());
                 pairs
                     .iter_mut()
                     .find(|p| p.state == PairState::Waiting)
@@ -551,7 +586,10 @@ impl NatTraversalManager {
                     Ok(true) => {
                         // Update pair state
                         {
-                            let mut pairs = self.candidate_pairs.write().unwrap();
+                            let mut pairs = self
+                                .candidate_pairs
+                                .write()
+                                .unwrap_or_else(|e| e.into_inner());
                             if let Some(p) = pairs.iter_mut().find(|p| {
                                 p.local.addr == pair.local.addr && p.remote.addr == pair.remote.addr
                             }) {
@@ -569,7 +607,7 @@ impl NatTraversalManager {
                             .send(ConnectivityEvent::Connected(pair.remote.addr));
 
                         let duration_ms = start.elapsed().as_millis() as u64;
-                        let mut stats = self.stats.write().unwrap();
+                        let mut stats = self.stats.write().unwrap_or_else(|e| e.into_inner());
                         stats.hole_punch_success += 1;
                         stats.avg_hole_punch_time_ms = duration_ms;
 
@@ -578,7 +616,10 @@ impl NatTraversalManager {
                     Ok(false) => {
                         // Update pair state
                         {
-                            let mut pairs = self.candidate_pairs.write().unwrap();
+                            let mut pairs = self
+                                .candidate_pairs
+                                .write()
+                                .unwrap_or_else(|e| e.into_inner());
                             if let Some(p) = pairs.iter_mut().find(|p| {
                                 p.local.addr == pair.local.addr && p.remote.addr == pair.remote.addr
                             }) {
@@ -593,7 +634,10 @@ impl NatTraversalManager {
                     }
                     Err(_) => {
                         // Mark as failed and continue
-                        let mut pairs = self.candidate_pairs.write().unwrap();
+                        let mut pairs = self
+                            .candidate_pairs
+                            .write()
+                            .unwrap_or_else(|e| e.into_inner());
                         if let Some(p) = pairs.iter_mut().find(|p| {
                             p.local.addr == pair.local.addr && p.remote.addr == pair.remote.addr
                         }) {
@@ -627,7 +671,7 @@ impl NatTraversalManager {
         &self,
         remote_addr: SocketAddr,
     ) -> Result<UdpSocket, NatTraversalError> {
-        let nat_type = *self.nat_type.read().unwrap();
+        let nat_type = *self.nat_type.read().unwrap_or_else(|e| e.into_inner());
 
         if !nat_type.can_hole_punch() {
             return Err(NatTraversalError::NoViablePath);
@@ -647,13 +691,13 @@ impl NatTraversalManager {
 
     /// Get statistics
     pub fn stats(&self) -> NatTraversalStats {
-        self.stats.read().unwrap().clone()
+        self.stats.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Get next connectivity event
     #[allow(clippy::await_holding_lock)]
     pub async fn next_event(&self) -> Option<ConnectivityEvent> {
-        let mut rx = self.event_rx.write().unwrap();
+        let mut rx = self.event_rx.write().unwrap_or_else(|e| e.into_inner());
         rx.recv().await
     }
 }
@@ -750,7 +794,7 @@ mod tests {
 
         let candidate = IceCandidate {
             candidate_type: CandidateType::Host,
-            addr: "127.0.0.1:8080".parse().unwrap(),
+            addr: "127.0.0.1:8080".parse().expect("test: valid socket addr"),
             priority: 1000,
             foundation: "test".to_string(),
             component_id: 1,
@@ -758,7 +802,10 @@ mod tests {
 
         manager.add_remote_candidate(candidate.clone());
 
-        let remote_candidates = manager.remote_candidates.read().unwrap();
+        let remote_candidates = manager
+            .remote_candidates
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
         assert_eq!(remote_candidates.len(), 1);
         assert_eq!(remote_candidates[0].addr, candidate.addr);
     }
@@ -774,24 +821,34 @@ mod tests {
         // Add local candidate
         let local = IceCandidate {
             candidate_type: CandidateType::Host,
-            addr: "192.168.1.100:5000".parse().unwrap(),
+            addr: "192.168.1.100:5000"
+                .parse()
+                .expect("test: valid socket addr"),
             priority: 1000,
             foundation: "local".to_string(),
             component_id: 1,
         };
-        manager.local_candidates.write().unwrap().push(local);
+        manager
+            .local_candidates
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(local);
 
         // Add remote candidates
         let remote1 = IceCandidate {
             candidate_type: CandidateType::Host,
-            addr: "192.168.1.101:5001".parse().unwrap(),
+            addr: "192.168.1.101:5001"
+                .parse()
+                .expect("test: valid socket addr"),
             priority: 900,
             foundation: "remote1".to_string(),
             component_id: 1,
         };
         let remote2 = IceCandidate {
             candidate_type: CandidateType::ServerReflexive,
-            addr: "203.0.113.10:5002".parse().unwrap(),
+            addr: "203.0.113.10:5002"
+                .parse()
+                .expect("test: valid socket addr"),
             priority: 800,
             foundation: "remote2".to_string(),
             component_id: 1,
@@ -801,7 +858,10 @@ mod tests {
 
         manager.form_candidate_pairs();
 
-        let pairs = manager.candidate_pairs.read().unwrap();
+        let pairs = manager
+            .candidate_pairs
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
         assert_eq!(pairs.len(), 2); // 1 local * 2 remote = 2 pairs
 
         // Verify pairs are sorted by priority (highest first)
@@ -822,7 +882,7 @@ mod tests {
         let candidates = manager.gather_candidates().await;
         assert!(candidates.is_ok());
 
-        let candidates = candidates.unwrap();
+        let candidates = candidates.expect("test: candidates should be present");
         assert!(!candidates.is_empty()); // Should have at least host candidates
     }
 
@@ -852,7 +912,11 @@ mod tests {
         assert_eq!(stats1.hole_punch_success, 0);
 
         // Simulate STUN request
-        manager.stats.write().unwrap().stun_requests = 1;
+        manager
+            .stats
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .stun_requests = 1;
 
         let stats2 = manager.stats();
         assert_eq!(stats2.stun_requests, 1);
@@ -864,13 +928,19 @@ mod tests {
         let manager = NatTraversalManager::new(config);
 
         // Private addresses
-        assert!(!manager.is_public_address(&"192.168.1.1:80".parse().unwrap()));
-        assert!(!manager.is_public_address(&"10.0.0.1:80".parse().unwrap()));
-        assert!(!manager.is_public_address(&"127.0.0.1:80".parse().unwrap()));
+        assert!(
+            !manager.is_public_address(&"192.168.1.1:80".parse().expect("test: valid socket addr"))
+        );
+        assert!(
+            !manager.is_public_address(&"10.0.0.1:80".parse().expect("test: valid socket addr"))
+        );
+        assert!(
+            !manager.is_public_address(&"127.0.0.1:80".parse().expect("test: valid socket addr"))
+        );
 
         // Public address
-        assert!(manager.is_public_address(&"8.8.8.8:80".parse().unwrap()));
-        assert!(manager.is_public_address(&"1.1.1.1:80".parse().unwrap()));
+        assert!(manager.is_public_address(&"8.8.8.8:80".parse().expect("test: valid socket addr")));
+        assert!(manager.is_public_address(&"1.1.1.1:80".parse().expect("test: valid socket addr")));
     }
 
     #[test]
@@ -888,7 +958,7 @@ mod tests {
         let handle = tokio::spawn(async move {
             let candidate = IceCandidate {
                 candidate_type: CandidateType::Host,
-                addr: "127.0.0.1:9000".parse().unwrap(),
+                addr: "127.0.0.1:9000".parse().expect("test: valid socket addr"),
                 priority: 1000,
                 foundation: "test".to_string(),
                 component_id: 1,
@@ -926,16 +996,24 @@ mod tests {
         for i in 0..5 {
             let local = IceCandidate {
                 candidate_type: CandidateType::Host,
-                addr: format!("192.168.1.{}:5000", i + 100).parse().unwrap(),
+                addr: format!("192.168.1.{}:5000", i + 100)
+                    .parse()
+                    .expect("test: valid socket addr"),
                 priority: 1000 + i as u32,
                 foundation: format!("local{}", i),
                 component_id: 1,
             };
-            manager.local_candidates.write().unwrap().push(local);
+            manager
+                .local_candidates
+                .write()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(local);
 
             let remote = IceCandidate {
                 candidate_type: CandidateType::Host,
-                addr: format!("192.168.1.{}:5001", i + 200).parse().unwrap(),
+                addr: format!("192.168.1.{}:5001", i + 200)
+                    .parse()
+                    .expect("test: valid socket addr"),
                 priority: 900 + i as u32,
                 foundation: format!("remote{}", i),
                 component_id: 1,
@@ -945,7 +1023,10 @@ mod tests {
 
         manager.form_candidate_pairs();
 
-        let pairs = manager.candidate_pairs.read().unwrap();
+        let pairs = manager
+            .candidate_pairs
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
         assert_eq!(pairs.len(), 2); // Limited to max_candidate_pairs
     }
 }

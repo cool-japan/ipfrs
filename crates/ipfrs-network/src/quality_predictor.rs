@@ -555,14 +555,17 @@ mod tests {
     #[test]
     fn test_record_metrics() {
         let config = QualityPredictorConfig::default();
-        let predictor = QualityPredictor::new(config).unwrap();
+        let predictor = QualityPredictor::new(config)
+            .expect("test: QualityPredictor::new should succeed with default config");
         let peer = PeerId::random();
 
         predictor.record_latency(peer, 50);
         predictor.record_bandwidth(peer, 1_000_000);
         predictor.record_success(peer);
 
-        let prediction = predictor.predict_quality(&peer).unwrap();
+        let prediction = predictor
+            .predict_quality(&peer)
+            .expect("test: predict_quality should return Some after recording metrics");
         assert!(prediction.avg_latency_ms.is_some());
         assert!(prediction.avg_bandwidth_bps.is_some());
         assert!(prediction.overall_score > 0.0);
@@ -570,7 +573,8 @@ mod tests {
 
     #[test]
     fn test_latency_score() {
-        let predictor = QualityPredictor::new(QualityPredictorConfig::default()).unwrap();
+        let predictor = QualityPredictor::new(QualityPredictorConfig::default())
+            .expect("test: QualityPredictor::new should succeed with default config");
 
         assert_eq!(predictor.calculate_latency_score(Some(0.0)), 1.0);
         assert!(predictor.calculate_latency_score(Some(100.0)) > 0.7);
@@ -580,7 +584,8 @@ mod tests {
 
     #[test]
     fn test_bandwidth_score() {
-        let predictor = QualityPredictor::new(QualityPredictorConfig::default()).unwrap();
+        let predictor = QualityPredictor::new(QualityPredictorConfig::default())
+            .expect("test: QualityPredictor::new should succeed with default config");
 
         assert_eq!(predictor.calculate_bandwidth_score(Some(0.0)), 0.0);
         assert!(predictor.calculate_bandwidth_score(Some(1_000_000.0)) > 0.0);
@@ -594,21 +599,25 @@ mod tests {
     #[test]
     fn test_reliability_tracking() {
         let config = QualityPredictorConfig::default();
-        let predictor = QualityPredictor::new(config).unwrap();
+        let predictor = QualityPredictor::new(config)
+            .expect("test: QualityPredictor::new should succeed with default config");
         let peer = PeerId::random();
 
         predictor.record_success(peer);
         predictor.record_success(peer);
         predictor.record_failure(peer);
 
-        let prediction = predictor.predict_quality(&peer).unwrap();
+        let prediction = predictor
+            .predict_quality(&peer)
+            .expect("test: predict_quality should return Some after recording success/failure");
         assert!((prediction.reliability_score - 0.666).abs() < 0.01);
     }
 
     #[test]
     fn test_get_best_peer() {
         let config = QualityPredictorConfig::default();
-        let predictor = QualityPredictor::new(config).unwrap();
+        let predictor = QualityPredictor::new(config)
+            .expect("test: QualityPredictor::new should succeed with default config");
 
         let peer1 = PeerId::random();
         let peer2 = PeerId::random();
@@ -630,14 +639,17 @@ mod tests {
         predictor.record_success(peer3);
 
         let peers = vec![peer1, peer2, peer3];
-        let (best, _) = predictor.get_best_peer(&peers).unwrap();
+        let (best, _) = predictor
+            .get_best_peer(&peers)
+            .expect("test: get_best_peer should return Some for non-empty peer list");
         assert_eq!(best, peer1);
     }
 
     #[test]
     fn test_rank_peers() {
         let config = QualityPredictorConfig::default();
-        let predictor = QualityPredictor::new(config).unwrap();
+        let predictor = QualityPredictor::new(config)
+            .expect("test: QualityPredictor::new should succeed with default config");
 
         let peer1 = PeerId::random();
         let peer2 = PeerId::random();
@@ -662,7 +674,8 @@ mod tests {
             enable_predictions: true,
             ..Default::default()
         };
-        let predictor = QualityPredictor::new(config).unwrap();
+        let predictor = QualityPredictor::new(config)
+            .expect("test: QualityPredictor::new should succeed with default config");
         let peer = PeerId::random();
 
         // Record poor metrics
@@ -681,14 +694,19 @@ mod tests {
             smoothing_factor: 0.5,
             ..Default::default()
         };
-        let predictor = QualityPredictor::new(config).unwrap();
+        let predictor = QualityPredictor::new(config)
+            .expect("test: QualityPredictor::new should succeed with default config");
         let peer = PeerId::random();
 
         predictor.record_latency(peer, 100);
-        let pred1 = predictor.predict_quality(&peer).unwrap();
+        let pred1 = predictor
+            .predict_quality(&peer)
+            .expect("test: predict_quality should return Some after recording latency");
 
         predictor.record_latency(peer, 50);
-        let pred2 = predictor.predict_quality(&peer).unwrap();
+        let pred2 = predictor
+            .predict_quality(&peer)
+            .expect("test: predict_quality should return Some after recording second latency");
 
         // Second prediction should be influenced by first (EMA)
         assert!(pred2.overall_score > pred1.overall_score);
@@ -697,7 +715,8 @@ mod tests {
     #[test]
     fn test_stats() {
         let config = QualityPredictorConfig::default();
-        let predictor = QualityPredictor::new(config).unwrap();
+        let predictor = QualityPredictor::new(config)
+            .expect("test: QualityPredictor::new should succeed with default config");
 
         let peer1 = PeerId::random();
         let peer2 = PeerId::random();
@@ -716,7 +735,8 @@ mod tests {
     #[test]
     fn test_remove_peer() {
         let config = QualityPredictorConfig::default();
-        let predictor = QualityPredictor::new(config).unwrap();
+        let predictor = QualityPredictor::new(config)
+            .expect("test: QualityPredictor::new should succeed with default config");
         let peer = PeerId::random();
 
         predictor.record_latency(peer, 50);
@@ -729,7 +749,8 @@ mod tests {
     #[test]
     fn test_clear() {
         let config = QualityPredictorConfig::default();
-        let predictor = QualityPredictor::new(config).unwrap();
+        let predictor = QualityPredictor::new(config)
+            .expect("test: QualityPredictor::new should succeed with default config");
 
         predictor.record_latency(PeerId::random(), 50);
         predictor.record_latency(PeerId::random(), 100);

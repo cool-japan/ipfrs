@@ -70,11 +70,11 @@ impl LatencyHistogram {
 
     /// Get average latency
     pub fn avg(&self) -> Duration {
-        if self.total_samples == 0 {
-            Duration::from_micros(0)
-        } else {
-            Duration::from_micros(self.sum_latency_us / self.total_samples)
-        }
+        Duration::from_micros(
+            self.sum_latency_us
+                .checked_div(self.total_samples)
+                .unwrap_or(0),
+        )
     }
 
     /// Get minimum latency
@@ -344,12 +344,8 @@ impl BatchProfiler {
 
     /// Get average latency per item
     pub fn avg_latency_per_item(&self) -> Duration {
-        if self.total_items == 0 {
-            Duration::from_micros(0)
-        } else {
-            let total_latency_us = self.batch_latencies.sum_latency_us;
-            Duration::from_micros(total_latency_us / self.total_items)
-        }
+        let total_latency_us = self.batch_latencies.sum_latency_us;
+        Duration::from_micros(total_latency_us.checked_div(self.total_items).unwrap_or(0))
     }
 
     /// Generate a summary report

@@ -3,9 +3,10 @@
 //! This benchmark measures query latency percentiles (P50, P90, P99)
 //! Run with: cargo bench --bench latency_bench
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use ipfrs_semantic::hnsw::{DistanceMetric, VectorIndex};
-use rand::Rng;
+use rand::{Rng, RngExt};
+use std::hint::black_box;
 use std::time::Instant;
 
 fn generate_random_vector(dim: usize, rng: &mut impl Rng) -> Vec<f32> {

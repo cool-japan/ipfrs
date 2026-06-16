@@ -462,7 +462,7 @@ mod tests {
             Block::new(b"block2".to_vec().into()).unwrap(),
             Block::new(b"block3".to_vec().into()).unwrap(),
         ];
-        let cids: Vec<Cid> = blocks.iter().map(|b| b.cid().clone()).collect();
+        let cids: Vec<Cid> = blocks.iter().map(|b| *b.cid()).collect();
 
         traced.put_many(&blocks).await.unwrap();
 

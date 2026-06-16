@@ -163,8 +163,16 @@ impl VectorFileHeader {
         let mut magic = [0u8; 8];
         magic.copy_from_slice(&bytes[0..8]);
 
-        let num_vectors = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
-        let dimension = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
+        let num_vectors = u64::from_le_bytes(
+            bytes[8..16]
+                .try_into()
+                .expect("bytes[8..16] is exactly 8 bytes after bounds check"),
+        );
+        let dimension = u64::from_le_bytes(
+            bytes[16..24]
+                .try_into()
+                .expect("bytes[16..24] is exactly 8 bytes after bounds check"),
+        );
 
         Ok(Self {
             magic,
@@ -229,7 +237,7 @@ impl DiskANNIndex {
 
     /// Helper: Read a vector from the memory-mapped file
     fn read_vector(&self, vector_id: usize) -> Result<Vec<f32>> {
-        let mmap = self.vector_mmap.read().unwrap();
+        let mmap = self.vector_mmap.read().unwrap_or_else(|e| e.into_inner());
         let mmap = mmap
             .as_ref()
             .ok_or_else(|| Error::InvalidInput("Vector file not mapped".to_string()))?;
@@ -247,7 +255,13 @@ impl DiskANNIndex {
         let bytes = &mmap[offset..offset + vec_size_bytes];
         let floats: Vec<f32> = bytes
             .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
+            .map(|chunk| {
+                f32::from_le_bytes(
+                    chunk
+                        .try_into()
+                        .expect("chunks_exact(4) guarantees exactly 4 bytes"),
+                )
+            })
             .collect();
 
         Ok(floats)
@@ -263,7 +277,7 @@ impl DiskANNIndex {
             )));
         }
 
-        let mut mmap = self.vector_mmap.write().unwrap();
+        let mut mmap = self.vector_mmap.write().unwrap_or_else(|e| e.into_inner());
         let mmap = mmap
             .as_mut()
             .ok_or_else(|| Error::InvalidInput("Vector file not mapped".to_string()))?;
@@ -291,7 +305,7 @@ impl DiskANNIndex {
 
     /// Helper: Update the vector count in the header
     fn update_vector_count(&self, count: usize) -> Result<()> {
-        let mut mmap = self.vector_mmap.write().unwrap();
+        let mut mmap = self.vector_mmap.write().unwrap_or_else(|e| e.into_inner());
         let mmap = mmap
             .as_mut()
             .ok_or_else(|| Error::InvalidInput("Vector file not mapped".to_string()))?;
@@ -304,18 +318,20 @@ impl DiskANNIndex {
 
     /// Helper: Get current vector count from mmap header
     fn get_vector_count(&self) -> Result<usize> {
-        let mmap = self.vector_mmap.read().unwrap();
+        let mmap = self.vector_mmap.read().unwrap_or_else(|e| e.into_inner());
         let mmap = mmap
             .as_ref()
             .ok_or_else(|| Error::InvalidInput("Vector file not mapped".to_string()))?;
 
-        let count_bytes: [u8; 8] = mmap[8..16].try_into().unwrap();
+        let count_bytes: [u8; 8] = mmap[8..16]
+            .try_into()
+            .expect("mmap[8..16] is exactly 8 bytes; mmap size checked above");
         Ok(u64::from_le_bytes(count_bytes) as usize)
     }
 
     /// Helper: Ensure vector file has capacity for n vectors (expand if needed)
     fn ensure_vector_capacity(&self, required_count: usize) -> Result<()> {
-        let mmap = self.vector_mmap.read().unwrap();
+        let mmap = self.vector_mmap.read().unwrap_or_else(|e| e.into_inner());
         let current_size = mmap
             .as_ref()
             .ok_or_else(|| Error::InvalidInput("Vector file not mapped".to_string()))?
@@ -335,12 +351,12 @@ impl DiskANNIndex {
             let vec_path = self
                 .vector_file_path
                 .read()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .clone()
                 .ok_or_else(|| Error::InvalidInput("No vector file path set".to_string()))?;
 
             // Drop the current mmap before resizing
-            *self.vector_mmap.write().unwrap() = None;
+            *self.vector_mmap.write().unwrap_or_else(|e| e.into_inner()) = None;
 
             // Resize the file
             let vec_file = OpenOptions::new()
@@ -356,7 +372,7 @@ impl DiskANNIndex {
                     .map_err(|e| Error::Io(std::io::Error::other(e.to_string())))?
             };
 
-            *self.vector_mmap.write().unwrap() = Some(new_mmap);
+            *self.vector_mmap.write().unwrap_or_else(|e| e.into_inner()) = Some(new_mmap);
         }
 
         Ok(())
@@ -365,7 +381,7 @@ impl DiskANNIndex {
     /// Helper: Get number of vectors (from mmap header or fallback to next_id)
     fn num_vectors(&self) -> usize {
         self.get_vector_count()
-            .unwrap_or_else(|_| *self.next_id.read().unwrap())
+            .unwrap_or_else(|_| *self.next_id.read().unwrap_or_else(|e| e.into_inner()))
     }
 
     /// Create with default configuration
@@ -435,11 +451,14 @@ impl DiskANNIndex {
         let header_bytes = vec_header.as_bytes();
         vec_mmap[..VectorFileHeader::SIZE].copy_from_slice(&header_bytes);
 
-        *self.index_path.write().unwrap() = Some(path_str.clone());
-        *self.vector_file_path.write().unwrap() = Some(vec_path);
-        *self.graph_mmap.write().unwrap() = Some(mmap);
-        *self.vector_mmap.write().unwrap() = Some(vec_mmap);
-        *self.loaded.write().unwrap() = true;
+        *self.index_path.write().unwrap_or_else(|e| e.into_inner()) = Some(path_str.clone());
+        *self
+            .vector_file_path
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = Some(vec_path);
+        *self.graph_mmap.write().unwrap_or_else(|e| e.into_inner()) = Some(mmap);
+        *self.vector_mmap.write().unwrap_or_else(|e| e.into_inner()) = Some(vec_mmap);
+        *self.loaded.write().unwrap_or_else(|e| e.into_inner()) = true;
 
         Ok(())
     }
@@ -470,17 +489,18 @@ impl DiskANNIndex {
 
         // Create index
         let index = Self::new(header.config);
-        *index.index_path.write().unwrap() = Some(path.to_string_lossy().to_string());
-        *index.graph_mmap.write().unwrap() = Some(mmap);
-        *index.next_id.write().unwrap() = header.num_vectors;
-        *index.loaded.write().unwrap() = true;
+        *index.index_path.write().unwrap_or_else(|e| e.into_inner()) =
+            Some(path.to_string_lossy().to_string());
+        *index.graph_mmap.write().unwrap_or_else(|e| e.into_inner()) = Some(mmap);
+        *index.next_id.write().unwrap_or_else(|e| e.into_inner()) = header.num_vectors;
+        *index.loaded.write().unwrap_or_else(|e| e.into_inner()) = true;
 
         Ok(index)
     }
 
     /// Insert a vector using Vamana algorithm
     pub fn insert(&mut self, cid: &Cid, vector: &[f32]) -> Result<()> {
-        if !*self.loaded.read().unwrap() {
+        if !*self.loaded.read().unwrap_or_else(|e| e.into_inner()) {
             return Err(Error::InvalidInput(
                 "Index not created or loaded".to_string(),
             ));
@@ -495,7 +515,12 @@ impl DiskANNIndex {
         }
 
         // Check if CID already exists
-        if self.cid_to_id.read().unwrap().contains_key(cid) {
+        if self
+            .cid_to_id
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(cid)
+        {
             return Err(Error::InvalidInput(format!(
                 "CID already in index: {}",
                 cid
@@ -503,7 +528,7 @@ impl DiskANNIndex {
         }
 
         // Get new ID
-        let id = *self.next_id.read().unwrap();
+        let id = *self.next_id.read().unwrap_or_else(|e| e.into_inner());
 
         // Ensure vector file has enough space (expand if needed)
         self.ensure_vector_capacity(id + 1)?;
@@ -512,19 +537,31 @@ impl DiskANNIndex {
         self.write_vector(id, vector)?;
 
         // Update vector count and next ID
-        *self.next_id.write().unwrap() += 1;
+        *self.next_id.write().unwrap_or_else(|e| e.into_inner()) += 1;
         self.update_vector_count(id + 1)?;
 
         // Add CID mapping
-        self.id_to_cid.write().unwrap().insert(id, *cid);
-        self.cid_to_id.write().unwrap().insert(*cid, id);
+        self.id_to_cid
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id, *cid);
+        self.cid_to_id
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(*cid, id);
 
         // Initialize graph node
-        self.graph.write().unwrap().push(Vec::new());
+        self.graph
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(Vec::new());
 
         // If this is the first vector, make it an entry point
         if id == 0 {
-            self.entry_points.write().unwrap().push(0);
+            self.entry_points
+                .write()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(0);
             return Ok(());
         }
 
@@ -533,9 +570,12 @@ impl DiskANNIndex {
 
         // Update entry points if needed
         if id.is_multiple_of(1000) && id < 10000 {
-            self.entry_points.write().unwrap().push(id);
+            self.entry_points
+                .write()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(id);
             // Keep only num_entry_points
-            let mut eps = self.entry_points.write().unwrap();
+            let mut eps = self.entry_points.write().unwrap_or_else(|e| e.into_inner());
             let num_to_drain = if eps.len() > self.config.num_entry_points {
                 eps.len() - self.config.num_entry_points
             } else {
@@ -559,7 +599,7 @@ impl DiskANNIndex {
         let pruned = self.robust_prune(new_id, new_vec, &neighbors)?;
 
         // 3. Add bidirectional edges
-        let mut graph = self.graph.write().unwrap();
+        let mut graph = self.graph.write().unwrap_or_else(|e| e.into_inner());
         graph[new_id] = pruned.clone();
 
         // Add reverse edges and prune if needed
@@ -657,7 +697,7 @@ impl DiskANNIndex {
 
     /// Search for k nearest neighbors using greedy search
     pub fn search(&self, query: &[f32], k: usize) -> Result<Vec<SearchResult>> {
-        if !*self.loaded.read().unwrap() {
+        if !*self.loaded.read().unwrap_or_else(|e| e.into_inner()) {
             return Err(Error::InvalidInput(
                 "Index not created or loaded".to_string(),
             ));
@@ -681,7 +721,7 @@ impl DiskANNIndex {
         let result_ids = self.greedy_search_internal(query, k, search_list_size)?;
 
         // Convert to SearchResult with CIDs
-        let id_to_cid = self.id_to_cid.read().unwrap();
+        let id_to_cid = self.id_to_cid.read().unwrap_or_else(|e| e.into_inner());
         let results: Vec<SearchResult> = result_ids
             .iter()
             .filter_map(|&id| {
@@ -704,8 +744,8 @@ impl DiskANNIndex {
         k: usize,
         search_list_size: usize,
     ) -> Result<Vec<usize>> {
-        let graph = self.graph.read().unwrap();
-        let entry_points = self.entry_points.read().unwrap();
+        let graph = self.graph.read().unwrap_or_else(|e| e.into_inner());
+        let entry_points = self.entry_points.read().unwrap_or_else(|e| e.into_inner());
         let num_vecs = self.num_vectors();
 
         if num_vecs == 0 {
@@ -796,17 +836,17 @@ impl DiskANNIndex {
     /// Get index statistics
     pub fn stats(&self) -> DiskANNStats {
         DiskANNStats {
-            num_vectors: *self.next_id.read().unwrap(),
+            num_vectors: *self.next_id.read().unwrap_or_else(|e| e.into_inner()),
             dimension: self.config.dimension,
             max_degree: self.config.max_degree,
-            index_loaded: *self.loaded.read().unwrap(),
+            index_loaded: *self.loaded.read().unwrap_or_else(|e| e.into_inner()),
             estimated_disk_size: self.estimate_disk_size(),
         }
     }
 
     /// Estimate disk usage
     fn estimate_disk_size(&self) -> usize {
-        let num_vectors = *self.next_id.read().unwrap();
+        let num_vectors = *self.next_id.read().unwrap_or_else(|e| e.into_inner());
 
         // Header: ~1KB
         let header_size = 1024;
@@ -825,7 +865,7 @@ impl DiskANNIndex {
 
     /// Check if index is loaded
     pub fn is_loaded(&self) -> bool {
-        *self.loaded.read().unwrap()
+        *self.loaded.read().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Get configuration
@@ -835,14 +875,14 @@ impl DiskANNIndex {
 
     /// Save index to disk (persist all in-memory data)
     pub fn save(&self) -> Result<()> {
-        if !*self.loaded.read().unwrap() {
+        if !*self.loaded.read().unwrap_or_else(|e| e.into_inner()) {
             return Err(Error::InvalidInput("Index not loaded".to_string()));
         }
 
         let path = self
             .index_path
             .read()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .clone()
             .ok_or_else(|| Error::InvalidInput("No index path set".to_string()))?;
 
@@ -855,9 +895,9 @@ impl DiskANNIndex {
             }
         }
 
-        let graph = self.graph.read().unwrap();
-        let id_to_cid = self.id_to_cid.read().unwrap();
-        let entry_points = self.entry_points.read().unwrap();
+        let graph = self.graph.read().unwrap_or_else(|e| e.into_inner());
+        let id_to_cid = self.id_to_cid.read().unwrap_or_else(|e| e.into_inner());
+        let entry_points = self.entry_points.read().unwrap_or_else(|e| e.into_inner());
 
         let data = DiskANNData::from_index(
             vectors,
@@ -880,7 +920,7 @@ impl DiskANNIndex {
 
     /// Flush changes to disk
     pub fn flush(&self) -> Result<()> {
-        if let Some(ref mut mmap) = *self.graph_mmap.write().unwrap() {
+        if let Some(ref mut mmap) = *self.graph_mmap.write().unwrap_or_else(|e| e.into_inner()) {
             mmap.flush()
                 .map_err(|e| Error::Io(std::io::Error::other(e.to_string())))?;
         }
@@ -894,13 +934,13 @@ impl DiskANNIndex {
     /// - Rebuilds the graph with contiguous IDs
     /// - Optimizes memory layout
     pub fn compact(&mut self) -> Result<CompactionStats> {
-        if !*self.loaded.read().unwrap() {
+        if !*self.loaded.read().unwrap_or_else(|e| e.into_inner()) {
             return Err(Error::InvalidInput("Index not loaded".to_string()));
         }
 
         let start_time = std::time::Instant::now();
         let old_size = self.num_vectors();
-        let graph = self.graph.read().unwrap();
+        let graph = self.graph.read().unwrap_or_else(|e| e.into_inner());
 
         let old_graph_edges: usize = graph.iter().map(|neighbors| neighbors.len()).sum();
 
@@ -923,11 +963,11 @@ impl DiskANNIndex {
     /// This helps reduce memory usage and can improve query performance
     /// by removing edges that don't contribute to search quality.
     pub fn prune_graph(&mut self, quality_threshold: f32) -> Result<usize> {
-        if !*self.loaded.read().unwrap() {
+        if !*self.loaded.read().unwrap_or_else(|e| e.into_inner()) {
             return Err(Error::InvalidInput("Index not loaded".to_string()));
         }
 
-        let mut graph = self.graph.write().unwrap();
+        let mut graph = self.graph.write().unwrap_or_else(|e| e.into_inner());
         let num_vecs = self.num_vectors();
         let mut total_pruned = 0;
 
@@ -982,7 +1022,7 @@ impl DiskANNIndex {
 
     /// Get number of vectors in the index
     pub fn len(&self) -> usize {
-        *self.next_id.read().unwrap()
+        *self.next_id.read().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Check if index is empty
@@ -1082,7 +1122,10 @@ mod tests {
         let config = DiskANNConfig::default();
         let mut index = DiskANNIndex::new(config);
 
-        let temp_file = "/tmp/test_diskann_index.dat";
+        let temp_file_path = std::env::temp_dir().join("test_diskann_index.dat");
+        let temp_file = temp_file_path
+            .to_str()
+            .expect("temp dir path is valid UTF-8");
         assert!(index.create(temp_file).is_ok());
         assert!(index.is_loaded());
 
@@ -1125,8 +1168,13 @@ mod tests {
         };
 
         let mut index = DiskANNIndex::new(config);
-        let temp_file = "/tmp/test_diskann_vamana.dat";
-        index.create(temp_file).unwrap();
+        let temp_file_path = std::env::temp_dir().join("test_diskann_vamana.dat");
+        let temp_file = temp_file_path
+            .to_str()
+            .expect("temp dir path is valid UTF-8");
+        index
+            .create(temp_file)
+            .expect("test: index creation should succeed");
 
         // Create test vectors
         let vectors = [
@@ -1146,15 +1194,19 @@ mod tests {
             "bafybeibscyh5z3uk6fvdidffhybzsxmckblkjhajy4y4uzcglmfwqx67b4",
         ];
         for (i, vec) in vectors.iter().enumerate() {
-            let cid: Cid = base_cids[i].parse().unwrap();
-            index.insert(&cid, vec).unwrap();
+            let cid: Cid = base_cids[i].parse().expect("test: CID string is valid");
+            index
+                .insert(&cid, vec)
+                .expect("test: vector insertion should succeed");
         }
 
         assert_eq!(index.stats().num_vectors, 5);
 
         // Search for nearest to first vector
         let query = vec![1.0, 0.0, 0.0, 0.0];
-        let results = index.search(&query, 2).unwrap();
+        let results = index
+            .search(&query, 2)
+            .expect("test: search should succeed");
 
         assert!(!results.is_empty());
         assert!(results.len() <= 2);
@@ -1177,8 +1229,13 @@ mod tests {
 
         let max_degree = config.max_degree;
         let mut index = DiskANNIndex::new(config);
-        let temp_file = "/tmp/test_vamana_graph.dat";
-        index.create(temp_file).unwrap();
+        let temp_file_path = std::env::temp_dir().join("test_vamana_graph.dat");
+        let temp_file = temp_file_path
+            .to_str()
+            .expect("temp dir path is valid UTF-8");
+        index
+            .create(temp_file)
+            .expect("test: index creation should succeed");
 
         // Insert 20 vectors
         let base_cids: Vec<&str> = vec![
@@ -1204,13 +1261,15 @@ mod tests {
             "bafybeicbh5dkdyiq3gqufk46cktiwwucwl6mzhv6e5xhzmuvzojvykokpy",
         ];
         for (i, &cid_str) in base_cids.iter().enumerate() {
-            let cid: Cid = cid_str.parse().unwrap();
+            let cid: Cid = cid_str.parse().expect("test: CID string is valid");
             let vec: Vec<f32> = (0..8).map(|j| (i as f32 + j as f32) * 0.1).collect();
-            index.insert(&cid, &vec).unwrap();
+            index
+                .insert(&cid, &vec)
+                .expect("test: vector insertion should succeed");
         }
 
         // Check graph structure
-        let graph = index.graph.read().unwrap();
+        let graph = index.graph.read().unwrap_or_else(|e| e.into_inner());
         assert_eq!(graph.len(), 20);
 
         // Each node (except possibly the first) should have some neighbors
@@ -1242,21 +1301,40 @@ mod tests {
 
         let max_degree = config.max_degree;
         let mut index = DiskANNIndex::new(config);
-        let temp_file = "/tmp/test_robust_prune.dat";
-        index.create(temp_file).unwrap();
+        let temp_file_path = std::env::temp_dir().join("test_robust_prune.dat");
+        let temp_file = temp_file_path
+            .to_str()
+            .expect("temp dir path is valid UTF-8");
+        index
+            .create(temp_file)
+            .expect("test: index creation should succeed");
 
         // Add some vectors manually (write to mmap)
-        index.ensure_vector_capacity(4).unwrap();
-        index.write_vector(0, &[1.0, 0.0, 0.0, 0.0]).unwrap();
-        index.write_vector(1, &[0.9, 0.1, 0.0, 0.0]).unwrap();
-        index.write_vector(2, &[0.8, 0.2, 0.0, 0.0]).unwrap();
-        index.write_vector(3, &[0.0, 1.0, 0.0, 0.0]).unwrap();
-        index.update_vector_count(4).unwrap();
+        index
+            .ensure_vector_capacity(4)
+            .expect("test: capacity expansion for 4 vectors should succeed");
+        index
+            .write_vector(0, &[1.0, 0.0, 0.0, 0.0])
+            .expect("test: writing vector 0 should succeed");
+        index
+            .write_vector(1, &[0.9, 0.1, 0.0, 0.0])
+            .expect("test: writing vector 1 should succeed");
+        index
+            .write_vector(2, &[0.8, 0.2, 0.0, 0.0])
+            .expect("test: writing vector 2 should succeed");
+        index
+            .write_vector(3, &[0.0, 1.0, 0.0, 0.0])
+            .expect("test: writing vector 3 should succeed");
+        index
+            .update_vector_count(4)
+            .expect("test: updating vector count should succeed");
 
         let node_vec = vec![1.0, 0.0, 0.0, 0.0];
         let candidates = vec![1, 2, 3];
 
-        let pruned = index.robust_prune(0, &node_vec, &candidates).unwrap();
+        let pruned = index
+            .robust_prune(0, &node_vec, &candidates)
+            .expect("test: robust_prune should succeed");
 
         // Should prune to max_degree neighbors
         assert!(pruned.len() <= max_degree);
@@ -1276,8 +1354,13 @@ mod tests {
         };
 
         let mut index = DiskANNIndex::new(config);
-        let temp_file = "/tmp/test_diskann_save.dat";
-        index.create(temp_file).unwrap();
+        let temp_file_path = std::env::temp_dir().join("test_diskann_save.dat");
+        let temp_file = temp_file_path
+            .to_str()
+            .expect("temp dir path is valid UTF-8");
+        index
+            .create(temp_file)
+            .expect("test: index creation should succeed");
 
         // Insert some vectors
         let vectors = [
@@ -1293,8 +1376,10 @@ mod tests {
         ];
 
         for (i, vec) in vectors.iter().enumerate() {
-            let cid: Cid = base_cids[i].parse().unwrap();
-            index.insert(&cid, vec).unwrap();
+            let cid: Cid = base_cids[i].parse().expect("test: CID string is valid");
+            index
+                .insert(&cid, vec)
+                .expect("test: vector insertion should succeed");
         }
 
         // Save the index
@@ -1316,8 +1401,13 @@ mod tests {
         };
 
         let mut index = DiskANNIndex::new(config);
-        let temp_file = "/tmp/test_diskann_flush.dat";
-        index.create(temp_file).unwrap();
+        let temp_file_path = std::env::temp_dir().join("test_diskann_flush.dat");
+        let temp_file = temp_file_path
+            .to_str()
+            .expect("temp dir path is valid UTF-8");
+        index
+            .create(temp_file)
+            .expect("test: index creation should succeed");
 
         // Flush should succeed
         assert!(index.flush().is_ok());
@@ -1335,8 +1425,13 @@ mod tests {
         };
 
         let mut index = DiskANNIndex::new(config);
-        let temp_file = "/tmp/test_diskann_compact.dat";
-        index.create(temp_file).unwrap();
+        let temp_file_path = std::env::temp_dir().join("test_diskann_compact.dat");
+        let temp_file = temp_file_path
+            .to_str()
+            .expect("temp dir path is valid UTF-8");
+        index
+            .create(temp_file)
+            .expect("test: index creation should succeed");
 
         // Insert some vectors
         let vectors = [
@@ -1352,12 +1447,14 @@ mod tests {
         ];
 
         for (i, vec) in vectors.iter().enumerate() {
-            let cid: Cid = base_cids[i].parse().unwrap();
-            index.insert(&cid, vec).unwrap();
+            let cid: Cid = base_cids[i].parse().expect("test: CID string is valid");
+            index
+                .insert(&cid, vec)
+                .expect("test: vector insertion should succeed");
         }
 
         // Compact the index
-        let stats = index.compact().unwrap();
+        let stats = index.compact().expect("test: compact should succeed");
         assert_eq!(stats.vectors_before, 3);
         assert_eq!(stats.vectors_after, 3);
 
@@ -1374,8 +1471,13 @@ mod tests {
         };
 
         let mut index = DiskANNIndex::new(config);
-        let temp_file = "/tmp/test_diskann_prune.dat";
-        index.create(temp_file).unwrap();
+        let temp_file_path = std::env::temp_dir().join("test_diskann_prune.dat");
+        let temp_file = temp_file_path
+            .to_str()
+            .expect("temp dir path is valid UTF-8");
+        index
+            .create(temp_file)
+            .expect("test: index creation should succeed");
 
         // Insert some vectors
         let vectors = [
@@ -1393,12 +1495,16 @@ mod tests {
         ];
 
         for (i, vec) in vectors.iter().enumerate() {
-            let cid: Cid = base_cids[i].parse().unwrap();
-            index.insert(&cid, vec).unwrap();
+            let cid: Cid = base_cids[i].parse().expect("test: CID string is valid");
+            index
+                .insert(&cid, vec)
+                .expect("test: vector insertion should succeed");
         }
 
         // Prune with a quality threshold
-        let _pruned = index.prune_graph(0.5).unwrap();
+        let _pruned = index
+            .prune_graph(0.5)
+            .expect("test: prune_graph should succeed");
         // Should prune some edges (pruned is usize, always >= 0)
 
         // Cleanup
@@ -1413,8 +1519,13 @@ mod tests {
         };
 
         let mut index = DiskANNIndex::new(config);
-        let temp_file = "/tmp/test_diskann_len.dat";
-        index.create(temp_file).unwrap();
+        let temp_file_path = std::env::temp_dir().join("test_diskann_len.dat");
+        let temp_file = temp_file_path
+            .to_str()
+            .expect("temp dir path is valid UTF-8");
+        index
+            .create(temp_file)
+            .expect("test: index creation should succeed");
 
         assert_eq!(index.len(), 0);
         assert!(index.is_empty());
@@ -1422,9 +1533,11 @@ mod tests {
         // Insert a vector
         let cid: Cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse()
-            .unwrap();
+            .expect("test: CID string is valid");
         let vec = vec![1.0, 0.0, 0.0, 0.0];
-        index.insert(&cid, &vec).unwrap();
+        index
+            .insert(&cid, &vec)
+            .expect("test: vector insertion should succeed");
 
         assert_eq!(index.len(), 1);
         assert!(!index.is_empty());

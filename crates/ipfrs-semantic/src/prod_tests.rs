@@ -38,7 +38,7 @@
 
 use crate::router::{RouterConfig, SemanticRouter};
 use ipfrs_core::{Cid, Result};
-use rand::Rng;
+use rand::RngExt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::task;
@@ -381,7 +381,8 @@ fn generate_test_cid(index: usize) -> Cid {
         hash_bytes[i * 8..(i + 1) * 8].copy_from_slice(&val);
     }
 
-    let mh = Multihash::wrap(0x12, &hash_bytes).unwrap(); // 0x12 is SHA2-256 code
+    let mh = Multihash::wrap(0x12, &hash_bytes)
+        .expect("wrapping 32-byte hash into SHA2-256 multihash is infallible"); // 0x12 is SHA2-256 code
     Cid::new_v1(0x55, mh) // 0x55 is raw codec
 }
 
@@ -446,7 +447,7 @@ mod tests {
         assert!(stress_test.is_ok());
 
         // Verify configuration
-        let test = stress_test.unwrap();
+        let test = stress_test.expect("test: StressTest::new should succeed with valid config");
         assert_eq!(test.config.num_threads, 2);
     }
 
@@ -464,7 +465,13 @@ mod tests {
         assert!(endurance_test.is_ok());
 
         // Verify configuration
-        assert_eq!(endurance_test.unwrap().config.dimension, 64);
+        assert_eq!(
+            endurance_test
+                .expect("test: EnduranceTest::new should succeed with valid config")
+                .config
+                .dimension,
+            64
+        );
     }
 
     #[test]

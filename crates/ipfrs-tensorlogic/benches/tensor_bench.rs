@@ -5,7 +5,7 @@
 //! - Safetensors serialization
 //! - Shared memory operations
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use ipfrs_tensorlogic::{
     AdaptiveBuffer, ArrowTensor, ArrowTensorStore, BufferPool, ComputationGraph, Constant,
     DistributedExecutor, FfiProfiler, GradientCompressor, GraphNode, GraphOptimizer,
@@ -13,7 +13,8 @@ use ipfrs_tensorlogic::{
     SafetensorsWriter, SparseGradient, StackBuffer, TensorOp, Term, TypedBufferPool,
     ZeroCopyConverter,
 };
-use rand::Rng;
+use rand::RngExt;
+use std::hint::black_box;
 
 /// Generate random f32 data
 fn random_f32_data(size: usize) -> Vec<f32> {

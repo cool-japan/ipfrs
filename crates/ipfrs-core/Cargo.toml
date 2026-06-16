@@ -52,9 +52,18 @@ jsonwebtoken = { workspace = true }
 sha2 = { workspace = true }
 sha3 = { workspace = true }
 
-# Compression
-zstd = { workspace = true }
-lz4_flex = { workspace = true }
+# Compression — Pure Rust OxiARC crates (COOLJAPAN policy)
+oxiarc-zstd = { workspace = true }
+oxiarc-lz4 = { workspace = true }
+
+# wasm32 random number generation
+getrandom = { workspace = true }
+
+[features]
+default = []
+# Enable wasm32-compatible random number generation (passes `getrandom/js`
+# through to the underlying crate so wasm targets can call the JS runtime).
+wasm = ["getrandom/wasm_js"]
 
 [dev-dependencies]
 proptest = { workspace = true }

@@ -149,7 +149,10 @@ pub fn arrow_to_tensor_block(array: &dyn Array, shape: TensorShape) -> Result<Te
     // Get the raw buffer data
     let data = match array.data_type() {
         DataType::Float32 => {
-            let arr = array.as_any().downcast_ref::<Float32Array>().unwrap();
+            let arr = array
+                .as_any()
+                .downcast_ref::<Float32Array>()
+                .expect("checked: DataType::Float32 matches Float32Array");
             let buffer = arr.values();
             // Cast typed slice to &[u8] for Bytes
             let byte_slice = unsafe {
@@ -161,7 +164,10 @@ pub fn arrow_to_tensor_block(array: &dyn Array, shape: TensorShape) -> Result<Te
             Bytes::copy_from_slice(byte_slice)
         }
         DataType::Float64 => {
-            let arr = array.as_any().downcast_ref::<Float64Array>().unwrap();
+            let arr = array
+                .as_any()
+                .downcast_ref::<Float64Array>()
+                .expect("checked: DataType::Float64 matches Float64Array");
             let buffer = arr.values();
             let byte_slice = unsafe {
                 std::slice::from_raw_parts(
@@ -172,14 +178,20 @@ pub fn arrow_to_tensor_block(array: &dyn Array, shape: TensorShape) -> Result<Te
             Bytes::copy_from_slice(byte_slice)
         }
         DataType::Int8 => {
-            let arr = array.as_any().downcast_ref::<Int8Array>().unwrap();
+            let arr = array
+                .as_any()
+                .downcast_ref::<Int8Array>()
+                .expect("checked: DataType::Int8 matches Int8Array");
             let buffer = arr.values();
             let byte_slice =
                 unsafe { std::slice::from_raw_parts(buffer.as_ptr() as *const u8, buffer.len()) };
             Bytes::copy_from_slice(byte_slice)
         }
         DataType::Int32 => {
-            let arr = array.as_any().downcast_ref::<Int32Array>().unwrap();
+            let arr = array
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .expect("checked: DataType::Int32 matches Int32Array");
             let buffer = arr.values();
             let byte_slice = unsafe {
                 std::slice::from_raw_parts(
@@ -190,7 +202,10 @@ pub fn arrow_to_tensor_block(array: &dyn Array, shape: TensorShape) -> Result<Te
             Bytes::copy_from_slice(byte_slice)
         }
         DataType::Int64 => {
-            let arr = array.as_any().downcast_ref::<Int64Array>().unwrap();
+            let arr = array
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .expect("checked: DataType::Int64 matches Int64Array");
             let buffer = arr.values();
             let byte_slice = unsafe {
                 std::slice::from_raw_parts(
@@ -201,12 +216,18 @@ pub fn arrow_to_tensor_block(array: &dyn Array, shape: TensorShape) -> Result<Te
             Bytes::copy_from_slice(byte_slice)
         }
         DataType::UInt8 => {
-            let arr = array.as_any().downcast_ref::<UInt8Array>().unwrap();
+            let arr = array
+                .as_any()
+                .downcast_ref::<UInt8Array>()
+                .expect("checked: DataType::UInt8 matches UInt8Array");
             let buffer = arr.values();
             Bytes::copy_from_slice(buffer.as_ref())
         }
         DataType::UInt32 => {
-            let arr = array.as_any().downcast_ref::<UInt32Array>().unwrap();
+            let arr = array
+                .as_any()
+                .downcast_ref::<UInt32Array>()
+                .expect("checked: DataType::UInt32 matches UInt32Array");
             let buffer = arr.values();
             let byte_slice = unsafe {
                 std::slice::from_raw_parts(
@@ -217,7 +238,10 @@ pub fn arrow_to_tensor_block(array: &dyn Array, shape: TensorShape) -> Result<Te
             Bytes::copy_from_slice(byte_slice)
         }
         DataType::Boolean => {
-            let arr = array.as_any().downcast_ref::<BooleanArray>().unwrap();
+            let arr = array
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .expect("checked: DataType::Boolean matches BooleanArray");
             let bytes: Vec<u8> = (0..arr.len()).map(|i| arr.value(i) as u8).collect();
             Bytes::from(bytes)
         }

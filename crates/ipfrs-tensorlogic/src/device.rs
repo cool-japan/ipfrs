@@ -457,7 +457,7 @@ mod tests {
         let caps = DeviceCapabilities::detect();
         assert!(caps.is_ok());
 
-        let caps = caps.unwrap();
+        let caps = caps.expect("test: should succeed");
         assert!(caps.cpu.logical_cores > 0);
         assert!(caps.memory.total_bytes > 0);
     }
@@ -599,7 +599,7 @@ mod tests {
 
     #[test]
     fn test_device_profiler() {
-        let caps = Arc::new(DeviceCapabilities::detect().unwrap());
+        let caps = Arc::new(DeviceCapabilities::detect().expect("test: should succeed"));
         let profiler = DeviceProfiler::new(caps);
 
         let bandwidth = profiler.profile_memory_bandwidth();

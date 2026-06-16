@@ -4,7 +4,7 @@
 //! For latency percentiles: cargo bench --bench transport_bench -- --verbose
 
 use bytes::Bytes;
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use ipfrs_core::Cid;
 use ipfrs_transport::{
     ConcurrentWantList, EdgeNode, ErasureConfig, LatencyTracker, MemoryTracker, MessageWantEntry,
@@ -13,6 +13,7 @@ use ipfrs_transport::{
     TensorMetadata, ThroughputTracker, Timer, WantListConfig,
 };
 use multihash::Multihash;
+use std::hint::black_box;
 use std::time::{Duration, Instant};
 
 /// Create a dummy CID for testing

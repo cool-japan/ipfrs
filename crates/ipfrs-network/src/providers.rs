@@ -278,7 +278,7 @@ impl ProviderCache {
             .collect();
 
         // Sort by last accessed (oldest first)
-        entries.sort_by(|a, b| a.1.cmp(&b.1));
+        entries.sort_by_key(|a| a.1);
 
         let mut stats = self.stats.write();
         for (cid, _) in entries.into_iter().take(to_evict) {
@@ -346,7 +346,9 @@ mod tests {
         cache.put(cid, vec![peer1, peer2]);
 
         // Should be cached now
-        let providers = cache.get(&cid).unwrap();
+        let providers = cache
+            .get(&cid)
+            .expect("test: cache should contain providers after put");
         assert_eq!(providers.len(), 2);
         assert!(providers.contains(&peer1));
         assert!(providers.contains(&peer2));
@@ -366,12 +368,16 @@ mod tests {
 
         // Add a provider
         cache.add_provider(&cid, peer3);
-        let providers = cache.get(&cid).unwrap();
+        let providers = cache
+            .get(&cid)
+            .expect("test: cache should have 3 providers after add");
         assert_eq!(providers.len(), 3);
 
         // Remove a provider
         cache.remove_provider(&cid, &peer1);
-        let providers = cache.get(&cid).unwrap();
+        let providers = cache
+            .get(&cid)
+            .expect("test: cache should have 2 providers after remove");
         assert_eq!(providers.len(), 2);
         assert!(!providers.contains(&peer1));
     }

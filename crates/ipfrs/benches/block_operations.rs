@@ -1,12 +1,13 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use ipfrs::{Node, NodeConfig};
 use ipfrs_core::Block;
+use std::hint::black_box;
 use std::path::PathBuf;
 use tokio::runtime::Runtime;
 
 fn create_test_node() -> Node {
     let path = "/tmp/ipfrs-bench-blocks";
-    let _ = std::fs::remove_dir_all(&path);
+    let _ = std::fs::remove_dir_all(path);
 
     let mut config = NodeConfig::default();
     config.storage.path = PathBuf::from(path);

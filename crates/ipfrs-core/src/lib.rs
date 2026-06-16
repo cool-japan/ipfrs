@@ -92,6 +92,8 @@ pub mod hash;
 pub mod integration;
 pub mod ipld;
 pub mod jose;
+pub mod manifest;
+pub mod merkle_batch;
 pub mod metrics;
 pub mod parallel_chunking;
 pub mod pool;
@@ -101,6 +103,7 @@ pub mod streaming_compression;
 pub mod tensor;
 pub mod types;
 pub mod utils;
+pub mod wasm_compat;
 
 pub use self::arrow::{
     arrow_dtype_to_tensor, arrow_to_tensor_block, tensor_dtype_to_arrow, TensorBlockArrowExt,
@@ -139,6 +142,7 @@ pub use self::integration::{
 };
 pub use self::ipld::Ipld;
 pub use self::jose::{JoseBuilder, JoseSignature};
+pub use self::manifest::{ContentManifest, ManifestDiff, ManifestEntry, MerkleTree};
 pub use self::metrics::{global_metrics, Metrics, MetricsSnapshot, PercentileStats, Timer};
 pub use self::parallel_chunking::{
     ParallelChunker, ParallelChunkingConfig, ParallelChunkingResult, ParallelDeduplicator,
@@ -154,3 +158,4 @@ pub use self::streaming::{
 pub use self::streaming_compression::{CompressingStream, DecompressingStream, StreamingStats};
 pub use self::tensor::{TensorBlock, TensorDtype, TensorMetadata, TensorShape};
 pub use self::types::{BlockSize, PeerId, Priority};
+pub use self::wasm_compat::{PlatformTime, TargetCapabilities, IS_WASM32};

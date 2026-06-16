@@ -44,7 +44,9 @@ pub struct QuicConfig {
 impl Default for QuicConfig {
     fn default() -> Self {
         Self {
-            bind_addr: "0.0.0.0:0".parse().unwrap(),
+            bind_addr: "0.0.0.0:0"
+                .parse()
+                .expect("static socket addr literal must parse"),
             idle_timeout: Duration::from_secs(30),
             max_streams: 256,
             enable_0rtt: true,
@@ -161,6 +163,9 @@ pub struct QuicTransport {
 impl QuicTransport {
     /// Create a new QUIC transport
     pub async fn new(config: QuicConfig) -> Result<Self> {
+        // Install rustcrypto provider for rustls (Pure Rust, no ring/C dependency)
+        let _ = rustls_rustcrypto::provider().install_default();
+
         // Create self-signed certificate for development
         let (cert, key) = Self::generate_self_signed_cert()?;
 

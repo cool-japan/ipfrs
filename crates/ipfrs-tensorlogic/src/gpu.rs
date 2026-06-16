@@ -356,7 +356,7 @@ mod tests {
 
         executor.select_device(device);
         assert!(executor.is_available());
-        assert_eq!(executor.device().unwrap().id, 0);
+        assert_eq!(executor.device().expect("test: should succeed").id, 0);
     }
 
     #[test]
@@ -371,11 +371,11 @@ mod tests {
     fn test_memory_manager() {
         let mut manager = GpuMemoryManager::new(1000);
 
-        let id1 = manager.allocate(400).unwrap();
+        let id1 = manager.allocate(400).expect("test: should succeed");
         assert_eq!(manager.available(), 600);
         assert_eq!(manager.utilization(), 40.0);
 
-        let id2 = manager.allocate(300).unwrap();
+        let id2 = manager.allocate(300).expect("test: should succeed");
         assert_eq!(manager.available(), 300);
 
         // Should fail - not enough memory
@@ -391,7 +391,7 @@ mod tests {
     #[test]
     fn test_list_devices() {
         // In stub mode, no devices are available
-        let devices = GpuExecutor::list_devices().unwrap();
+        let devices = GpuExecutor::list_devices().expect("test: should succeed");
         assert_eq!(devices.len(), 0);
     }
 }

@@ -734,7 +734,7 @@ mod tests {
         analyzer.record_query("peer1".to_string(), Duration::from_millis(50), true);
         analyzer.record_bandwidth(1000, 2000);
 
-        let analysis = analyzer.analyze().unwrap();
+        let analysis = analyzer.analyze().expect("test: analyze should succeed");
         assert_eq!(analysis.total_connections, 1);
         assert_eq!(analysis.total_queries, 1);
         assert_eq!(analysis.query_success_rate, 100.0);
@@ -748,8 +748,11 @@ mod tests {
         analyzer.record_connection("peer1".to_string(), 1024);
         analyzer.record_query("peer1".to_string(), Duration::from_millis(50), true);
 
-        let analysis = analyzer.analyze().unwrap();
-        let profile = analysis.peer_profiles.get("peer1").unwrap();
+        let analysis = analyzer.analyze().expect("test: analyze should succeed");
+        let profile = analysis
+            .peer_profiles
+            .get("peer1")
+            .expect("test: peer1 profile should exist");
         assert_eq!(profile.total_connections, 1);
         assert_eq!(profile.total_queries, 1);
         assert_eq!(profile.behavior_score, 1.0);

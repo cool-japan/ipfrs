@@ -815,7 +815,7 @@ mod tests {
         let blake3 = blake3_cid(data).unwrap();
 
         // All should produce different CIDs
-        let cids = vec![
+        let cids = [
             sha256, sha512, sha3_256, sha3_512, blake2b256, blake2b512, blake2s256, blake3,
         ];
 

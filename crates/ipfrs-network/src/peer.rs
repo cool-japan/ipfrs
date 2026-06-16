@@ -363,7 +363,7 @@ impl PeerStore {
     /// Get peers sorted by reputation (highest first)
     pub fn peers_by_reputation(&self) -> Vec<PeerInfo> {
         let mut peers: Vec<_> = self.peers.iter().map(|e| e.info.clone()).collect();
-        peers.sort_by(|a, b| b.reputation.cmp(&a.reputation));
+        peers.sort_by_key(|p| std::cmp::Reverse(p.reputation));
         peers
     }
 
@@ -613,9 +613,15 @@ mod tests {
         store.update_latency(&peer_id, Duration::from_millis(50));
         store.update_latency(&peer_id, Duration::from_millis(100));
 
-        let info = store.get_peer(&peer_id).unwrap();
+        let info = store
+            .get_peer(&peer_id)
+            .expect("test: peer should exist after update_latency");
         assert!(info.avg_latency_ms.is_some());
-        assert_eq!(info.avg_latency_ms.unwrap(), 75); // average of 50 and 100
+        assert_eq!(
+            info.avg_latency_ms
+                .expect("test: avg_latency_ms should be set"),
+            75
+        ); // average of 50 and 100
     }
 
     #[test]
@@ -626,17 +632,23 @@ mod tests {
         store.peer_connected(peer_id);
 
         // Initial reputation is 50
-        let info = store.get_peer(&peer_id).unwrap();
+        let info = store
+            .get_peer(&peer_id)
+            .expect("test: peer should exist after connect");
         assert_eq!(info.reputation, 50);
 
         // Increase reputation
         store.increase_reputation(&peer_id, 10);
-        let info = store.get_peer(&peer_id).unwrap();
+        let info = store
+            .get_peer(&peer_id)
+            .expect("test: peer should exist after increase_reputation");
         assert_eq!(info.reputation, 60);
 
         // Decrease reputation
         store.decrease_reputation(&peer_id, 20);
-        let info = store.get_peer(&peer_id).unwrap();
+        let info = store
+            .get_peer(&peer_id)
+            .expect("test: peer should exist after decrease_reputation");
         assert_eq!(info.reputation, 40);
     }
 
@@ -687,25 +699,35 @@ mod tests {
         let peer1 = random_peer_id();
         let peer2 = random_peer_id();
 
-        let addr1: Multiaddr = "/ip4/127.0.0.1/tcp/4001".parse().unwrap();
-        let addr2: Multiaddr = "/ip4/192.168.1.1/tcp/4001".parse().unwrap();
+        let addr1: Multiaddr = "/ip4/127.0.0.1/tcp/4001"
+            .parse()
+            .expect("test: valid multiaddr should parse");
+        let addr2: Multiaddr = "/ip4/192.168.1.1/tcp/4001"
+            .parse()
+            .expect("test: valid multiaddr should parse");
 
         store.add_peer(peer1, vec![addr1.clone()]);
         store.add_peer(peer2, vec![addr2.clone()]);
         store.increase_reputation(&peer1, 30);
 
         // Save to file
-        store.save_to_file(&file_path).unwrap();
+        store
+            .save_to_file(&file_path)
+            .expect("test: save_to_file should succeed");
 
         // Create new store and load
         let store2 = PeerStore::new(100);
-        let loaded = store2.load_from_file(&file_path).unwrap();
+        let loaded = store2
+            .load_from_file(&file_path)
+            .expect("test: load_from_file should succeed");
 
         assert_eq!(loaded, 2);
         assert_eq!(store2.known_count(), 2);
 
         // Verify peer1 reputation was preserved
-        let info1 = store2.get_peer(&peer1).unwrap();
+        let info1 = store2
+            .get_peer(&peer1)
+            .expect("test: peer1 should exist after load");
         assert_eq!(info1.reputation, 80);
 
         // Clean up
@@ -745,6 +767,9 @@ mod tests {
         let store = PeerStore::new(100);
         let result = store.load_from_file(Path::new("/nonexistent/path/peers.json"));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 0);
+        assert_eq!(
+            result.expect("test: load from nonexistent path should return Ok"),
+            0
+        );
     }
 }

@@ -396,7 +396,12 @@ impl MetadataStore {
     /// Insert or update metadata for a CID
     pub fn insert(&self, cid: Cid, metadata: Metadata) -> Result<()> {
         // Remove old indexes if updating
-        if self.data.read().unwrap().contains_key(&cid) {
+        if self
+            .data
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(&cid)
+        {
             self.remove_from_indexes(&cid)?;
         }
 
@@ -404,40 +409,62 @@ impl MetadataStore {
         self.add_to_indexes(&cid, &metadata)?;
 
         // Store metadata
-        self.data.write().unwrap().insert(cid, metadata);
+        self.data
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(cid, metadata);
 
         Ok(())
     }
 
     /// Get metadata for a CID
     pub fn get(&self, cid: &Cid) -> Option<Metadata> {
-        self.data.read().unwrap().get(cid).cloned()
+        self.data
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(cid)
+            .cloned()
     }
 
     /// Remove metadata for a CID
     pub fn remove(&self, cid: &Cid) -> Result<Option<Metadata>> {
         self.remove_from_indexes(cid)?;
-        Ok(self.data.write().unwrap().remove(cid))
+        Ok(self
+            .data
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(cid))
     }
 
     /// Check if metadata exists for a CID
     pub fn contains(&self, cid: &Cid) -> bool {
-        self.data.read().unwrap().contains_key(cid)
+        self.data
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(cid)
     }
 
     /// Get all CIDs with metadata
     pub fn cids(&self) -> Vec<Cid> {
-        self.data.read().unwrap().keys().copied().collect()
+        self.data
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .keys()
+            .copied()
+            .collect()
     }
 
     /// Get number of stored metadata records
     pub fn len(&self) -> usize {
-        self.data.read().unwrap().len()
+        self.data.read().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     /// Check if store is empty
     pub fn is_empty(&self) -> bool {
-        self.data.read().unwrap().is_empty()
+        self.data
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
     }
 
     /// Filter CIDs by metadata filter
@@ -450,7 +477,7 @@ impl MetadataStore {
         // Fall back to linear scan
         self.data
             .read()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .iter()
             .filter(|(_, m)| filter.matches(m))
             .map(|(cid, _)| *cid)
@@ -461,14 +488,17 @@ impl MetadataStore {
     fn filter_with_index(&self, filter: &MetadataFilter) -> Option<Vec<Cid>> {
         match filter {
             MetadataFilter::Equals(field, MetadataValue::String(value)) => {
-                let index = self.string_index.read().unwrap();
+                let index = self.string_index.read().unwrap_or_else(|e| e.into_inner());
                 index
                     .get(field)
                     .and_then(|field_index| field_index.get(value))
                     .map(|cids| cids.iter().copied().collect())
             }
             MetadataFilter::TimeRange { field, start, end } if field == "created_at" => {
-                let index = self.timestamp_index.read().unwrap();
+                let index = self
+                    .timestamp_index
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner());
                 let range_start = start.unwrap_or(0);
                 let range_end = end.unwrap_or(u64::MAX);
 
@@ -506,7 +536,7 @@ impl MetadataStore {
             if let MetadataValue::String(s) = value {
                 self.string_index
                     .write()
-                    .unwrap()
+                    .unwrap_or_else(|e| e.into_inner())
                     .entry(key.clone())
                     .or_default()
                     .entry(s.clone())
@@ -517,7 +547,7 @@ impl MetadataStore {
             if let Some(i) = value.as_integer() {
                 self.numeric_index
                     .write()
-                    .unwrap()
+                    .unwrap_or_else(|e| e.into_inner())
                     .entry(key.clone())
                     .or_default()
                     .entry(i)
@@ -529,7 +559,7 @@ impl MetadataStore {
         // Index creation timestamp
         self.timestamp_index
             .write()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .entry(metadata.created_at)
             .or_default()
             .insert(*cid);
@@ -539,12 +569,17 @@ impl MetadataStore {
 
     /// Remove metadata from indexes
     fn remove_from_indexes(&self, cid: &Cid) -> Result<()> {
-        let data = self.data.read().unwrap();
+        let data = self.data.read().unwrap_or_else(|e| e.into_inner());
         if let Some(metadata) = data.get(cid) {
             // Remove from string index
             for (key, value) in &metadata.fields {
                 if let MetadataValue::String(s) = value {
-                    if let Some(field_index) = self.string_index.write().unwrap().get_mut(key) {
+                    if let Some(field_index) = self
+                        .string_index
+                        .write()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .get_mut(key)
+                    {
                         if let Some(cids) = field_index.get_mut(s) {
                             cids.remove(cid);
                         }
@@ -552,7 +587,12 @@ impl MetadataStore {
                 }
 
                 if let Some(i) = value.as_integer() {
-                    if let Some(field_index) = self.numeric_index.write().unwrap().get_mut(key) {
+                    if let Some(field_index) = self
+                        .numeric_index
+                        .write()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .get_mut(key)
+                    {
                         if let Some(cids) = field_index.get_mut(&i) {
                             cids.remove(cid);
                         }
@@ -564,7 +604,7 @@ impl MetadataStore {
             if let Some(cids) = self
                 .timestamp_index
                 .write()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .get_mut(&metadata.created_at)
             {
                 cids.remove(cid);
@@ -576,7 +616,10 @@ impl MetadataStore {
 
     /// Get CIDs created within a time range
     pub fn get_by_time_range(&self, start: Option<u64>, end: Option<u64>) -> Vec<Cid> {
-        let index = self.timestamp_index.read().unwrap();
+        let index = self
+            .timestamp_index
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
         let range_start = start.unwrap_or(0);
         let range_end = end.unwrap_or(u64::MAX);
 
@@ -590,7 +633,7 @@ impl MetadataStore {
     pub fn get_field_values(&self, field: &str) -> Vec<MetadataValue> {
         self.data
             .read()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .values()
             .filter_map(|m| m.get(field).cloned())
             .collect::<HashSet<_>>()
@@ -600,7 +643,7 @@ impl MetadataStore {
 
     /// Get facet counts for a string field
     pub fn get_facet_counts(&self, field: &str) -> HashMap<String, usize> {
-        let index = self.string_index.read().unwrap();
+        let index = self.string_index.read().unwrap_or_else(|e| e.into_inner());
         index
             .get(field)
             .map(|field_index| {
@@ -614,10 +657,19 @@ impl MetadataStore {
 
     /// Clear all metadata
     pub fn clear(&self) {
-        self.data.write().unwrap().clear();
-        self.string_index.write().unwrap().clear();
-        self.numeric_index.write().unwrap().clear();
-        self.timestamp_index.write().unwrap().clear();
+        self.data.write().unwrap_or_else(|e| e.into_inner()).clear();
+        self.string_index
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        self.numeric_index
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        self.timestamp_index
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 }
 
@@ -735,13 +787,13 @@ mod tests {
     fn test_cid() -> Cid {
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse()
-            .unwrap()
+            .expect("test: known-valid CID string should parse")
     }
 
     fn test_cid2() -> Cid {
         "bafybeiczsscdsbs7ffqz55asqdf3smv6klcw3gofszvwlyarci47bgf354"
             .parse()
-            .unwrap()
+            .expect("test: known-valid CID string should parse")
     }
 
     #[test]
@@ -798,8 +850,12 @@ mod tests {
             .with_string("type", "document")
             .with_integer("size", 2048);
 
-        store.insert(cid1, meta1).unwrap();
-        store.insert(cid2, meta2).unwrap();
+        store
+            .insert(cid1, meta1)
+            .expect("test: insert cid1 into store should succeed");
+        store
+            .insert(cid2, meta2)
+            .expect("test: insert cid2 into store should succeed");
 
         assert_eq!(store.len(), 2);
 
@@ -843,7 +899,7 @@ mod tests {
     fn test_temporal_options() {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("test: system time should be after UNIX_EPOCH")
             .as_secs();
 
         let options = TemporalOptions {
@@ -874,9 +930,13 @@ mod tests {
         ];
 
         for (i, cid_str) in valid_cids.iter().enumerate() {
-            let cid: Cid = cid_str.parse().unwrap();
+            let cid: Cid = cid_str
+                .parse()
+                .expect("test: known-valid CID string should parse");
             let meta = Metadata::new().with_string("type", if i < 2 { "image" } else { "doc" });
-            store.insert(cid, meta).unwrap();
+            store
+                .insert(cid, meta)
+                .expect("test: insert CID metadata should succeed");
         }
 
         let counts = store.get_facet_counts("type");

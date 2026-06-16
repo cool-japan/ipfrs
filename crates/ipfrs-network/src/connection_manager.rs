@@ -104,11 +104,9 @@ impl ConnectionInfo {
 
         // Value = score * 10 + activity_rate + latency_bonus
         let base_value = self.score as u64 * 10;
-        let activity_rate = if age_secs > 0 {
-            activity * 60 / age_secs // messages per minute
-        } else {
-            activity * 60
-        };
+        let activity_rate = (activity * 60)
+            .checked_div(age_secs)
+            .unwrap_or(activity * 60); // messages per minute
         let latency_bonus = match self.avg_latency_ms {
             Some(lat) if lat < 50 => 20,
             Some(lat) if lat < 100 => 10,

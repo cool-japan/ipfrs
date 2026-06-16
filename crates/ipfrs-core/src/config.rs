@@ -46,7 +46,7 @@ pub static GLOBAL_CONFIG: Lazy<Arc<RwLock<Config>>> =
 /// use ipfrs_core::config::global_config;
 ///
 /// let config = global_config();
-/// let chunk_size = config.read().unwrap().chunk_size;
+/// let chunk_size = config.read().unwrap_or_else(|e| e.into_inner()).chunk_size;
 /// ```
 pub fn global_config() -> Arc<RwLock<Config>> {
     Arc::clone(&GLOBAL_CONFIG)
@@ -63,7 +63,7 @@ pub fn global_config() -> Arc<RwLock<Config>> {
 /// set_global_config(config);
 /// ```
 pub fn set_global_config(config: Config) {
-    *GLOBAL_CONFIG.write().unwrap() = config;
+    *GLOBAL_CONFIG.write().unwrap_or_else(|e| e.into_inner()) = config;
 }
 
 /// Main configuration for IPFRS operations
@@ -453,7 +453,7 @@ mod tests {
     fn test_global_config() {
         let config = global_config();
         {
-            let cfg = config.read().unwrap();
+            let cfg = config.read().unwrap_or_else(|e| e.into_inner());
             assert_eq!(cfg.chunk_size, DEFAULT_CHUNK_SIZE);
         }
 
@@ -461,7 +461,7 @@ mod tests {
         set_global_config(Config::high_performance());
 
         {
-            let cfg = config.read().unwrap();
+            let cfg = config.read().unwrap_or_else(|e| e.into_inner());
             assert_eq!(cfg.hash_algorithm, HashAlgorithm::Sha3_256);
         }
 

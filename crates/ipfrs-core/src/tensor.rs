@@ -434,7 +434,9 @@ impl TensorBlock {
         let mut result = Vec::with_capacity(self.element_count());
 
         for chunk in data.chunks_exact(4) {
-            let bytes: [u8; 4] = chunk.try_into().unwrap();
+            let bytes: [u8; 4] = chunk
+                .try_into()
+                .expect("chunks_exact(4) guarantees exactly 4 bytes");
             result.push(f32::from_le_bytes(bytes));
         }
 
@@ -454,7 +456,9 @@ impl TensorBlock {
         let mut result = Vec::with_capacity(self.element_count());
 
         for chunk in data.chunks_exact(8) {
-            let bytes: [u8; 8] = chunk.try_into().unwrap();
+            let bytes: [u8; 8] = chunk
+                .try_into()
+                .expect("chunks_exact(8) guarantees exactly 8 bytes");
             result.push(f64::from_le_bytes(bytes));
         }
 
@@ -474,7 +478,9 @@ impl TensorBlock {
         let mut result = Vec::with_capacity(self.element_count());
 
         for chunk in data.chunks_exact(4) {
-            let bytes: [u8; 4] = chunk.try_into().unwrap();
+            let bytes: [u8; 4] = chunk
+                .try_into()
+                .expect("chunks_exact(4) guarantees exactly 4 bytes");
             result.push(i32::from_le_bytes(bytes));
         }
 

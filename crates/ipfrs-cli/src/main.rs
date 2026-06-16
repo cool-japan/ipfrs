@@ -3,14 +3,19 @@
 //! Version: 0.3.0 "The Fast & The Wise"
 
 // Import library modules
+use ipfrs_cli::commands::ipld as ipld_cmds;
+use ipfrs_cli::commands::query::OutputFormat;
 use ipfrs_cli::commands::*;
+use ipfrs_cli::connectivity::{check_daemon_reachable, offline_error_message};
 use ipfrs_cli::{output, shell, tui, utils};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tracing::info;
 
-use output::{error, format_bytes};
+use output::error;
+
+mod dispatch;
 
 /// Exit codes for shell script integration
 ///
@@ -151,7 +156,8 @@ enum Commands {
         to the specified output path.\n\n\
         Examples:\n  \
         ipfrs get QmHash123           # Save to file named by CID\n  \
-        ipfrs get QmHash123 -o file   # Save to specific file")]
+        ipfrs get QmHash123 -o file   # Save to specific file\n  \
+        ipfrs get QmHash123 --timeout 60  # Allow up to 60 s for network fetch")]
     Get {
         /// Content Identifier (CID) of the content to retrieve
         #[arg(value_name = "CID")]
@@ -159,6 +165,9 @@ enum Commands {
         /// Output file path (defaults to CID if not specified)
         #[arg(short, long, value_name = "FILE")]
         output: Option<String>,
+        /// Timeout in seconds for the block fetch (0 = no timeout, default: 30)
+        #[arg(long, default_value = "30", value_name = "SECS")]
+        timeout: u64,
     },
 
     /// Output the contents of a file to stdout
@@ -167,11 +176,15 @@ enum Commands {
         file contents without saving to disk.\n\n\
         Examples:\n  \
         ipfrs cat QmHash123           # Output to stdout\n  \
-        ipfrs cat QmHash123 | less    # Pipe to pager")]
+        ipfrs cat QmHash123 | less    # Pipe to pager\n  \
+        ipfrs cat QmHash123 --timeout 60  # Allow up to 60 s for network fetch")]
     Cat {
         /// Content Identifier (CID) to retrieve and output
         #[arg(value_name = "CID")]
         cid: String,
+        /// Timeout in seconds for the block fetch (0 = no timeout, default: 30)
+        #[arg(long, default_value = "30", value_name = "SECS")]
+        timeout: u64,
     },
 
     /// List the contents of an IPFRS directory
@@ -262,10 +275,64 @@ enum Commands {
         command: SemanticCommands,
     },
 
+    /// Run a query — semantic similarity, logic inference, or both
+    #[command(
+        long_about = "Run a query using semantic similarity, logic inference, or both.\n\n\
+            Auto-detects query type:\n  \
+            - Logic predicates: ancestor(X, bob)\n  \
+            - Natural language: tensor operations\n\n\
+            Examples:\n  \
+            ipfrs query \"tensor operations\"\n  \
+            ipfrs query \"ancestor(X, bob)\"\n  \
+            ipfrs query --hybrid \"machine learning\" --top-k 5\n  \
+            ipfrs query --hybrid \"machine learning\" --logic \"indexed(X)\"\n  \
+            ipfrs query \"parent(X, bob)\" --format json"
+    )]
+    Query {
+        /// Query string (natural language or logic predicate)
+        #[arg(value_name = "QUERY")]
+        query: String,
+
+        /// Enable hybrid mode (run both semantic and logic search)
+        #[arg(long, default_value = "false")]
+        hybrid: bool,
+
+        /// Pipeline mode: read CIDs from stdin and apply query as a logic predicate filter
+        #[arg(long)]
+        pipeline: bool,
+
+        /// Number of results to return
+        #[arg(long, short = 'k', default_value = "10")]
+        top_k: usize,
+
+        /// Logic predicate filter applied to semantic results in hybrid mode (use X as CID placeholder)
+        #[arg(long, value_name = "PREDICATE")]
+        logic: Option<String>,
+
+        /// Output format: text (human-readable) or json (newline-delimited JSON)
+        #[arg(long, value_enum, default_value = "text")]
+        format: OutputFormat,
+
+        /// Output as JSON (deprecated: use --format json instead)
+        #[arg(long, hide = true)]
+        json: bool,
+    },
+
     /// DAG (Directed Acyclic Graph) operations
     Dag {
         #[command(subcommand)]
         command: DagCommands,
+    },
+
+    /// IPLD path resolution and block inspection
+    #[command(long_about = "Resolve IPLD paths and inspect DAG blocks.\n\n\
+            Subcommands:\n  \
+            ipfrs ipld resolve /ipld/<cid>/field/0   Resolve a path and print the value\n  \
+            ipfrs ipld stat <cid>                    Print codec, size, and link count\n  \
+            ipfrs ipld links <cid>                   List all CIDs linked from a block")]
+    Ipld {
+        #[command(subcommand)]
+        subcommand: IpldCommands,
     },
 
     /// Pin management operations
@@ -349,6 +416,88 @@ enum Commands {
         #[arg(long)]
         check: bool,
     },
+
+    /// Peer identity management
+    #[command(long_about = "Manage the node's Ed25519 peer identity key.\n\n\
+            The identity key determines the node's PeerId on the network.\n\
+            Rotating the key changes the PeerId and severs existing connections.\n\n\
+            Examples:\n  \
+            ipfrs identity show            # Show current PeerId and key info\n  \
+            ipfrs identity rotate          # Generate a new keypair\n  \
+            ipfrs identity export-pem      # Export public key as PEM")]
+    Identity {
+        #[command(subcommand)]
+        subcommand: IdentityCommands,
+    },
+
+    /// Prometheus metrics operations
+    #[command(
+        long_about = "View and manage Prometheus metrics collected by the IPFRS node.\n\n\
+            Examples:\n  \
+            ipfrs metrics show             # Print all metrics in Prometheus text format\n  \
+            ipfrs metrics show --format json  # Print metrics wrapped in JSON\n  \
+            ipfrs metrics reset            # Reset metric counters (requires daemon restart)"
+    )]
+    Metrics {
+        #[command(subcommand)]
+        command: MetricsCommands,
+    },
+
+    /// Print a diagnostic snapshot of the running node
+    #[command(
+        long_about = "Collect and display a diagnostic snapshot of the IPFRS node.\n\n\
+            Reports daemon status, storage usage, network peers, inference latency,\n\
+            HNSW index size, TensorLogic knowledge-base stats, and uptime.\n\n\
+            Examples:\n  \
+            ipfrs diag               # Human-readable report\n  \
+            ipfrs diag --json        # Machine-readable JSON"
+    )]
+    Diag {
+        /// Emit diagnostics as a JSON object instead of a human-readable table
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+/// Subcommands for `ipfrs identity`
+#[derive(Subcommand)]
+enum IdentityCommands {
+    /// Show the current PeerId and public key fingerprint
+    Show {
+        /// Data directory containing the identity key file
+        #[arg(short, long, default_value = ".ipfrs")]
+        data_dir: String,
+        /// Output format (text, json)
+        #[arg(long, default_value = "text")]
+        format: String,
+    },
+
+    /// Rotate the peer identity key (generates a new Ed25519 keypair)
+    Rotate {
+        /// Data directory containing the identity key file
+        #[arg(short, long, default_value = ".ipfrs")]
+        data_dir: String,
+    },
+
+    /// Export the current public key as a PEM block
+    ExportPem {
+        /// Data directory containing the identity key file
+        #[arg(short, long, default_value = ".ipfrs")]
+        data_dir: String,
+    },
+}
+
+/// Subcommands for `ipfrs metrics`
+#[derive(Subcommand)]
+enum MetricsCommands {
+    /// Print all metrics in Prometheus text format (or JSON with --format json)
+    Show {
+        /// Output format: `text` (default) or `json`
+        #[arg(long, default_value = "text", value_name = "FORMAT")]
+        format: OutputFormat,
+    },
+    /// Reset metric counters (informational — requires daemon restart for a full reset)
+    Reset,
 }
 
 /// Supported shells for completion generation
@@ -669,6 +818,56 @@ enum LogicCommands {
         /// Path to load the knowledge base from
         path: String,
     },
+
+    /// Run a Datalog-style goal query (e.g., "ancestor(X, bob)")
+    Query {
+        /// Goal predicate to solve (e.g., "ancestor(X, bob)")
+        #[arg(value_name = "GOAL")]
+        goal: String,
+
+        /// Maximum inference depth
+        #[arg(long, default_value = "10")]
+        max_depth: usize,
+
+        /// Timeout in milliseconds (overrides --timeout when set)
+        #[arg(long, value_name = "MS")]
+        timeout_ms: Option<u64>,
+
+        /// Timeout in seconds (default: 30; use --timeout-ms for millisecond precision)
+        #[arg(long, default_value = "30")]
+        timeout: u64,
+
+        /// Output format: text (human-readable) or json (newline-delimited JSON)
+        #[arg(long, value_enum, default_value = "text")]
+        format: OutputFormat,
+
+        /// Output as JSON (deprecated: use --format json instead)
+        #[arg(long, hide = true)]
+        json: bool,
+    },
+
+    /// Filter CIDs from stdin by applying a logic predicate (use X as CID placeholder)
+    #[command(
+        long_about = "Read CIDs from stdin (one per line) and output only those for which \
+            the predicate holds.\n\n\
+            X in the predicate template is replaced by each CID before inference.\n\n\
+            Examples:\n  \
+            echo 'bafkrei...' | ipfrs logic filter 'indexed(X)'\n  \
+            ipfrs semantic query \"tensors\" --json | jq -r '.[].cid' | ipfrs logic filter 'valid(X)'"
+    )]
+    Filter {
+        /// Logic predicate template (use X as placeholder for each CID)
+        #[arg(value_name = "PREDICATE")]
+        predicate: String,
+
+        /// Output matching CIDs as a JSON array
+        #[arg(long)]
+        json: bool,
+
+        /// Data directory (default: .ipfrs)
+        #[arg(long, default_value = ".ipfrs")]
+        data_dir: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -723,6 +922,65 @@ enum SemanticCommands {
     Load {
         /// Path to load the semantic index from
         path: String,
+    },
+
+    /// Semantic similarity search by text query
+    Query {
+        /// Query text to search for similar content
+        #[arg(value_name = "TEXT")]
+        text: String,
+
+        /// Number of top results to return
+        #[arg(long, short = 'k', default_value = "10")]
+        top_k: usize,
+
+        /// Minimum similarity threshold (0.0 to 1.0)
+        #[arg(long, default_value = "0.0")]
+        threshold: f32,
+
+        /// Output format: text (human-readable) or json (newline-delimited JSON)
+        #[arg(long, value_enum, default_value = "text")]
+        format: OutputFormat,
+
+        /// Output as JSON (deprecated: use --format json instead)
+        #[arg(long, hide = true)]
+        json: bool,
+    },
+}
+
+/// Subcommands for `ipfrs ipld`
+#[derive(Subcommand)]
+enum IpldCommands {
+    /// Resolve an IPLD path and print the value
+    ///
+    /// Path format: /ipld/\<cid\>/field/subfield/0
+    Resolve {
+        /// Full IPLD path (e.g., /ipld/bafk.../head/args/0)
+        #[arg(value_name = "PATH")]
+        path: String,
+        /// Output format: text (default) or json
+        #[arg(long, value_enum, default_value = "text")]
+        format: OutputFormat,
+    },
+
+    /// Print metadata about a block: codec, size, links count
+    Stat {
+        /// Content Identifier (CID) of the block
+        #[arg(value_name = "CID")]
+        cid: String,
+        /// Output format: text (default) or json
+        #[arg(long, value_enum, default_value = "text")]
+        format: OutputFormat,
+    },
+
+    /// List all CIDs linked from a given block
+    Links {
+        /// Content Identifier (CID) of the block
+        #[arg(value_name = "CID")]
+        cid: String,
+        /// Output format: text (default) or json
+        #[arg(long, value_enum, default_value = "text")]
+        format: OutputFormat,
     },
 }
 
@@ -825,6 +1083,9 @@ enum RepoCommands {
         /// Perform a dry run (don't actually delete)
         #[arg(long)]
         dry_run: bool,
+        /// Only collect blocks older than this many seconds (default: 3600 = 1 h)
+        #[arg(long, default_value_t = 3600u64)]
+        min_age: u64,
         /// Output format (text, json)
         #[arg(long, default_value = "text")]
         format: String,
@@ -846,6 +1107,31 @@ enum RepoCommands {
 
     /// Show repository version
     Version {
+        /// Output format (text, json)
+        #[arg(long, default_value = "text")]
+        format: String,
+    },
+
+    /// Flush the Sled WAL / trigger compaction
+    ///
+    /// Without `--force` the compaction scheduler decides whether enough time
+    /// has elapsed and the store is sufficiently idle.  Pass `--force` to
+    /// flush unconditionally regardless of schedule.
+    #[command(
+        long_about = "Flush the Sled write-ahead log and trigger storage compaction.\n\n\
+        By default the compaction scheduler determines whether enough time has\n\
+        elapsed since the last compaction and whether the store is idle.\n\
+        Use --force to flush immediately regardless of schedule.\n\n\
+        Also reports current deduplication statistics.\n\n\
+        Examples:\n  \
+        ipfrs repo compact            # Compact if schedule allows\n  \
+        ipfrs repo compact --force    # Flush unconditionally\n  \
+        ipfrs repo compact --format json"
+    )]
+    Compact {
+        /// Force compaction even when the scheduler considers it not yet due
+        #[arg(long)]
+        force: bool,
         /// Output format (text, json)
         #[arg(long, default_value = "text")]
         format: String,
@@ -965,6 +1251,20 @@ async fn main() -> Result<()> {
     let log_level = if cli.verbose { "debug" } else { "info" };
     tracing_subscriber::fmt().with_env_filter(log_level).init();
 
+    // Fast offline check: if the command requires the daemon and it is not
+    // running, print a helpful message and exit early rather than letting the
+    // error surface as a cryptic connection-refused deep in the call stack.
+    if requires_daemon(&cli.command) {
+        // Use a default data directory for the PID-file check.  Most network
+        // commands do not carry a `--data-dir` argument, so we use the
+        // conventional default.
+        let data_dir = ".ipfrs";
+        if !check_daemon_reachable(data_dir).await {
+            eprintln!("{}", offline_error_message(data_dir));
+            std::process::exit(exit_codes::NETWORK_ERROR);
+        }
+    }
+
     match cli.command {
         Commands::Init { data_dir } => {
             init_repo(data_dir).await?;
@@ -1021,12 +1321,16 @@ async fn main() -> Result<()> {
             info!("Adding file: {}", path);
             add_file(path, &format).await?;
         }
-        Commands::Get { cid, output } => {
-            get_file(cid, output).await?;
+        Commands::Get {
+            cid,
+            output,
+            timeout,
+        } => {
+            get_file(cid, output, timeout).await?;
         }
-        Commands::Cat { cid } => {
+        Commands::Cat { cid, timeout } => {
             info!("Retrieving content: {}", cid);
-            cat_file(cid).await?;
+            cat_file(cid, timeout).await?;
         }
         Commands::Ls { cid, format } => {
             ls_directory(cid, &format).await?;
@@ -1107,6 +1411,27 @@ async fn main() -> Result<()> {
                 bootstrap_rm(&addr).await?;
             }
         },
+        Commands::Query {
+            query,
+            hybrid,
+            pipeline,
+            top_k,
+            logic,
+            format,
+            json,
+        } => {
+            // --json is a legacy alias for --format json.
+            let effective_format = if json { OutputFormat::Json } else { format };
+            handle_query(
+                &query,
+                hybrid,
+                pipeline,
+                top_k,
+                logic.as_deref(),
+                &effective_format,
+            )
+            .await?;
+        }
         Commands::Logic { command } => match command {
             LogicCommands::Infer {
                 predicate,
@@ -1130,6 +1455,32 @@ async fn main() -> Result<()> {
             }
             LogicCommands::KbLoad { path } => {
                 logic_kb_load(&path).await?;
+            }
+            LogicCommands::Query {
+                goal,
+                max_depth,
+                timeout_ms,
+                timeout,
+                format,
+                json,
+            } => {
+                // --timeout-ms takes precedence; fall back to --timeout (seconds).
+                let effective_timeout_secs = if let Some(ms) = timeout_ms {
+                    // Round up to nearest second for the existing API.
+                    ms.div_ceil(1000)
+                } else {
+                    timeout
+                };
+                let json_output = json || format.is_json();
+                logic_query_streaming(&goal, max_depth, json_output, effective_timeout_secs)
+                    .await?;
+            }
+            LogicCommands::Filter {
+                predicate,
+                json,
+                data_dir,
+            } => {
+                logic_filter(&predicate, json, &data_dir).await?;
             }
         },
         Commands::Semantic { command } => match command {
@@ -1155,6 +1506,16 @@ async fn main() -> Result<()> {
             SemanticCommands::Load { path } => {
                 semantic_load(&path).await?;
             }
+            SemanticCommands::Query {
+                text,
+                top_k,
+                threshold,
+                format,
+                json,
+            } => {
+                let json_output = json || format.is_json();
+                semantic_query(&text, top_k, threshold, json_output).await?;
+            }
         },
         Commands::Dag { command } => match command {
             DagCommands::Get { cid, format } => {
@@ -1177,6 +1538,17 @@ async fn main() -> Result<()> {
                 dag_import(&path, &format).await?;
             }
         },
+        Commands::Ipld { subcommand } => match subcommand {
+            IpldCommands::Resolve { path, format } => {
+                ipld_cmds::ipld_resolve(&path, &format).await?;
+            }
+            IpldCommands::Stat { cid, format } => {
+                ipld_cmds::ipld_stat(&cid, &format).await?;
+            }
+            IpldCommands::Links { cid, format } => {
+                ipld_cmds::ipld_links(&cid, &format).await?;
+            }
+        },
         Commands::Pin { command } => match command {
             PinCommands::Add {
                 cid,
@@ -1196,8 +1568,12 @@ async fn main() -> Result<()> {
             }
         },
         Commands::Repo { command } => match command {
-            RepoCommands::Gc { dry_run, format } => {
-                repo_gc(dry_run, &format).await?;
+            RepoCommands::Gc {
+                dry_run,
+                min_age,
+                format,
+            } => {
+                repo_gc(dry_run, min_age, &format).await?;
             }
             RepoCommands::Stat { format } => {
                 repo_stat(&format).await?;
@@ -1207,6 +1583,9 @@ async fn main() -> Result<()> {
             }
             RepoCommands::Version { format } => {
                 repo_version(&format).await?;
+            }
+            RepoCommands::Compact { force, format } => {
+                storage_compact(force, &format).await?;
             }
         },
         Commands::Tensor { command } => match command {
@@ -1287,10 +1666,10 @@ async fn main() -> Result<()> {
             tui::run_tui().await?;
         }
         Commands::Plugin { command } => {
-            handle_plugin_command(command).await?;
+            dispatch::handle_plugin_command(command).await?;
         }
         Commands::Completions { shell } => {
-            generate_completions(shell);
+            dispatch::generate_completions(shell);
         }
         Commands::Update { check } => {
             use output::{info, success};
@@ -1319,172 +1698,37 @@ async fn main() -> Result<()> {
                 }
             }
         }
-    }
-
-    Ok(())
-}
-
-// ============================================================================
-// Validation Helpers
-// ============================================================================
-
-/// Validate that a CID string has valid format
-#[allow(dead_code)]
-fn validate_cid_format(cid_str: &str) -> Result<()> {
-    if cid_str.is_empty() {
-        return Err(anyhow::anyhow!("CID cannot be empty"));
-    }
-
-    // Check common CID prefixes
-    if !cid_str.starts_with("Qm") && !cid_str.starts_with("bafy") && !cid_str.starts_with("bafk") {
-        output::warning(
-            "CID may have invalid format. Expected to start with 'Qm', 'bafy', or 'bafk'",
-        );
-    }
-
-    Ok(())
-}
-
-/// Check if a path is readable
-#[allow(dead_code)]
-fn validate_path_readable(path: &str) -> Result<()> {
-    let path_obj = std::path::Path::new(path);
-
-    if !path_obj.exists() {
-        return Err(anyhow::anyhow!(
-            "Path does not exist: {}\nPlease check the path and try again.",
-            path
-        ));
-    }
-
-    // Try to open the file to check read permissions
-    if path_obj.is_file() {
-        std::fs::File::open(path_obj).map_err(|e| {
-            anyhow::anyhow!(
-                "Cannot read file: {}\nError: {}\n\nCheck file permissions.",
-                path,
-                e
-            )
-        })?;
-    }
-
-    Ok(())
-}
-
-/// Warn about potentially large operations
-#[allow(dead_code)]
-fn check_file_size_warning(size: u64) {
-    const LARGE_FILE_THRESHOLD: u64 = 100 * 1024 * 1024; // 100 MB
-    const HUGE_FILE_THRESHOLD: u64 = 1024 * 1024 * 1024; // 1 GB
-
-    if size > HUGE_FILE_THRESHOLD {
-        output::warning(&format!(
-            "Very large file detected: {}. This operation may take significant time and memory.",
-            format_bytes(size)
-        ));
-    } else if size > LARGE_FILE_THRESHOLD {
-        output::warning(&format!(
-            "Large file detected: {}. This may take a while.",
-            format_bytes(size)
-        ));
-    }
-}
-
-// ============================================================================
-// Daemon Management
-// ============================================================================
-
-async fn handle_plugin_command(command: PluginCommands) -> Result<()> {
-    use ipfrs_cli::config::Config;
-    use ipfrs_cli::output::{error, info, success, TablePrinter};
-    use ipfrs_cli::plugin::PluginManager;
-
-    let mut manager = PluginManager::new();
-    manager.discover_plugins();
-
-    match command {
-        PluginCommands::List => {
-            let plugins = manager.list_plugins();
-
-            if plugins.is_empty() {
-                info("No plugins found.");
-                println!("\nTo add plugins, place executables in:");
-                println!("  ~/.ipfrs/plugins/");
-                println!("\nPlugin naming convention:");
-                println!("  ipfrs-plugin-<name>");
-                println!("\nExample:");
-                println!("  ipfrs-plugin-hello");
-                return Ok(());
-            }
-
-            info(&format!("Found {} plugin(s):", plugins.len()));
-            println!();
-
-            let mut table = TablePrinter::new(vec!["Name", "Description"]);
-
-            for name in plugins {
-                let desc = manager
-                    .get_plugin(name)
-                    .and_then(|p| p.description())
-                    .unwrap_or("No description");
-                table.add_row(vec![name, desc]);
-            }
-
-            table.print();
+        Commands::Identity { subcommand } => {
+            dispatch::handle_identity_command(subcommand).await?;
         }
-        PluginCommands::Info { name } => {
-            if let Some(plugin) = manager.get_plugin(&name) {
-                success(&format!("Plugin: {}", plugin.name()));
-                println!("Path: {}", plugin.path().display());
-
-                if let Some(desc) = plugin.description() {
-                    println!("Description: {}", desc);
-                } else {
-                    println!("Description: No description available");
-                }
-            } else {
-                error(&format!("Plugin '{}' not found", name));
-                println!("\nAvailable plugins:");
-                for plugin_name in manager.list_plugins() {
-                    println!("  - {}", plugin_name);
-                }
-                std::process::exit(1);
+        Commands::Metrics { command } => match command {
+            MetricsCommands::Show { format } => {
+                handle_metrics_show(&format).await?;
             }
-        }
-        PluginCommands::Run { name, args } => {
-            let config = Config::load()?;
-
-            match manager.execute_plugin(&name, &args, &config) {
-                Ok(code) => {
-                    std::process::exit(code);
-                }
-                Err(e) => {
-                    error(&format!("Failed to execute plugin '{}': {}", name, e));
-                    std::process::exit(1);
-                }
+            MetricsCommands::Reset => {
+                handle_metrics_reset().await?;
             }
+        },
+        Commands::Diag { json } => {
+            handle_diag(json).await?;
         }
     }
 
     Ok(())
 }
 
-fn generate_completions(shell: CompletionShell) {
-    use clap::CommandFactory;
-    use clap_complete::{generate, Shell};
+// ============================================================================
+// Daemon-connectivity helpers
+// ============================================================================
 
-    let mut cmd = Cli::command();
-    let bin_name = "ipfrs";
-
-    let shell = match shell {
-        CompletionShell::Bash => Shell::Bash,
-        CompletionShell::Zsh => Shell::Zsh,
-        CompletionShell::Fish => Shell::Fish,
-        CompletionShell::PowerShell => Shell::PowerShell,
-        CompletionShell::Elvish => Shell::Elvish,
-    };
-
-    generate(shell, &mut cmd, bin_name, &mut std::io::stdout());
+/// Returns `true` for commands that require the IPFRS network daemon to be
+/// running.  Used to produce a fast, actionable error message instead of a
+/// confusing connection-refused error deep in the call stack.
+fn requires_daemon(cmd: &Commands) -> bool {
+    matches!(
+        cmd,
+        Commands::Swarm { .. } | Commands::Dht { .. } | Commands::Bootstrap { .. }
+    )
 }
 
 // ============================================================================
@@ -1492,620 +1736,5 @@ fn generate_completions(shell: CompletionShell) {
 // ============================================================================
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use clap::CommandFactory;
-
-    #[test]
-    fn test_cli_parsing() {
-        // Test basic command parsing
-        let cli = Cli::try_parse_from(["ipfrs", "version"]);
-        assert!(cli.is_ok());
-    }
-
-    #[test]
-    fn test_init_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "init"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Init { data_dir } => {
-                    assert_eq!(data_dir, ".ipfrs");
-                }
-                _ => panic!("Expected Init command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_init_command_custom_dir() {
-        let cli = Cli::try_parse_from(["ipfrs", "init", "--data-dir", "/tmp/ipfrs"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Init { data_dir } => {
-                    assert_eq!(data_dir, "/tmp/ipfrs");
-                }
-                _ => panic!("Expected Init command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_add_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "add", "test.txt"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Add { path, format } => {
-                    assert_eq!(path, "test.txt");
-                    assert_eq!(format, "text");
-                }
-                _ => panic!("Expected Add command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_add_command_json_format() {
-        let cli = Cli::try_parse_from(["ipfrs", "add", "test.txt", "--format", "json"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Add { path, format } => {
-                    assert_eq!(path, "test.txt");
-                    assert_eq!(format, "json");
-                }
-                _ => panic!("Expected Add command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_get_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "get", "QmTest123"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Get { cid, output } => {
-                    assert_eq!(cid, "QmTest123");
-                    assert_eq!(output, None);
-                }
-                _ => panic!("Expected Get command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_get_command_with_output() {
-        let cli = Cli::try_parse_from(["ipfrs", "get", "QmTest123", "-o", "output.txt"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Get { cid, output } => {
-                    assert_eq!(cid, "QmTest123");
-                    assert_eq!(output, Some("output.txt".to_string()));
-                }
-                _ => panic!("Expected Get command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_cat_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "cat", "QmTest123"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Cat { cid } => {
-                    assert_eq!(cid, "QmTest123");
-                }
-                _ => panic!("Expected Cat command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_ls_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "ls", "QmDir123"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Ls { cid, format } => {
-                    assert_eq!(cid, "QmDir123");
-                    assert_eq!(format, "text");
-                }
-                _ => panic!("Expected Ls command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_block_get_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "block", "get", "QmBlock123"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Block { command } => match command {
-                    BlockCommands::Get { cid } => {
-                        assert_eq!(cid, "QmBlock123");
-                    }
-                    _ => panic!("Expected Block Get command"),
-                },
-                _ => panic!("Expected Block command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_block_put_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "block", "put", "data.bin"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Block { command } => match command {
-                    BlockCommands::Put { path, format } => {
-                        assert_eq!(path, "data.bin");
-                        assert_eq!(format, "text");
-                    }
-                    _ => panic!("Expected Block Put command"),
-                },
-                _ => panic!("Expected Block command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_block_stat_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "block", "stat", "QmBlock123"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Block { command } => match command {
-                    BlockCommands::Stat { cid, format } => {
-                        assert_eq!(cid, "QmBlock123");
-                        assert_eq!(format, "text");
-                    }
-                    _ => panic!("Expected Block Stat command"),
-                },
-                _ => panic!("Expected Block command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_block_rm_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "block", "rm", "QmBlock123"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Block { command } => match command {
-                    BlockCommands::Rm { cid, force } => {
-                        assert_eq!(cid, "QmBlock123");
-                        assert!(!force);
-                    }
-                    _ => panic!("Expected Block Rm command"),
-                },
-                _ => panic!("Expected Block command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_block_rm_command_force() {
-        let cli = Cli::try_parse_from(["ipfrs", "block", "rm", "QmBlock123", "--force"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Block { command } => match command {
-                    BlockCommands::Rm { cid, force } => {
-                        assert_eq!(cid, "QmBlock123");
-                        assert!(force);
-                    }
-                    _ => panic!("Expected Block Rm command"),
-                },
-                _ => panic!("Expected Block command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_ping_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "ping", "12D3KooWTest"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Ping { peer_id, count } => {
-                    assert_eq!(peer_id, "12D3KooWTest");
-                    assert_eq!(count, 5);
-                }
-                _ => panic!("Expected Ping command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_ping_command_custom_count() {
-        let cli = Cli::try_parse_from(["ipfrs", "ping", "12D3KooWTest", "-c", "10"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Ping { peer_id, count } => {
-                    assert_eq!(peer_id, "12D3KooWTest");
-                    assert_eq!(count, 10);
-                }
-                _ => panic!("Expected Ping command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_id_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "id"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Id { format } => {
-                    assert_eq!(format, "text");
-                }
-                _ => panic!("Expected Id command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_id_command_json_format() {
-        let cli = Cli::try_parse_from(["ipfrs", "id", "--format", "json"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Id { format } => {
-                    assert_eq!(format, "json");
-                }
-                _ => panic!("Expected Id command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_version_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "version"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Version => {}
-                _ => panic!("Expected Version command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_shell_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "shell"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Shell { data_dir } => {
-                    assert_eq!(data_dir, ".ipfrs");
-                }
-                _ => panic!("Expected Shell command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_verbose_flag() {
-        let cli = Cli::try_parse_from(["ipfrs", "--verbose", "version"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            assert!(cli.verbose);
-        }
-    }
-
-    #[test]
-    fn test_no_color_flag() {
-        let cli = Cli::try_parse_from(["ipfrs", "--no-color", "version"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            assert!(cli.no_color);
-        }
-    }
-
-    #[test]
-    fn test_config_flag() {
-        let cli = Cli::try_parse_from(["ipfrs", "--config", "/tmp/config.toml", "version"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            assert_eq!(cli.config, Some("/tmp/config.toml".to_string()));
-        }
-    }
-
-    #[test]
-    fn test_daemon_run_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "daemon", "run"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Daemon { command } => match command {
-                    Some(DaemonCommands::Run { data_dir }) => {
-                        assert_eq!(data_dir, ".ipfrs");
-                    }
-                    _ => panic!("Expected Daemon Run command"),
-                },
-                _ => panic!("Expected Daemon command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_daemon_start_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "daemon", "start"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Daemon { command } => match command {
-                    Some(DaemonCommands::Start {
-                        data_dir,
-                        pid_file,
-                        log_file,
-                    }) => {
-                        assert_eq!(data_dir, ".ipfrs");
-                        assert_eq!(pid_file, ".ipfrs/daemon.pid");
-                        assert_eq!(log_file, ".ipfrs/daemon.log");
-                    }
-                    _ => panic!("Expected Daemon Start command"),
-                },
-                _ => panic!("Expected Daemon command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_daemon_stop_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "daemon", "stop"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Daemon { command } => match command {
-                    Some(DaemonCommands::Stop { pid_file }) => {
-                        assert_eq!(pid_file, ".ipfrs/daemon.pid");
-                    }
-                    _ => panic!("Expected Daemon Stop command"),
-                },
-                _ => panic!("Expected Daemon command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_completions_bash() {
-        let cli = Cli::try_parse_from(["ipfrs", "completions", "bash"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Completions { shell } => {
-                    assert!(matches!(shell, CompletionShell::Bash));
-                }
-                _ => panic!("Expected Completions command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_completions_zsh() {
-        let cli = Cli::try_parse_from(["ipfrs", "completions", "zsh"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Completions { shell } => {
-                    assert!(matches!(shell, CompletionShell::Zsh));
-                }
-                _ => panic!("Expected Completions command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_tensor_add_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "tensor", "add", "model.safetensors"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Tensor { command } => match command {
-                    TensorCommands::Add { path, format } => {
-                        assert_eq!(path, "model.safetensors");
-                        assert_eq!(format, "text");
-                    }
-                    _ => panic!("Expected Tensor Add command"),
-                },
-                _ => panic!("Expected Tensor command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_tensor_get_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "tensor", "get", "QmTensor123"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Tensor { command } => match command {
-                    TensorCommands::Get { cid, output } => {
-                        assert_eq!(cid, "QmTensor123");
-                        assert_eq!(output, None);
-                    }
-                    _ => panic!("Expected Tensor Get command"),
-                },
-                _ => panic!("Expected Tensor command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_tensor_info_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "tensor", "info", "QmTensor123"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Tensor { command } => match command {
-                    TensorCommands::Info { cid, format } => {
-                        assert_eq!(cid, "QmTensor123");
-                        assert_eq!(format, "text");
-                    }
-                    _ => panic!("Expected Tensor Info command"),
-                },
-                _ => panic!("Expected Tensor command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_invalid_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "invalid_command"]);
-        assert!(cli.is_err());
-    }
-
-    #[test]
-    fn test_missing_required_argument() {
-        let cli = Cli::try_parse_from(["ipfrs", "add"]);
-        assert!(cli.is_err());
-    }
-
-    #[test]
-    fn test_cli_help_generation() {
-        let mut cmd = Cli::command();
-        let help = cmd.render_help();
-        let help_str = help.to_string();
-        assert!(help_str.contains("ipfrs"));
-        assert!(help_str.contains("IPFRS"));
-    }
-
-    #[test]
-    fn test_cli_has_all_major_commands() {
-        let cmd = Cli::command();
-        let subcommands: Vec<_> = cmd.get_subcommands().map(|c| c.get_name()).collect();
-
-        // Check for essential commands
-        assert!(subcommands.contains(&"init"));
-        assert!(subcommands.contains(&"add"));
-        assert!(subcommands.contains(&"get"));
-        assert!(subcommands.contains(&"cat"));
-        assert!(subcommands.contains(&"ls"));
-        assert!(subcommands.contains(&"block"));
-        assert!(subcommands.contains(&"daemon"));
-        assert!(subcommands.contains(&"version"));
-        assert!(subcommands.contains(&"shell"));
-        assert!(subcommands.contains(&"plugin"));
-    }
-
-    #[test]
-    fn test_quiet_flag() {
-        let cli = Cli::try_parse_from(["ipfrs", "--quiet", "version"]).unwrap();
-        assert!(cli.quiet);
-    }
-
-    #[test]
-    fn test_quiet_flag_short() {
-        let cli = Cli::try_parse_from(["ipfrs", "-q", "version"]).unwrap();
-        assert!(cli.quiet);
-    }
-
-    #[test]
-    fn test_quiet_and_verbose_together() {
-        // These flags are independent - both can be set
-        let cli = Cli::try_parse_from(["ipfrs", "-q", "-v", "version"]).unwrap();
-        assert!(cli.quiet);
-        assert!(cli.verbose);
-    }
-
-    #[test]
-    fn test_exit_codes_defined() {
-        // Ensure exit codes are accessible
-        assert_eq!(exit_codes::SUCCESS, 0);
-        assert_eq!(exit_codes::ERROR, 1);
-        assert_eq!(exit_codes::USAGE_ERROR, 2);
-        assert_eq!(exit_codes::NOT_FOUND, 3);
-        assert_eq!(exit_codes::PERMISSION_DENIED, 4);
-        assert_eq!(exit_codes::NETWORK_ERROR, 5);
-        assert_eq!(exit_codes::IO_ERROR, 6);
-        assert_eq!(exit_codes::TIMEOUT, 7);
-        assert_eq!(exit_codes::CONFIG_ERROR, 8);
-    }
-
-    #[test]
-    fn test_plugin_list_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "plugin", "list"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Plugin { command } => match command {
-                    PluginCommands::List => {}
-                    _ => panic!("Expected PluginCommands::List"),
-                },
-                _ => panic!("Expected Plugin command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_plugin_info_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "plugin", "info", "test-plugin"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Plugin { command } => match command {
-                    PluginCommands::Info { name } => {
-                        assert_eq!(name, "test-plugin");
-                    }
-                    _ => panic!("Expected PluginCommands::Info"),
-                },
-                _ => panic!("Expected Plugin command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_plugin_run_command() {
-        let cli = Cli::try_parse_from(["ipfrs", "plugin", "run", "my-plugin", "--arg1", "value"]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Plugin { command } => match command {
-                    PluginCommands::Run { name, args } => {
-                        assert_eq!(name, "my-plugin");
-                        assert_eq!(args, vec!["--arg1", "value"]);
-                    }
-                    _ => panic!("Expected PluginCommands::Run"),
-                },
-                _ => panic!("Expected Plugin command"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_plugin_run_with_multiple_args() {
-        let cli = Cli::try_parse_from([
-            "ipfrs",
-            "plugin",
-            "run",
-            "my-plugin",
-            "arg1",
-            "arg2",
-            "--flag",
-            "-v",
-        ]);
-        assert!(cli.is_ok());
-        if let Ok(cli) = cli {
-            match cli.command {
-                Commands::Plugin { command } => match command {
-                    PluginCommands::Run { name, args } => {
-                        assert_eq!(name, "my-plugin");
-                        assert_eq!(args, vec!["arg1", "arg2", "--flag", "-v"]);
-                    }
-                    _ => panic!("Expected PluginCommands::Run"),
-                },
-                _ => panic!("Expected Plugin command"),
-            }
-        }
-    }
-}
+#[path = "cli_tests.rs"]
+mod tests {}

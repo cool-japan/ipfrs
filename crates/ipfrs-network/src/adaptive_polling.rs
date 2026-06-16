@@ -434,7 +434,8 @@ mod tests {
     #[test]
     fn test_polling_new() {
         let config = AdaptivePollingConfig::default();
-        let polling = AdaptivePolling::new(config.clone()).unwrap();
+        let polling =
+            AdaptivePolling::new(config.clone()).expect("test: failed to create AdaptivePolling");
 
         assert_eq!(polling.current_interval(), config.default_interval);
         assert_eq!(polling.activity_level(), ActivityLevel::Moderate);
@@ -443,7 +444,7 @@ mod tests {
     #[test]
     fn test_record_activity() {
         let config = AdaptivePollingConfig::default();
-        let polling = AdaptivePolling::new(config).unwrap();
+        let polling = AdaptivePolling::new(config).expect("test: failed to create AdaptivePolling");
 
         polling.record_activity();
 
@@ -456,7 +457,8 @@ mod tests {
             idle_threshold: Duration::from_millis(100),
             ..Default::default()
         };
-        let polling = AdaptivePolling::new(config.clone()).unwrap();
+        let polling =
+            AdaptivePolling::new(config.clone()).expect("test: failed to create AdaptivePolling");
 
         // Wait to become idle
         thread::sleep(Duration::from_millis(150));
@@ -469,7 +471,8 @@ mod tests {
     #[test]
     fn test_adjust_interval_active() {
         let config = AdaptivePollingConfig::default();
-        let polling = AdaptivePolling::new(config.clone()).unwrap();
+        let polling = AdaptivePolling::new(config.clone())
+            .expect("test: failed to create AdaptivePolling for adjust_interval_active");
 
         // Simulate high activity
         for _ in 0..15 {
@@ -493,7 +496,8 @@ mod tests {
             enable_sleep_mode: true,
             ..Default::default()
         };
-        let polling = AdaptivePolling::new(config.clone()).unwrap();
+        let polling = AdaptivePolling::new(config.clone())
+            .expect("test: failed to create AdaptivePolling for sleep_mode");
 
         // Wait to enter sleep mode
         thread::sleep(Duration::from_millis(150));
@@ -506,7 +510,8 @@ mod tests {
     #[test]
     fn test_reset() {
         let config = AdaptivePollingConfig::default();
-        let polling = AdaptivePolling::new(config.clone()).unwrap();
+        let polling = AdaptivePolling::new(config.clone())
+            .expect("test: failed to create AdaptivePolling for reset");
 
         // Change interval
         thread::sleep(Duration::from_millis(100));
@@ -522,7 +527,8 @@ mod tests {
     #[test]
     fn test_stats() {
         let config = AdaptivePollingConfig::default();
-        let polling = AdaptivePolling::new(config).unwrap();
+        let polling =
+            AdaptivePolling::new(config).expect("test: failed to create AdaptivePolling for stats");
 
         polling.record_activity();
 
@@ -534,7 +540,8 @@ mod tests {
     #[test]
     fn test_interval_bounds() {
         let config = AdaptivePollingConfig::default();
-        let polling = AdaptivePolling::new(config.clone()).unwrap();
+        let polling = AdaptivePolling::new(config.clone())
+            .expect("test: failed to create AdaptivePolling for interval_bounds");
 
         // Try to go below min
         for _ in 0..100 {

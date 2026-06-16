@@ -96,7 +96,7 @@ impl ProvenanceMetadata {
             layer,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .expect("system time is after UNIX epoch")
                 .as_secs(),
             training_config,
             parent: None,
@@ -394,19 +394,20 @@ pub struct CompressionStats {
     pub is_delta: bool,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "sled-backend"))]
 mod tests {
     use super::*;
     use crate::blockstore::{BlockStoreConfig, SledBlockStore};
-    use std::path::PathBuf;
 
     #[test]
     fn test_delta_encoding() {
         let base = vec![1.0f32, 2.0, 3.0, 4.0, 5.0];
         let target = vec![1.1f32, 2.0, 3.2, 4.0, 5.0];
 
-        let delta_bytes = DeltaEncoder::encode_delta(&base, &target).unwrap();
-        let reconstructed = DeltaEncoder::decode_delta(&base, &delta_bytes).unwrap();
+        let delta_bytes = DeltaEncoder::encode_delta(&base, &target)
+            .expect("encode_delta should succeed for valid equal-length slices");
+        let reconstructed = DeltaEncoder::decode_delta(&base, &delta_bytes)
+            .expect("decode_delta should reconstruct original values");
 
         for (i, (&orig, &recon)) in target.iter().zip(reconstructed.iter()).enumerate() {
             assert!(
@@ -428,14 +429,16 @@ mod tests {
         target[500] = 2.3;
         target[999] = -0.7;
 
-        let delta_bytes = DeltaEncoder::encode_delta(&base, &target).unwrap();
+        let delta_bytes = DeltaEncoder::encode_delta(&base, &target)
+            .expect("encode_delta should succeed for sparse gradient");
 
         // Delta should be much smaller than full gradient
         let full_size = 1000 * 4; // 4000 bytes
         let delta_size = delta_bytes.len(); // Only 24 bytes (3 * 8)
         assert!(delta_size < full_size / 10, "Delta not sparse enough");
 
-        let reconstructed = DeltaEncoder::decode_delta(&base, &delta_bytes).unwrap();
+        let reconstructed = DeltaEncoder::decode_delta(&base, &delta_bytes)
+            .expect("decode_delta should reconstruct sparse gradient");
         for (i, (&orig, &recon)) in target.iter().zip(reconstructed.iter()).enumerate() {
             assert!(
                 (orig - recon).abs() < 1e-5,
@@ -450,12 +453,14 @@ mod tests {
     #[tokio::test]
     async fn test_gradient_store() {
         let config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-gradient-test"),
+            path: std::env::temp_dir().join("ipfrs-gradient-test"),
             cache_size: 10 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
+        let store = Arc::new(
+            SledBlockStore::new(config).expect("sled block store should initialize successfully"),
+        );
         let gradient_store = GradientStore::new(store);
 
         let gradient = vec![1.0f32, 2.0, 3.0, 4.0];
@@ -464,9 +469,12 @@ mod tests {
         let cid = gradient_store
             .store_gradient(&gradient, shape, None)
             .await
-            .unwrap();
+            .expect("test: store_gradient should succeed");
 
-        let loaded = gradient_store.load_gradient(&cid).await.unwrap();
+        let loaded = gradient_store
+            .load_gradient(&cid)
+            .await
+            .expect("test: load_gradient should return stored gradient");
         assert_eq!(loaded.shape, vec![2, 2]);
         assert!(!loaded.is_delta);
     }
@@ -474,12 +482,14 @@ mod tests {
     #[tokio::test]
     async fn test_gradient_delta_chain() {
         let config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-gradient-delta-test"),
+            path: std::env::temp_dir().join("ipfrs-gradient-delta-test"),
             cache_size: 10 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
+        let store = Arc::new(
+            SledBlockStore::new(config).expect("test: sled block store should initialize"),
+        );
         let gradient_store = GradientStore::new(store);
 
         // Store base gradient
@@ -487,20 +497,20 @@ mod tests {
         let base_cid = gradient_store
             .store_gradient(&base_grad, vec![2, 2], None)
             .await
-            .unwrap();
+            .expect("test: store_gradient for base should succeed");
 
         // Store delta
         let target_grad = vec![1.1f32, 2.0, 3.2, 4.0];
         let delta_cid = gradient_store
             .store_gradient_delta(&base_cid, &target_grad, vec![2, 2], None)
             .await
-            .unwrap();
+            .expect("test: store_gradient_delta should succeed");
 
         // Reconstruct
         let reconstructed = gradient_store
             .reconstruct_gradient(&delta_cid)
             .await
-            .unwrap();
+            .expect("test: reconstruct_gradient should succeed");
 
         for (i, (&orig, &recon)) in target_grad.iter().zip(reconstructed.iter()).enumerate() {
             assert!(
@@ -522,7 +532,10 @@ mod tests {
         assert_eq!(metadata.layer, "layer1");
         assert_eq!(metadata.step, Some(100));
         assert_eq!(
-            metadata.metadata.get("optimizer").unwrap(),
+            metadata
+                .metadata
+                .get("optimizer")
+                .expect("test: optimizer metadata key should exist"),
             &"adam".to_string()
         );
     }

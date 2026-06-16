@@ -151,30 +151,46 @@ fn compress_zstd(data: &Bytes, level: u8) -> Result<Bytes> {
         1 + (level as i32 * 21 / 9)
     };
 
-    let compressed = zstd::bulk::compress(data, zstd_level)
+    let compressed = oxiarc_zstd::compress_with_level(data, zstd_level)
         .map_err(|e| Error::Internal(format!("Zstd compression failed: {}", e)))?;
     Ok(Bytes::from(compressed))
 }
 
 /// Decompress data using Zstd
 fn decompress_zstd(data: &Bytes) -> Result<Bytes> {
-    let decompressed =
-        zstd::bulk::decompress(data, 10 * 1024 * 1024) // 10MB max
-            .map_err(|e| Error::Internal(format!("Zstd decompression failed: {}", e)))?;
+    // OxiARC zstd frames are self-describing, so no output capacity hint is needed.
+    let decompressed = oxiarc_zstd::decompress(data)
+        .map_err(|e| Error::Internal(format!("Zstd decompression failed: {}", e)))?;
     Ok(Bytes::from(decompressed))
 }
 
 /// Compress data using LZ4
+///
+/// The output is a self-describing block: a 4-byte little-endian original size
+/// header followed by an OxiARC LZ4 frame. The size header lets [`decompress_lz4`]
+/// allocate an accurate output buffer without an external length hint.
 fn compress_lz4(data: &Bytes, _level: u8) -> Result<Bytes> {
-    // lz4_flex doesn't expose compression levels in the simple API
-    // Use the standard compress_prepend_size function
-    let compressed = lz4_flex::compress_prepend_size(data);
-    Ok(Bytes::from(compressed))
+    // OxiARC LZ4 does not expose compression levels in the simple frame API.
+    let payload = oxiarc_lz4::compress(data)
+        .map_err(|e| Error::Internal(format!("LZ4 compression failed: {}", e)))?;
+    let orig_len = data.len() as u32;
+    let mut out = Vec::with_capacity(4 + payload.len());
+    out.extend_from_slice(&orig_len.to_le_bytes());
+    out.extend_from_slice(&payload);
+    Ok(Bytes::from(out))
 }
 
 /// Decompress data using LZ4
 fn decompress_lz4(data: &Bytes) -> Result<Bytes> {
-    let decompressed = lz4_flex::decompress_size_prepended(data)
+    if data.len() < 4 {
+        return Err(Error::Internal(
+            "LZ4 block too short (missing original size header)".to_string(),
+        ));
+    }
+    let orig_size = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    // Generous upper bound: 2x original size avoids truncation for edge cases.
+    let max_output = orig_size.saturating_mul(2).max(orig_size + 64);
+    let decompressed = oxiarc_lz4::decompress(&data[4..], max_output)
         .map_err(|e| Error::Internal(format!("LZ4 decompression failed: {}", e)))?;
     Ok(Bytes::from(decompressed))
 }

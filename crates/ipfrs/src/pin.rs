@@ -272,14 +272,14 @@ mod tests {
         // Pin a block
         manager
             .pin(cid, PinType::Direct, Some("test".to_string()))
-            .unwrap();
+            .expect("test: pin should succeed");
 
         // Check if pinned
         assert!(manager.is_pinned(&cid));
         assert!(manager.is_directly_pinned(&cid));
 
         // Get pin info
-        let info = manager.get(&cid).unwrap();
+        let info = manager.get(&cid).expect("test: get pin should return info");
         assert_eq!(info.cid, cid);
         assert_eq!(info.pin_type, PinType::Direct);
         assert_eq!(info.name, Some("test".to_string()));
@@ -289,7 +289,9 @@ mod tests {
         assert_eq!(pins.len(), 1);
 
         // Unpin
-        manager.unpin(&cid, false).unwrap();
+        manager
+            .unpin(&cid, false)
+            .expect("test: unpin should succeed");
         assert!(!manager.is_pinned(&cid));
     }
 
@@ -301,13 +303,15 @@ mod tests {
         let manager = PinManager::new();
 
         // Create two different CIDs
-        let block1 = Block::new(Bytes::from("data1")).unwrap();
-        let block2 = Block::new(Bytes::from("data2")).unwrap();
+        let block1 = Block::new(Bytes::from("data1")).expect("test: block creation should succeed");
+        let block2 = Block::new(Bytes::from("data2")).expect("test: block creation should succeed");
         let cid1 = *block1.cid();
         let cid2 = *block2.cid();
 
         // Pin recursively
-        manager.pin(cid1, PinType::Recursive, None).unwrap();
+        manager
+            .pin(cid1, PinType::Recursive, None)
+            .expect("test: pin should succeed");
 
         // Add indirect pin
         manager.add_indirect(cid1, cid2);
@@ -330,15 +334,17 @@ mod tests {
         let manager = PinManager::new();
 
         // Create three different CIDs
-        let block1 = Block::new(Bytes::from("data1")).unwrap();
-        let block2 = Block::new(Bytes::from("data2")).unwrap();
-        let block3 = Block::new(Bytes::from("data3")).unwrap();
+        let block1 = Block::new(Bytes::from("data1")).expect("test: block creation should succeed");
+        let block2 = Block::new(Bytes::from("data2")).expect("test: block creation should succeed");
+        let block3 = Block::new(Bytes::from("data3")).expect("test: block creation should succeed");
         let cid1 = *block1.cid();
         let cid2 = *block2.cid();
         let cid3 = *block3.cid();
 
         // Pin cid1 recursively with cid2 and cid3 as indirect pins
-        manager.pin(cid1, PinType::Recursive, None).unwrap();
+        manager
+            .pin(cid1, PinType::Recursive, None)
+            .expect("test: pin should succeed");
         manager.add_indirect(cid1, cid2);
         manager.add_indirect(cid1, cid3);
 
@@ -348,7 +354,9 @@ mod tests {
         assert!(manager.is_pinned(&cid3));
 
         // Unpin the recursive pin
-        manager.unpin(&cid1, true).unwrap();
+        manager
+            .unpin(&cid1, true)
+            .expect("test: unpin should succeed");
 
         // Verify all indirect pins are removed
         assert!(!manager.is_pinned(&cid1));
@@ -365,16 +373,20 @@ mod tests {
         let manager = PinManager::new();
 
         // Create three different CIDs
-        let block1 = Block::new(Bytes::from("data1")).unwrap();
-        let block2 = Block::new(Bytes::from("data2")).unwrap();
-        let block3 = Block::new(Bytes::from("data3")).unwrap();
+        let block1 = Block::new(Bytes::from("data1")).expect("test: block creation should succeed");
+        let block2 = Block::new(Bytes::from("data2")).expect("test: block creation should succeed");
+        let block3 = Block::new(Bytes::from("data3")).expect("test: block creation should succeed");
         let cid1 = *block1.cid();
         let cid2 = *block2.cid();
         let cid3 = *block3.cid();
 
         // Pin cid1 and cid2 recursively, both reference cid3
-        manager.pin(cid1, PinType::Recursive, None).unwrap();
-        manager.pin(cid2, PinType::Recursive, None).unwrap();
+        manager
+            .pin(cid1, PinType::Recursive, None)
+            .expect("test: pin should succeed");
+        manager
+            .pin(cid2, PinType::Recursive, None)
+            .expect("test: pin should succeed");
         manager.add_indirect(cid1, cid3);
         manager.add_indirect(cid2, cid3);
 
@@ -384,7 +396,9 @@ mod tests {
         assert!(manager.is_pinned(&cid3));
 
         // Unpin cid1
-        manager.unpin(&cid1, true).unwrap();
+        manager
+            .unpin(&cid1, true)
+            .expect("test: unpin should succeed");
 
         // cid3 should still be pinned because cid2 references it
         assert!(!manager.is_pinned(&cid1));
@@ -392,7 +406,9 @@ mod tests {
         assert!(manager.is_pinned(&cid3));
 
         // Unpin cid2
-        manager.unpin(&cid2, true).unwrap();
+        manager
+            .unpin(&cid2, true)
+            .expect("test: unpin should succeed");
 
         // Now cid3 should be unpinned
         assert!(!manager.is_pinned(&cid3));
@@ -404,7 +420,9 @@ mod tests {
         let manager = PinManager::new();
         let cid = Cid::default();
 
-        manager.pin(cid, PinType::Direct, None).unwrap();
+        manager
+            .pin(cid, PinType::Direct, None)
+            .expect("test: pin should succeed");
         assert_eq!(manager.count(), 1);
 
         manager.clear();
@@ -416,24 +434,33 @@ mod tests {
     async fn test_pin_manager_persistence() {
         let manager = PinManager::new();
         let cid = Cid::default();
-        let temp_file = "/tmp/ipfrs_pin_test.bin";
+        let temp_file =
+            std::env::temp_dir().join(format!("ipfrs_pin_test_{}.bin", std::process::id()));
 
         // Pin and save
         manager
             .pin(cid, PinType::Direct, Some("test".to_string()))
-            .unwrap();
-        manager.save(temp_file).await.unwrap();
+            .expect("test: pin should succeed");
+        manager
+            .save(&temp_file)
+            .await
+            .expect("test: save should succeed");
 
         // Create new manager and load
         let manager2 = PinManager::new();
-        manager2.load(temp_file).await.unwrap();
+        manager2
+            .load(&temp_file)
+            .await
+            .expect("test: load should succeed");
 
         // Verify pin was loaded
         assert!(manager2.is_pinned(&cid));
-        let info = manager2.get(&cid).unwrap();
+        let info = manager2
+            .get(&cid)
+            .expect("test: get pin should return info");
         assert_eq!(info.name, Some("test".to_string()));
 
         // Cleanup
-        let _ = tokio::fs::remove_file(temp_file).await;
+        let _ = tokio::fs::remove_file(&temp_file).await;
     }
 }

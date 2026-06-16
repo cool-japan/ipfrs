@@ -2,9 +2,10 @@
 //!
 //! Run with: cargo bench --bench performance_bench
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use ipfrs_semantic::hnsw::{DistanceMetric, VectorIndex};
-use rand::Rng;
+use rand::{Rng, RngExt};
+use std::hint::black_box;
 use std::time::Duration;
 
 fn generate_random_vector(dim: usize, rng: &mut impl Rng) -> Vec<f32> {

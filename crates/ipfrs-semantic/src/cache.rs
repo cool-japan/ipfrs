@@ -144,7 +144,7 @@ impl HotEmbeddingCache {
     pub fn new(capacity: usize) -> Self {
         Self {
             cache: Arc::new(RwLock::new(LruCache::new(
-                NonZeroUsize::new(capacity).unwrap(),
+                NonZeroUsize::new(capacity).expect("cache capacity must be non-zero"),
             ))),
             hits: Arc::new(AtomicU64::new(0)),
             misses: Arc::new(AtomicU64::new(0)),
@@ -230,7 +230,7 @@ impl HotEmbeddingCache {
             .map(|(k, v)| (k.clone(), v.stats.access_frequency()))
             .collect();
 
-        entries.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        entries.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         entries.into_iter().take(top_n).map(|(k, _)| k).collect()
     }
 }
@@ -403,10 +403,14 @@ mod tests {
         cache.insert("key2".to_string(), vec![4.0, 5.0, 6.0]);
 
         // Test retrieval
-        let vec1 = cache.get("key1").unwrap();
+        let vec1 = cache
+            .get("key1")
+            .expect("test: key1 should be present in cache");
         assert_eq!(vec1.as_slice(), &[1.0, 2.0, 3.0]);
 
-        let vec2 = cache.get("key2").unwrap();
+        let vec2 = cache
+            .get("key2")
+            .expect("test: key2 should be present in cache");
         assert_eq!(vec2.as_slice(), &[4.0, 5.0, 6.0]);
 
         // Test miss

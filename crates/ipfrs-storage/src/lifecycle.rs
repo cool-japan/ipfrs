@@ -270,7 +270,7 @@ impl LifecyclePolicyManager {
     pub fn add_rule(&self, rule: LifecycleRule) {
         let mut rules = self.rules.write();
         rules.push(rule.clone());
-        rules.sort_by(|a, b| b.priority.cmp(&a.priority));
+        rules.sort_by_key(|r| std::cmp::Reverse(r.priority));
         debug!("Added lifecycle rule: {}", rule.id);
     }
 
@@ -418,7 +418,7 @@ impl LifecyclePolicyManager {
             .iter()
             .filter_map(|entry| {
                 if entry.value().tier == tier {
-                    Some(entry.key().clone())
+                    Some(*entry.key())
                 } else {
                     None
                 }

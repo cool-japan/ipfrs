@@ -309,7 +309,7 @@ impl ReRanker {
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system time is after UNIX epoch")
             .as_secs() as i64
     }
 
@@ -357,10 +357,10 @@ mod tests {
         // Create test results
         let cid1 = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: CID string is a valid base32 CIDv1");
         let cid2 = "bafybeihpjhkeuiq3k6nqa3fkgeigeri7iebtrsuyuey5y6vy36n345xmbi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: CID string is a valid base32 CIDv1");
 
         // Add metadata
         let mut metadata1 = Metadata::new();
@@ -397,10 +397,10 @@ mod tests {
 
         let cid1 = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: CID string is a valid base32 CIDv1");
         let cid2 = "bafybeihpjhkeuiq3k6nqa3fkgeigeri7iebtrsuyuey5y6vy36n345xmbi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: CID string is a valid base32 CIDv1");
 
         let results = vec![
             SearchResult {
@@ -436,7 +436,7 @@ mod tests {
 
         let cid1 = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: CID string is a valid base32 CIDv1");
 
         let current_time = ReRanker::current_timestamp();
 
@@ -469,10 +469,10 @@ mod tests {
 
         let cid1 = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: CID string is a valid base32 CIDv1");
         let cid2 = "bafybeihpjhkeuiq3k6nqa3fkgeigeri7iebtrsuyuey5y6vy36n345xmbi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: CID string is a valid base32 CIDv1");
 
         let results = vec![
             SearchResult {
@@ -507,13 +507,13 @@ mod tests {
 
         let cid1 = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: CID string is a valid base32 CIDv1");
         let cid2 = "bafybeihpjhkeuiq3k6nqa3fkgeigeri7iebtrsuyuey5y6vy36n345xmbi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: CID string is a valid base32 CIDv1");
         let cid3 = "bafybeif2pall7dybz7vecqka3zo24irdwabwdi4wc55jznaq75q7eaavvu"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: CID string is a valid base32 CIDv1");
 
         let results = vec![
             SearchResult {

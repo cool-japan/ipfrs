@@ -460,7 +460,7 @@ impl PeerManager {
     pub fn cleanup_blacklist(&mut self) {
         let now = Instant::now();
         self.blacklist
-            .retain(|_, entry| entry.expires_at.is_none() || entry.expires_at.unwrap() > now);
+            .retain(|_, entry| entry.expires_at.is_none_or(|exp| exp > now));
     }
 
     /// Select peers for a request
@@ -490,7 +490,7 @@ impl PeerManager {
                     a.metrics
                         .latency_ms
                         .partial_cmp(&b.metrics.latency_ms)
-                        .unwrap()
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 });
                 sorted
                     .into_iter()
@@ -504,7 +504,7 @@ impl PeerManager {
                     b.metrics
                         .bandwidth_bps
                         .partial_cmp(&a.metrics.bandwidth_bps)
-                        .unwrap()
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 });
                 sorted
                     .into_iter()
@@ -517,7 +517,9 @@ impl PeerManager {
                 sorted.sort_by(|a, b| {
                     let score_a = a.metrics.score(&self.config);
                     let score_b = b.metrics.score(&self.config);
-                    score_b.partial_cmp(&score_a).unwrap()
+                    score_b
+                        .partial_cmp(&score_a)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 });
                 sorted
                     .into_iter()
@@ -579,7 +581,9 @@ impl PeerManager {
         providers.sort_by(|a, b| {
             let score_a = a.metrics.score(&self.config);
             let score_b = b.metrics.score(&self.config);
-            score_b.partial_cmp(&score_a).unwrap()
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         providers
@@ -620,7 +624,9 @@ impl PeerManager {
             .max_by(|(_, a), (_, b)| {
                 let score_a = a.metrics.score(&self.config);
                 let score_b = b.metrics.score(&self.config);
-                score_a.partial_cmp(&score_b).unwrap()
+                score_a
+                    .partial_cmp(&score_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
             .map(|(id, _)| id)
     }
@@ -720,40 +726,58 @@ impl ConcurrentPeerManager {
 
     /// Add a peer
     pub fn add_peer(&self, id: PeerId) {
-        self.inner.write().unwrap().add_peer(id);
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .add_peer(id);
     }
 
     /// Remove a peer
     pub fn remove_peer(&self, id: &PeerId) {
-        self.inner.write().unwrap().remove_peer(id);
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove_peer(id);
     }
 
     /// Record successful request
     pub fn record_success(&self, peer_id: &PeerId, bytes: u64, latency: Duration) {
         self.inner
             .write()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .record_success(peer_id, bytes, latency);
     }
 
     /// Record failed request
     pub fn record_failure(&self, peer_id: &PeerId) {
-        self.inner.write().unwrap().record_failure(peer_id);
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .record_failure(peer_id);
     }
 
     /// Record HAVE message
     pub fn record_has(&self, peer_id: &PeerId, cid: Cid) {
-        self.inner.write().unwrap().record_has(peer_id, cid);
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .record_has(peer_id, cid);
     }
 
     /// Record DONT_HAVE message
     pub fn record_doesnt_have(&self, peer_id: &PeerId, cid: Cid) {
-        self.inner.write().unwrap().record_doesnt_have(peer_id, cid);
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .record_doesnt_have(peer_id, cid);
     }
 
     /// Mark request sent
     pub fn mark_request_sent(&self, peer_id: &PeerId) {
-        self.inner.write().unwrap().mark_request_sent(peer_id);
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .mark_request_sent(peer_id);
     }
 
     /// Blacklist a peer
@@ -765,13 +789,16 @@ impl ConcurrentPeerManager {
     ) {
         self.inner
             .write()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .blacklist_peer(peer_id, reason, duration);
     }
 
     /// Check if blacklisted
     pub fn is_blacklisted(&self, peer_id: &PeerId) -> bool {
-        self.inner.read().unwrap().is_blacklisted(peer_id)
+        self.inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_blacklisted(peer_id)
     }
 
     /// Select peers
@@ -783,30 +810,36 @@ impl ConcurrentPeerManager {
     ) -> Vec<PeerId> {
         self.inner
             .write()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .select_peers(cid, count, strategy)
     }
 
     /// Select providers
     pub fn select_providers(&self, cid: &Cid, count: usize) -> Vec<PeerId> {
-        self.inner.write().unwrap().select_providers(cid, count)
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .select_providers(cid, count)
     }
 
     /// Get statistics
     pub fn stats(&self) -> PeerManagerStats {
-        self.inner.read().unwrap().stats()
+        self.inner.read().unwrap_or_else(|e| e.into_inner()).stats()
     }
 
     /// Get scores
     pub fn get_scores(&self) -> HashMap<PeerId, f64> {
-        self.inner.read().unwrap().get_scores()
+        self.inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .get_scores()
     }
 
     /// Set connected status
     pub fn set_connected(&self, peer_id: &PeerId, connected: bool) {
         self.inner
             .write()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .set_connected(peer_id, connected);
     }
 
@@ -972,22 +1005,25 @@ impl CircuitBreaker {
 
     /// Get current circuit state
     pub fn state(&self) -> CircuitState {
-        *self.state.read().unwrap()
+        *self.state.read().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Check if request is allowed
     pub fn is_request_allowed(&self) -> bool {
-        let mut state = self.state.write().unwrap();
+        let mut state = self.state.write().unwrap_or_else(|e| e.into_inner());
 
         match *state {
             CircuitState::Closed => true,
             CircuitState::Open => {
                 // Check if timeout elapsed to enter half-open
-                let opened_at = self.opened_at.read().unwrap();
+                let opened_at = self.opened_at.read().unwrap_or_else(|e| e.into_inner());
                 if let Some(opened_time) = *opened_at {
                     if opened_time.elapsed() >= self.config.timeout {
                         *state = CircuitState::HalfOpen;
-                        *self.success_count.write().unwrap() = 0;
+                        *self
+                            .success_count
+                            .write()
+                            .unwrap_or_else(|e| e.into_inner()) = 0;
                         true
                     } else {
                         false
@@ -1002,23 +1038,38 @@ impl CircuitBreaker {
 
     /// Record a successful request
     pub fn record_success(&self) {
-        let mut state = self.state.write().unwrap();
+        let mut state = self.state.write().unwrap_or_else(|e| e.into_inner());
 
         match *state {
             CircuitState::Closed => {
                 // Reset failure count on success
-                *self.failure_count.write().unwrap() = 0;
-                self.failure_timestamps.write().unwrap().clear();
+                *self
+                    .failure_count
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner()) = 0;
+                self.failure_timestamps
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clear();
             }
             CircuitState::HalfOpen => {
-                let mut success_count = self.success_count.write().unwrap();
+                let mut success_count = self
+                    .success_count
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner());
                 *success_count += 1;
 
                 if *success_count >= self.config.success_threshold {
                     *state = CircuitState::Closed;
-                    *self.failure_count.write().unwrap() = 0;
+                    *self
+                        .failure_count
+                        .write()
+                        .unwrap_or_else(|e| e.into_inner()) = 0;
                     *success_count = 0;
-                    self.failure_timestamps.write().unwrap().clear();
+                    self.failure_timestamps
+                        .write()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .clear();
                 }
             }
             CircuitState::Open => {}
@@ -1028,11 +1079,14 @@ impl CircuitBreaker {
     /// Record a failed request
     pub fn record_failure(&self) {
         let now = Instant::now();
-        let mut state = self.state.write().unwrap();
+        let mut state = self.state.write().unwrap_or_else(|e| e.into_inner());
 
         // Update failure timestamps
         {
-            let mut timestamps = self.failure_timestamps.write().unwrap();
+            let mut timestamps = self
+                .failure_timestamps
+                .write()
+                .unwrap_or_else(|e| e.into_inner());
             timestamps.push_back(now);
 
             // Remove old timestamps outside the window
@@ -1045,26 +1099,39 @@ impl CircuitBreaker {
             }
         }
 
-        *self.last_failure_time.write().unwrap() = Some(now);
+        *self
+            .last_failure_time
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = Some(now);
 
         match *state {
             CircuitState::Closed => {
-                let mut failure_count = self.failure_count.write().unwrap();
+                let mut failure_count = self
+                    .failure_count
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner());
                 *failure_count += 1;
 
                 // Count failures in current window
-                let window_failures = self.failure_timestamps.read().unwrap().len() as u32;
+                let window_failures = self
+                    .failure_timestamps
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .len() as u32;
 
                 if window_failures >= self.config.failure_threshold {
                     *state = CircuitState::Open;
-                    *self.opened_at.write().unwrap() = Some(now);
+                    *self.opened_at.write().unwrap_or_else(|e| e.into_inner()) = Some(now);
                 }
             }
             CircuitState::HalfOpen => {
                 // Any failure in half-open immediately reopens circuit
                 *state = CircuitState::Open;
-                *self.opened_at.write().unwrap() = Some(now);
-                *self.success_count.write().unwrap() = 0;
+                *self.opened_at.write().unwrap_or_else(|e| e.into_inner()) = Some(now);
+                *self
+                    .success_count
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner()) = 0;
             }
             CircuitState::Open => {}
         }
@@ -1072,21 +1139,37 @@ impl CircuitBreaker {
 
     /// Reset the circuit breaker
     pub fn reset(&self) {
-        *self.state.write().unwrap() = CircuitState::Closed;
-        *self.failure_count.write().unwrap() = 0;
-        *self.success_count.write().unwrap() = 0;
-        *self.last_failure_time.write().unwrap() = None;
-        *self.opened_at.write().unwrap() = None;
-        self.failure_timestamps.write().unwrap().clear();
+        *self.state.write().unwrap_or_else(|e| e.into_inner()) = CircuitState::Closed;
+        *self
+            .failure_count
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = 0;
+        *self
+            .success_count
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = 0;
+        *self
+            .last_failure_time
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = None;
+        *self.opened_at.write().unwrap_or_else(|e| e.into_inner()) = None;
+        self.failure_timestamps
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 
     /// Get statistics
     pub fn stats(&self) -> CircuitBreakerStats {
         CircuitBreakerStats {
             state: self.state(),
-            failure_count: *self.failure_count.read().unwrap(),
-            success_count: *self.success_count.read().unwrap(),
-            window_failures: self.failure_timestamps.read().unwrap().len() as u32,
+            failure_count: *self.failure_count.read().unwrap_or_else(|e| e.into_inner()),
+            success_count: *self.success_count.read().unwrap_or_else(|e| e.into_inner()),
+            window_failures: self
+                .failure_timestamps
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
+                .len() as u32,
         }
     }
 }
@@ -1117,7 +1200,7 @@ mod tests {
     fn test_cid() -> Cid {
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse()
-            .unwrap()
+            .expect("test: parse CID from known-good string")
     }
 
     #[test]
@@ -1222,7 +1305,9 @@ mod tests {
         manager.add_peer("peer1".to_string());
         manager.record_has(&"peer1".to_string(), cid);
 
-        let peer = manager.get_peer(&"peer1".to_string()).unwrap();
+        let peer = manager
+            .get_peer(&"peer1".to_string())
+            .expect("test: peer1 was just added to manager");
         assert!(peer.has(&cid));
 
         // Provider selection should include this peer

@@ -180,7 +180,8 @@ mod tests {
             .flat_map(|f| f.to_le_bytes())
             .collect::<Vec<u8>>();
 
-        let batch = tensor_to_record_batch(&metadata, &bytes).unwrap();
+        let batch =
+            tensor_to_record_batch(&metadata, &bytes).expect("test: f32 tensor to record batch");
         assert_eq!(batch.num_columns(), 1);
         assert_eq!(batch.num_rows(), 6);
 
@@ -188,7 +189,7 @@ mod tests {
             .column(0)
             .as_any()
             .downcast_ref::<Float32Array>()
-            .unwrap();
+            .expect("test: downcast column to Float32Array");
         assert_eq!(array.value(0), 1.0);
         assert_eq!(array.value(5), 6.0);
     }
@@ -209,14 +210,15 @@ mod tests {
             .flat_map(|i| i.to_le_bytes())
             .collect::<Vec<u8>>();
 
-        let batch = tensor_to_record_batch(&metadata, &bytes).unwrap();
+        let batch = tensor_to_record_batch(&metadata, &bytes)
+            .expect("test: tensor_to_record_batch should succeed for I32 data");
         assert_eq!(batch.num_rows(), 4);
 
         let array = batch
             .column(0)
             .as_any()
             .downcast_ref::<Int32Array>()
-            .unwrap();
+            .expect("test: downcast to Int32Array should succeed");
         assert_eq!(array.value(0), 10);
         assert_eq!(array.value(3), 40);
     }
@@ -237,8 +239,10 @@ mod tests {
             .flat_map(|f| f.to_le_bytes())
             .collect::<Vec<u8>>();
 
-        let batch = tensor_to_record_batch(&metadata, &bytes).unwrap();
-        let ipc_bytes = record_batch_to_ipc_bytes(&batch).unwrap();
+        let batch = tensor_to_record_batch(&metadata, &bytes)
+            .expect("test: tensor_to_record_batch should succeed for F32 data");
+        let ipc_bytes =
+            record_batch_to_ipc_bytes(&batch).expect("test: IPC serialization should succeed");
 
         // IPC format should have non-trivial size (header + data)
         assert!(ipc_bytes.len() > 50);
@@ -254,7 +258,8 @@ mod tests {
             layout: TensorLayout::RowMajor,
         };
 
-        let schema = create_tensor_schema(&metadata).unwrap();
+        let schema = create_tensor_schema(&metadata)
+            .expect("test: schema creation should succeed for F64 tensor");
         assert_eq!(schema.fields().len(), 1);
 
         let field = &schema.fields()[0];
@@ -263,8 +268,16 @@ mod tests {
 
         let meta = field.metadata();
         assert!(meta.contains_key("tensor_shape"));
-        assert_eq!(meta.get("tensor_shape").unwrap(), "10,20,30");
-        assert_eq!(meta.get("tensor_dtype").unwrap(), "F64");
+        assert_eq!(
+            meta.get("tensor_shape")
+                .expect("test: tensor_shape metadata key should be present"),
+            "10,20,30"
+        );
+        assert_eq!(
+            meta.get("tensor_dtype")
+                .expect("test: tensor_dtype metadata key should be present"),
+            "F64"
+        );
     }
 
     #[test]

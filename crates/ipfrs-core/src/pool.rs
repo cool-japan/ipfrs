@@ -46,8 +46,8 @@ impl BytesPool {
     pub fn get(&self, capacity: usize) -> BytesMut {
         let bucket = Self::capacity_bucket(capacity);
 
-        let mut pool = self.pool.lock().unwrap();
-        let mut stats = self.stats.lock().unwrap();
+        let mut pool = self.pool.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stats = self.stats.lock().unwrap_or_else(|e| e.into_inner());
 
         if let Some(buffers) = pool.get_mut(&bucket) {
             if let Some(mut buf) = buffers.pop() {
@@ -75,7 +75,7 @@ impl BytesPool {
         buf.clear();
         let bucket = Self::capacity_bucket(buf.capacity());
 
-        let mut pool = self.pool.lock().unwrap();
+        let mut pool = self.pool.lock().unwrap_or_else(|e| e.into_inner());
         let buffers = pool.entry(bucket).or_default();
 
         // Limit pool size per bucket to prevent unbounded growth
@@ -86,12 +86,12 @@ impl BytesPool {
 
     /// Get the pool statistics
     pub fn stats(&self) -> PoolStats {
-        *self.stats.lock().unwrap()
+        *self.stats.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Clear all pooled buffers
     pub fn clear(&self) {
-        self.pool.lock().unwrap().clear();
+        self.pool.lock().unwrap_or_else(|e| e.into_inner()).clear();
     }
 
     /// Round capacity up to the nearest power-of-2 bucket
@@ -135,8 +135,8 @@ impl CidStringPool {
     /// If the string has been seen before, returns the existing Arc.
     /// Otherwise, creates a new Arc and stores it in the pool.
     pub fn intern(&self, s: &str) -> Arc<str> {
-        let mut pool = self.pool.lock().unwrap();
-        let mut stats = self.stats.lock().unwrap();
+        let mut pool = self.pool.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stats = self.stats.lock().unwrap_or_else(|e| e.into_inner());
 
         if let Some(existing) = pool.get(s) {
             stats.hits += 1;
@@ -151,22 +151,25 @@ impl CidStringPool {
 
     /// Get the pool statistics
     pub fn stats(&self) -> PoolStats {
-        *self.stats.lock().unwrap()
+        *self.stats.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Clear the pool
     pub fn clear(&self) {
-        self.pool.lock().unwrap().clear();
+        self.pool.lock().unwrap_or_else(|e| e.into_inner()).clear();
     }
 
     /// Get the number of unique strings in the pool
     pub fn len(&self) -> usize {
-        self.pool.lock().unwrap().len()
+        self.pool.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     /// Check if the pool is empty
     pub fn is_empty(&self) -> bool {
-        self.pool.lock().unwrap().is_empty()
+        self.pool
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
     }
 }
 

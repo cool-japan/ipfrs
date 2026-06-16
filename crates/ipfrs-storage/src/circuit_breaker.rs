@@ -292,7 +292,7 @@ mod tests {
     }
 
     async fn failing_operation() -> Result<&'static str, std::io::Error> {
-        Err(std::io::Error::new(std::io::ErrorKind::Other, "failure"))
+        Err(std::io::Error::other("failure"))
     }
 
     #[tokio::test]

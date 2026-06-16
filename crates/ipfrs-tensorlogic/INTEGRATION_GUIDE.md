@@ -733,4 +733,4 @@ if let Some(slice) = tensor.as_slice_f32() {
 
 ## License
 
-Licensed under MIT or Apache-2.0, at your option.
+Licensed under Apache-2.0.

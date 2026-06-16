@@ -69,13 +69,12 @@ impl Selector {
     /// Validate the selector
     pub fn validate(&self) -> Result<()> {
         match self {
-            Selector::RecursiveDepth { max_depth } => {
-                if *max_depth == 0 {
-                    return Err(Error::InvalidInput(
-                        "max_depth must be greater than 0".to_string(),
-                    ));
-                }
+            Selector::RecursiveDepth { max_depth } if *max_depth == 0 => {
+                return Err(Error::InvalidInput(
+                    "max_depth must be greater than 0".to_string(),
+                ));
             }
+            Selector::RecursiveDepth { .. } => {}
             Selector::Sequence { selectors } => {
                 for sel in selectors {
                     sel.validate()?;
@@ -736,16 +735,104 @@ impl GradientAggregator {
         ))
     }
 
-    /// Median aggregation (robust to outliers)
+    /// Median aggregation (robust to outliers).
+    ///
+    /// For each element position, all contributor values are collected and the
+    /// median is selected.  We handle `f32` gradients (4 bytes/element) directly;
+    /// all other dtypes fall back to a byte-level median which is dtype-agnostic
+    /// but preserves the robust property.
     fn aggregate_median(
         &self,
-        _layer_id: &str,
-        _gradients: &[GradientMessage],
+        layer_id: &str,
+        gradients: &[GradientMessage],
     ) -> Result<GradientMessage> {
-        // Median aggregation would require parsing the actual float values
-        // This is a placeholder implementation
-        Err(Error::NotImplemented(
-            "Median aggregation not yet implemented".to_string(),
+        if gradients.is_empty() {
+            return Err(Error::InvalidInput(
+                "median aggregation: no gradients supplied".to_string(),
+            ));
+        }
+
+        let n = gradients.len();
+        let size = gradients[0].data.len();
+
+        // Validate that every gradient has the same byte length.
+        for (i, g) in gradients.iter().enumerate() {
+            if g.data.len() != size {
+                return Err(Error::InvalidInput(format!(
+                    "median aggregation: gradient {} has {} bytes, expected {}",
+                    i,
+                    g.data.len(),
+                    size,
+                )));
+            }
+        }
+
+        let dtype = &gradients[0].dtype;
+
+        // Fast path: f32 gradients – operate at float granularity.
+        if dtype == "f32" || dtype == "float32" {
+            let element_size = 4usize;
+            if !size.is_multiple_of(element_size) {
+                return Err(Error::InvalidInput(format!(
+                    "median aggregation: byte length {} is not a multiple of 4 for f32 dtype",
+                    size
+                )));
+            }
+            let num_elements = size / element_size;
+            let mut out_data = vec![0u8; size];
+
+            for elem in 0..num_elements {
+                let byte_off = elem * element_size;
+                let mut values: Vec<f32> = gradients
+                    .iter()
+                    .map(|g| {
+                        let bytes: [u8; 4] = g.data[byte_off..byte_off + element_size]
+                            .try_into()
+                            .unwrap_or([0u8; 4]);
+                        f32::from_le_bytes(bytes)
+                    })
+                    .collect();
+
+                // Sort to find the median.
+                values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                let median = if n % 2 == 1 {
+                    values[n / 2]
+                } else {
+                    // Even count: average of the two middle values.
+                    (values[n / 2 - 1] + values[n / 2]) * 0.5
+                };
+
+                out_data[byte_off..byte_off + element_size].copy_from_slice(&median.to_le_bytes());
+            }
+
+            return Ok(GradientMessage::new(
+                layer_id,
+                out_data,
+                gradients[0].shape.clone(),
+                dtype.clone(),
+            ));
+        }
+
+        // Generic byte-level median fallback for other dtypes (f16, i8, etc.).
+        // The median is taken independently per byte position.
+        let mut out_data = vec![0u8; size];
+        for (byte_pos, out_byte) in out_data.iter_mut().enumerate() {
+            let mut col: Vec<u8> = gradients.iter().map(|g| g.data[byte_pos]).collect();
+            col.sort_unstable();
+            *out_byte = if n % 2 == 1 {
+                col[n / 2]
+            } else {
+                let lo = col[n / 2 - 1] as u16;
+                let hi = col[n / 2] as u16;
+                ((lo + hi) / 2) as u8
+            };
+        }
+
+        Ok(GradientMessage::new(
+            layer_id,
+            out_data,
+            gradients[0].shape.clone(),
+            dtype.clone(),
         ))
     }
 
@@ -833,11 +920,12 @@ mod tests {
     #[test]
     fn test_selector_parse() {
         let json = r#"{"type":"all"}"#;
-        let selector = Selector::from_json(json).unwrap();
+        let selector = Selector::from_json(json).expect("test: parse all-selector from JSON");
         assert!(selector.matches_all());
 
         let json2 = r#"{"type":"recursivedepth","max_depth":5}"#;
-        let selector2 = Selector::from_json(json2).unwrap();
+        let selector2 =
+            Selector::from_json(json2).expect("test: parse recursive-depth selector from JSON");
         match selector2 {
             Selector::RecursiveDepth { max_depth } => assert_eq!(max_depth, 5),
             _ => panic!("Wrong selector type"),
@@ -857,13 +945,15 @@ mod tests {
     fn test_traversal_state() {
         let cid: Cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse()
-            .unwrap();
+            .expect("test: parse CID string");
 
         let mut state = TraversalState::new(cid, Some(3));
         assert!(!state.is_complete());
 
         // Get root
-        let (root_cid, depth) = state.next(TraversalMode::BreadthFirst).unwrap();
+        let (root_cid, depth) = state
+            .next(TraversalMode::BreadthFirst)
+            .expect("test: get next traversal item");
         assert_eq!(root_cid, cid);
         assert_eq!(depth, 0);
 
@@ -878,7 +968,7 @@ mod tests {
     fn test_checkpoint() {
         let cid: Cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse()
-            .unwrap();
+            .expect("test: parse CID string");
 
         let mut state = TraversalState::new(cid, Some(3));
         state.mark_visited(cid, 1024);
@@ -930,12 +1020,21 @@ mod tests {
         let grad1 = GradientMessage::new("layer1", vec![10, 20, 30], vec![3], "f32");
         let grad2 = GradientMessage::new("layer1", vec![20, 30, 40], vec![3], "f32");
 
-        aggregator.add_gradient(grad1).await.unwrap();
-        aggregator.add_gradient(grad2).await.unwrap();
+        aggregator
+            .add_gradient(grad1)
+            .await
+            .expect("test: add first gradient to aggregator");
+        aggregator
+            .add_gradient(grad2)
+            .await
+            .expect("test: add second gradient to aggregator");
 
         assert!(aggregator.is_ready("layer1").await);
 
-        let aggregated = aggregator.aggregate("layer1").await.unwrap();
+        let aggregated = aggregator
+            .aggregate("layer1")
+            .await
+            .expect("test: aggregate layer1 gradients");
         assert_eq!(aggregated.shape, vec![3]);
         assert_eq!(aggregated.id, "layer1");
     }
@@ -948,15 +1047,24 @@ mod tests {
         let grad = GradientMessage::new("layer1", vec![1, 2, 3], vec![3], "f32");
 
         // Push gradient
-        stream.push_gradient(grad.clone()).await.unwrap();
+        stream
+            .push_gradient(grad.clone())
+            .await
+            .expect("test: push gradient to stream");
         assert_eq!(stream.queue_size().await, 1);
 
         // Pop gradient
-        let popped = stream.pop_gradient().await.unwrap();
+        let popped = stream
+            .pop_gradient()
+            .await
+            .expect("test: pop gradient from stream");
         assert_eq!(popped.id, "layer1");
         assert_eq!(stream.queue_size().await, 0);
 
         // Receive gradient
-        stream.receive_gradient(grad).await.unwrap();
+        stream
+            .receive_gradient(grad)
+            .await
+            .expect("test: receive gradient into stream");
     }
 }

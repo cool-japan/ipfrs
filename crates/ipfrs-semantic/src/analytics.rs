@@ -179,7 +179,7 @@ impl AnalyticsTracker {
             *k_counts.entry(metrics.k).or_insert(0) += 1;
         }
         let mut top_k_values: Vec<(usize, usize)> = k_counts.into_iter().collect();
-        top_k_values.sort_by(|a, b| b.1.cmp(&a.1)); // Sort by count descending
+        top_k_values.sort_by_key(|a| std::cmp::Reverse(a.1)); // Sort by count descending
         top_k_values.truncate(5); // Top 5
 
         // Calculate QPS
@@ -207,7 +207,7 @@ impl AnalyticsTracker {
     pub fn get_top_patterns(&self, limit: usize) -> Vec<DetectedPattern> {
         let patterns = self.query_patterns.read();
         let mut sorted: Vec<DetectedPattern> = patterns.values().cloned().collect();
-        sorted.sort_by(|a, b| b.frequency.cmp(&a.frequency));
+        sorted.sort_by_key(|a| std::cmp::Reverse(a.frequency));
         sorted.truncate(limit);
         sorted
     }

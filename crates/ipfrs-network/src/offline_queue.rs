@@ -508,7 +508,7 @@ mod tests {
     #[test]
     fn test_enqueue() {
         let config = OfflineQueueConfig::default();
-        let queue = OfflineQueue::new(config).unwrap();
+        let queue = OfflineQueue::new(config).expect("test: default config should create queue");
 
         let request = QueuedRequest::new(
             "test1".to_string(),
@@ -524,7 +524,7 @@ mod tests {
     #[test]
     fn test_priority_ordering() {
         let config = OfflineQueueConfig::default();
-        let queue = OfflineQueue::new(config).unwrap();
+        let queue = OfflineQueue::new(config).expect("test: default config should create queue");
 
         // Add low priority
         let req1 = QueuedRequest::new(
@@ -533,7 +533,9 @@ mod tests {
             RequestPriority::Low,
             Duration::from_secs(60),
         );
-        queue.enqueue(req1).unwrap();
+        queue
+            .enqueue(req1)
+            .expect("test: enqueue low priority request should succeed");
 
         // Add high priority
         let req2 = QueuedRequest::new(
@@ -542,20 +544,24 @@ mod tests {
             RequestPriority::High,
             Duration::from_secs(60),
         );
-        queue.enqueue(req2).unwrap();
+        queue
+            .enqueue(req2)
+            .expect("test: enqueue high priority request should succeed");
 
         // Set online to enable dequeue
         queue.set_online(true);
 
         // High priority should come out first
-        let next = queue.dequeue().unwrap();
+        let next = queue
+            .dequeue()
+            .expect("test: dequeue should return high priority request");
         assert_eq!(next.id, "high");
     }
 
     #[test]
     fn test_dequeue_when_offline() {
         let config = OfflineQueueConfig::default();
-        let queue = OfflineQueue::new(config).unwrap();
+        let queue = OfflineQueue::new(config).expect("test: default config should create queue");
 
         let request = QueuedRequest::new(
             "test1".to_string(),
@@ -564,7 +570,9 @@ mod tests {
             Duration::from_secs(60),
         );
 
-        queue.enqueue(request).unwrap();
+        queue
+            .enqueue(request)
+            .expect("test: enqueue request should succeed");
 
         // Should return None when offline
         assert!(queue.dequeue().is_none());
@@ -573,7 +581,7 @@ mod tests {
     #[test]
     fn test_dequeue_when_online() {
         let config = OfflineQueueConfig::default();
-        let queue = OfflineQueue::new(config).unwrap();
+        let queue = OfflineQueue::new(config).expect("test: default config should create queue");
 
         let request = QueuedRequest::new(
             "test1".to_string(),
@@ -582,19 +590,24 @@ mod tests {
             Duration::from_secs(60),
         );
 
-        queue.enqueue(request).unwrap();
+        queue
+            .enqueue(request)
+            .expect("test: enqueue request should succeed");
         queue.set_online(true);
 
         // Should return request when online
         let req = queue.dequeue();
         assert!(req.is_some());
-        assert_eq!(req.unwrap().id, "test1");
+        assert_eq!(
+            req.expect("test: dequeue should return queued request").id,
+            "test1"
+        );
     }
 
     #[test]
     fn test_mark_completed() {
         let config = OfflineQueueConfig::default();
-        let queue = OfflineQueue::new(config).unwrap();
+        let queue = OfflineQueue::new(config).expect("test: default config should create queue");
 
         let request = QueuedRequest::new(
             "test1".to_string(),
@@ -603,9 +616,13 @@ mod tests {
             Duration::from_secs(60),
         );
 
-        queue.enqueue(request).unwrap();
+        queue
+            .enqueue(request)
+            .expect("test: enqueue request should succeed");
         queue.set_online(true);
-        let req = queue.dequeue().unwrap();
+        let req = queue
+            .dequeue()
+            .expect("test: dequeue should return enqueued request");
 
         queue.mark_completed(&req.id, true);
 
@@ -616,7 +633,7 @@ mod tests {
     #[test]
     fn test_requeue() {
         let config = OfflineQueueConfig::default();
-        let queue = OfflineQueue::new(config).unwrap();
+        let queue = OfflineQueue::new(config).expect("test: default config should create queue");
 
         let mut request = QueuedRequest::new(
             "test1".to_string(),
@@ -626,11 +643,17 @@ mod tests {
         );
         request.max_retries = 3;
 
-        queue.enqueue(request.clone()).unwrap();
+        queue
+            .enqueue(request.clone())
+            .expect("test: enqueue request should succeed");
         queue.set_online(true);
-        let req = queue.dequeue().unwrap();
+        let req = queue
+            .dequeue()
+            .expect("test: dequeue should return enqueued request");
 
-        queue.requeue(req).unwrap();
+        queue
+            .requeue(req)
+            .expect("test: requeue should succeed for request with retries remaining");
 
         let stats = queue.stats();
         assert_eq!(stats.requests_retried, 1);
@@ -642,7 +665,8 @@ mod tests {
             max_queue_size: 2,
             ..Default::default()
         };
-        let queue = OfflineQueue::new(config).unwrap();
+        let queue = OfflineQueue::new(config)
+            .expect("test: config with max_queue_size=2 should create queue");
 
         let req1 = QueuedRequest::new(
             "test1".to_string(),
@@ -677,7 +701,8 @@ mod tests {
             replay_batch_size: 3,
             ..Default::default()
         };
-        let queue = OfflineQueue::new(config).unwrap();
+        let queue = OfflineQueue::new(config)
+            .expect("test: config with replay_batch_size=3 should create queue");
 
         for i in 0..5 {
             let req = QueuedRequest::new(
@@ -686,7 +711,9 @@ mod tests {
                 RequestPriority::Normal,
                 Duration::from_secs(60),
             );
-            queue.enqueue(req).unwrap();
+            queue
+                .enqueue(req)
+                .expect("test: enqueue batch request should succeed");
         }
 
         queue.set_online(true);
@@ -709,7 +736,7 @@ mod tests {
     #[test]
     fn test_clear() {
         let config = OfflineQueueConfig::default();
-        let queue = OfflineQueue::new(config).unwrap();
+        let queue = OfflineQueue::new(config).expect("test: default config should create queue");
 
         let req = QueuedRequest::new(
             "test1".to_string(),
@@ -717,7 +744,9 @@ mod tests {
             RequestPriority::Normal,
             Duration::from_secs(60),
         );
-        queue.enqueue(req).unwrap();
+        queue
+            .enqueue(req)
+            .expect("test: enqueue request should succeed");
 
         assert_eq!(queue.pending_count(), 1);
 

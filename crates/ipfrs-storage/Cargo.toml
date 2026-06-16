@@ -17,8 +17,8 @@ homepage.workspace = true
 ipfrs-core = { workspace = true }
 
 # Storage backends
-sled = { workspace = true }
-parity-db = { workspace = true }
+sled = { workspace = true, optional = true }
+parity-db = { workspace = true, optional = true }
 
 # Content addressing
 cid = { workspace = true }
@@ -67,10 +67,10 @@ aes-gcm = { workspace = true, optional = true }
 argon2 = { workspace = true, optional = true }
 zeroize = { workspace = true, optional = true }
 
-# Compression
-zstd = { workspace = true, optional = true }
-lz4 = { workspace = true, optional = true }
-snap = { workspace = true, optional = true }
+# Compression — Pure Rust OxiARC crates (COOLJAPAN policy)
+oxiarc-zstd = { workspace = true, optional = true }
+oxiarc-lz4 = { workspace = true, optional = true }
+oxiarc-snappy = { workspace = true, optional = true }
 
 # GraphQL
 async-graphql = { workspace = true, optional = true }
@@ -79,6 +79,7 @@ chrono = { workspace = true }
 # QUIC transport
 quinn = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
+rustls-rustcrypto = { workspace = true, optional = true }
 rcgen = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -89,15 +90,21 @@ reqwest = { workspace = true, features = ["multipart"] }
 serde_json = { workspace = true }
 
 [features]
-default = []
+default = ["sled-backend"]
+# Enable the Sled embedded database backend (not available on wasm32).
+sled-backend = ["sled"]
+# Enable wasm32-compatible builds (excludes sled and other native-only backends).
+wasm = []
 s3 = ["aws-config", "aws-sdk-s3"]
 gateway = ["reqwest", "url"]
 mmap = ["memmap2"]
 encryption = ["chacha20poly1305", "aes-gcm", "argon2", "zeroize"]
-compression = ["zstd", "lz4", "snap"]
+compression = ["oxiarc-zstd", "oxiarc-lz4", "oxiarc-snappy"]
 graphql = ["async-graphql"]
-quic = ["quinn", "rustls", "rcgen"]
+quic = ["quinn", "rustls", "rustls-rustcrypto", "rcgen"]
 kubo_bench = []
+# Enable the ParityDB backend (pulls in lz4-sys C FFI — opt-in only, not in default).
+parity-db-backend = ["dep:parity-db"]
 
 [[bench]]
 name = "blockstore_bench"

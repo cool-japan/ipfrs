@@ -167,7 +167,7 @@ impl Commit {
     ) -> Self {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system time is after UNIX epoch")
             .as_secs();
 
         Self {
@@ -793,7 +793,6 @@ impl Default for CommitBuilder {
 mod tests {
     use super::*;
     use crate::blockstore::{BlockStoreConfig, SledBlockStore};
-    use std::path::PathBuf;
 
     #[tokio::test]
     async fn test_commit_creation() {
@@ -802,7 +801,8 @@ mod tests {
             email: "test@example.com".to_string(),
         };
 
-        let root_block = Block::new(Bytes::from("model weights")).unwrap();
+        let root_block = Block::new(Bytes::from("model weights"))
+            .expect("test: Block::new with valid bytes should succeed");
         let root_cid = *root_block.cid();
 
         let mut commit = Commit::new(
@@ -813,7 +813,9 @@ mod tests {
             HashMap::new(),
         );
 
-        let commit_cid = commit.finalize().unwrap();
+        let commit_cid = commit
+            .finalize()
+            .expect("test: commit finalize should succeed");
         assert!(commit.cid.is_some());
         assert_eq!(commit.cid(), &commit_cid);
         assert!(commit.is_initial());
@@ -826,7 +828,8 @@ mod tests {
             email: "test@example.com".to_string(),
         };
 
-        let root_block = Block::new(Bytes::from("model weights")).unwrap();
+        let root_block = Block::new(Bytes::from("model weights"))
+            .expect("test: Block::new with valid bytes should succeed");
         let root_cid = *root_block.cid();
 
         let mut commit = Commit::new(
@@ -837,9 +840,14 @@ mod tests {
             HashMap::new(),
         );
 
-        commit.finalize().unwrap();
-        let commit_block = commit.to_block().unwrap();
-        let deserialized = Commit::from_block(&commit_block).unwrap();
+        commit
+            .finalize()
+            .expect("test: commit finalize should succeed");
+        let commit_block = commit
+            .to_block()
+            .expect("test: commit to_block should succeed");
+        let deserialized =
+            Commit::from_block(&commit_block).expect("test: Commit from_block should succeed");
 
         assert_eq!(commit, deserialized);
     }
@@ -847,18 +855,24 @@ mod tests {
     #[tokio::test]
     async fn test_version_control_initial_commit() {
         let config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-vcs-test-initial"),
+            path: std::env::temp_dir().join("ipfrs-vcs-test-initial"),
             cache_size: 10 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
+        let store = Arc::new(
+            SledBlockStore::new(config).expect("test: SledBlockStore::new should succeed"),
+        );
         let vcs = VersionControl::new(store.clone());
 
         // Create root block (model)
-        let model_block = Block::new(Bytes::from("model v1")).unwrap();
+        let model_block =
+            Block::new(Bytes::from("model v1")).expect("test: Block::new should succeed");
         let model_cid = *model_block.cid();
-        store.put(&model_block).await.unwrap();
+        store
+            .put(&model_block)
+            .await
+            .expect("test: store.put should succeed");
 
         // Create initial commit
         let author = Author {
@@ -874,14 +888,19 @@ mod tests {
                 HashMap::new(),
             )
             .await
-            .unwrap();
+            .expect("test: vcs.commit should succeed");
 
         // Verify HEAD is updated
         assert_eq!(vcs.head(), Some(commit_cid));
 
         // Verify we can load the commit
-        let commit_block = store.get(&commit_cid).await.unwrap().unwrap();
-        let commit = Commit::from_block(&commit_block).unwrap();
+        let commit_block = store
+            .get(&commit_cid)
+            .await
+            .expect("test: store.get should succeed")
+            .expect("test: block should exist");
+        let commit =
+            Commit::from_block(&commit_block).expect("test: Commit::from_block should succeed");
         assert_eq!(commit.root, model_cid);
         assert_eq!(commit.message, "Initial commit");
         assert!(commit.is_initial());
@@ -890,12 +909,14 @@ mod tests {
     #[tokio::test]
     async fn test_version_control_multiple_commits() {
         let config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-vcs-test-multiple"),
+            path: std::env::temp_dir().join("ipfrs-vcs-test-multiple"),
             cache_size: 10 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
+        let store = Arc::new(
+            SledBlockStore::new(config).expect("test: SledBlockStore::new should succeed"),
+        );
         let vcs = VersionControl::new(store.clone());
 
         let author = Author {
@@ -904,8 +925,12 @@ mod tests {
         };
 
         // First commit
-        let model1 = Block::new(Bytes::from("model v1")).unwrap();
-        store.put(&model1).await.unwrap();
+        let model1 = Block::new(Bytes::from("model v1"))
+            .expect("test: Block::new for model1 should succeed");
+        store
+            .put(&model1)
+            .await
+            .expect("test: store.put model1 should succeed");
         let commit1 = vcs
             .commit(
                 *model1.cid(),
@@ -914,11 +939,15 @@ mod tests {
                 HashMap::new(),
             )
             .await
-            .unwrap();
+            .expect("test: first commit should succeed");
 
         // Second commit
-        let model2 = Block::new(Bytes::from("model v2")).unwrap();
-        store.put(&model2).await.unwrap();
+        let model2 = Block::new(Bytes::from("model v2"))
+            .expect("test: Block::new for model2 should succeed");
+        store
+            .put(&model2)
+            .await
+            .expect("test: store.put model2 should succeed");
         let commit2 = vcs
             .commit(
                 *model2.cid(),
@@ -927,26 +956,33 @@ mod tests {
                 HashMap::new(),
             )
             .await
-            .unwrap();
+            .expect("test: second commit should succeed");
 
         // Verify HEAD is at second commit
         assert_eq!(vcs.head(), Some(commit2));
 
         // Load second commit and verify it has first commit as parent
-        let commit2_block = store.get(&commit2).await.unwrap().unwrap();
-        let commit2_obj = Commit::from_block(&commit2_block).unwrap();
+        let commit2_block = store
+            .get(&commit2)
+            .await
+            .expect("test: store.get commit2 should succeed")
+            .expect("test: commit2 block should exist");
+        let commit2_obj =
+            Commit::from_block(&commit2_block).expect("test: Commit::from_block should succeed");
         assert_eq!(commit2_obj.parents, vec![commit1]);
     }
 
     #[tokio::test]
     async fn test_checkout() {
         let config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-vcs-test-checkout"),
+            path: std::env::temp_dir().join("ipfrs-vcs-test-checkout"),
             cache_size: 10 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
+        let store = Arc::new(
+            SledBlockStore::new(config).expect("test: SledBlockStore::new should succeed"),
+        );
         let vcs = VersionControl::new(store.clone());
 
         let author = Author {
@@ -955,8 +991,12 @@ mod tests {
         };
 
         // Create two commits
-        let model1 = Block::new(Bytes::from("model v1")).unwrap();
-        store.put(&model1).await.unwrap();
+        let model1 = Block::new(Bytes::from("model v1"))
+            .expect("test: Block::new for model1 should succeed");
+        store
+            .put(&model1)
+            .await
+            .expect("test: store.put model1 should succeed");
         let commit1 = vcs
             .commit(
                 *model1.cid(),
@@ -965,17 +1005,24 @@ mod tests {
                 HashMap::new(),
             )
             .await
-            .unwrap();
+            .expect("test: first commit should succeed");
 
-        let model2 = Block::new(Bytes::from("model v2")).unwrap();
-        store.put(&model2).await.unwrap();
+        let model2 = Block::new(Bytes::from("model v2"))
+            .expect("test: Block::new for model2 should succeed");
+        store
+            .put(&model2)
+            .await
+            .expect("test: store.put model2 should succeed");
         let _commit2 = vcs
             .commit(*model2.cid(), "Second".to_string(), author, HashMap::new())
             .await
-            .unwrap();
+            .expect("test: second commit should succeed");
 
         // Checkout to first commit
-        let root = vcs.checkout(&commit1).await.unwrap();
+        let root = vcs
+            .checkout(&commit1)
+            .await
+            .expect("test: checkout should succeed");
         assert_eq!(root, *model1.cid());
         assert_eq!(vcs.head(), Some(commit1));
     }
@@ -983,12 +1030,14 @@ mod tests {
     #[tokio::test]
     async fn test_commit_log() {
         let config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-vcs-test-log"),
+            path: std::env::temp_dir().join("ipfrs-vcs-test-log"),
             cache_size: 10 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
+        let store = Arc::new(
+            SledBlockStore::new(config).expect("test: SledBlockStore::new should succeed"),
+        );
         let vcs = VersionControl::new(store.clone());
 
         let author = Author {
@@ -999,8 +1048,12 @@ mod tests {
         // Create three commits
         let mut commits = Vec::new();
         for i in 1..=3 {
-            let model = Block::new(Bytes::from(format!("model v{}", i))).unwrap();
-            store.put(&model).await.unwrap();
+            let model = Block::new(Bytes::from(format!("model v{}", i)))
+                .expect("test: Block::new should succeed");
+            store
+                .put(&model)
+                .await
+                .expect("test: store.put should succeed");
             let commit = vcs
                 .commit(
                     *model.cid(),
@@ -1009,12 +1062,15 @@ mod tests {
                     HashMap::new(),
                 )
                 .await
-                .unwrap();
+                .expect("test: vcs.commit should succeed");
             commits.push(commit);
         }
 
         // Get log from HEAD
-        let log = vcs.log(&commits[2], 10).await.unwrap();
+        let log = vcs
+            .log(&commits[2], 10)
+            .await
+            .expect("test: vcs.log should succeed");
         assert_eq!(log.len(), 3);
         assert_eq!(log[0].message, "Commit 3");
         assert_eq!(log[1].message, "Commit 2");
@@ -1028,7 +1084,7 @@ mod tests {
             email: "builder@example.com".to_string(),
         };
 
-        let root_block = Block::new(Bytes::from("root")).unwrap();
+        let root_block = Block::new(Bytes::from("root")).expect("test: Block::new should succeed");
 
         let commit = CommitBuilder::new()
             .root(*root_block.cid())
@@ -1036,10 +1092,16 @@ mod tests {
             .author(author.clone())
             .metadata("key1".to_string(), "value1".to_string())
             .build()
-            .unwrap();
+            .expect("test: CommitBuilder::build should succeed");
 
         assert_eq!(commit.message, "Test commit");
         assert_eq!(commit.author, author);
-        assert_eq!(commit.metadata.get("key1").unwrap(), "value1");
+        assert_eq!(
+            commit
+                .metadata
+                .get("key1")
+                .expect("test: metadata key1 should exist"),
+            "value1"
+        );
     }
 }

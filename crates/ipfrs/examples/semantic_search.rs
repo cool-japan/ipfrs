@@ -17,8 +17,10 @@ async fn main() -> ipfrs::Result<()> {
     println!("=== IPFRS Semantic Search Example ===\n");
 
     // Configure node with semantic search enabled
-    let mut config = NodeConfig::default();
-    config.enable_semantic = true;
+    let config = NodeConfig {
+        enable_semantic: true,
+        ..NodeConfig::default()
+    };
 
     let mut node = Node::new(config)?;
     node.start().await?;

@@ -64,14 +64,10 @@ impl StorageMetrics {
     /// Calculate average operation latency
     pub fn avg_operation_latency_us(&self) -> u64 {
         let total_ops = self.put_count + self.get_count + self.has_count;
-        if total_ops == 0 {
-            0
-        } else {
-            let total_latency = (self.put_count * self.avg_put_latency_us)
-                + (self.get_count * self.avg_get_latency_us)
-                + (self.has_count * self.avg_has_latency_us);
-            total_latency / total_ops
-        }
+        let total_latency = (self.put_count * self.avg_put_latency_us)
+            + (self.get_count * self.avg_get_latency_us)
+            + (self.has_count * self.avg_has_latency_us);
+        total_latency.checked_div(total_ops).unwrap_or(0)
     }
 
     /// Calculate throughput in operations per second
@@ -178,31 +174,27 @@ impl MetricsCollector {
             get_misses: self.get_misses.load(Ordering::Relaxed),
             bytes_written: self.bytes_written.load(Ordering::Relaxed),
             bytes_read: self.bytes_read.load(Ordering::Relaxed),
-            avg_put_latency_us: if put_count > 0 {
-                self.put_latency_sum.load(Ordering::Relaxed) / put_count
-            } else {
-                0
-            },
-            avg_get_latency_us: if get_count > 0 {
-                self.get_latency_sum.load(Ordering::Relaxed) / get_count
-            } else {
-                0
-            },
-            avg_has_latency_us: if has_count > 0 {
-                self.has_latency_sum.load(Ordering::Relaxed) / has_count
-            } else {
-                0
-            },
+            avg_put_latency_us: self
+                .put_latency_sum
+                .load(Ordering::Relaxed)
+                .checked_div(put_count)
+                .unwrap_or(0),
+            avg_get_latency_us: self
+                .get_latency_sum
+                .load(Ordering::Relaxed)
+                .checked_div(get_count)
+                .unwrap_or(0),
+            avg_has_latency_us: self
+                .has_latency_sum
+                .load(Ordering::Relaxed)
+                .checked_div(has_count)
+                .unwrap_or(0),
             peak_put_latency_us: self.peak_put_latency.load(Ordering::Relaxed),
             peak_get_latency_us: self.peak_get_latency.load(Ordering::Relaxed),
             error_count: self.error_count.load(Ordering::Relaxed),
             batch_op_count,
             batch_items_count,
-            avg_batch_size: if batch_op_count > 0 {
-                batch_items_count / batch_op_count
-            } else {
-                0
-            },
+            avg_batch_size: batch_items_count.checked_div(batch_op_count).unwrap_or(0),
         }
     }
 

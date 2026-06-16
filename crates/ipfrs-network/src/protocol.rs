@@ -325,7 +325,8 @@ mod tests {
 
     #[test]
     fn test_protocol_version_parse() {
-        let version = ProtocolVersion::parse("1.2.3").unwrap();
+        let version = ProtocolVersion::parse("1.2.3")
+            .expect("test: valid version string '1.2.3' should parse");
         assert_eq!(version.major, 1);
         assert_eq!(version.minor, 2);
         assert_eq!(version.patch, 3);
@@ -377,7 +378,8 @@ mod tests {
 
     #[test]
     fn test_protocol_id_parse() {
-        let id = ProtocolId::parse("/ipfrs/tensorswap/1.0.0").unwrap();
+        let id = ProtocolId::parse("/ipfrs/tensorswap/1.0.0")
+            .expect("test: valid protocol string '/ipfrs/tensorswap/1.0.0' should parse");
         assert_eq!(id.name, "tensorswap");
         assert_eq!(id.version.major, 1);
 
@@ -399,7 +401,9 @@ mod tests {
             ProtocolVersion::new(1, 0, 0),
         ));
 
-        registry.register(handler).unwrap();
+        registry
+            .register(handler)
+            .expect("test: registering a fresh handler should succeed");
         assert_eq!(registry.list_protocols().len(), 1);
     }
 
@@ -415,7 +419,9 @@ mod tests {
             ProtocolVersion::new(1, 0, 0),
         ));
 
-        registry.register(handler1).unwrap();
+        registry
+            .register(handler1)
+            .expect("test: registering handler1 should succeed");
         assert!(registry.register(handler2).is_err());
     }
 
@@ -426,7 +432,9 @@ mod tests {
         let protocol_id = ProtocolId::new("test".to_string(), version.clone());
 
         let handler = Box::new(MockProtocolHandler::new("test", version));
-        registry.register(handler).unwrap();
+        registry
+            .register(handler)
+            .expect("test: registering handler should succeed");
 
         let retrieved = registry.get(&protocol_id);
         assert!(retrieved.is_some());
@@ -449,16 +457,23 @@ mod tests {
             ProtocolVersion::new(1, 2, 0),
         ));
 
-        registry.register(handler1).unwrap();
-        registry.register(handler2).unwrap();
-        registry.register(handler3).unwrap();
+        registry
+            .register(handler1)
+            .expect("test: registering handler1 should succeed");
+        registry
+            .register(handler2)
+            .expect("test: registering handler2 should succeed");
+        registry
+            .register(handler3)
+            .expect("test: registering handler3 should succeed");
 
         // Should find the highest compatible version
         let min_version = ProtocolVersion::new(1, 0, 0);
         let compatible = registry.find_compatible("test", &min_version);
 
         assert!(compatible.is_some());
-        let compatible = compatible.unwrap();
+        let compatible = compatible
+            .expect("test: find_compatible should return a result for a registered version");
         assert_eq!(compatible.version.major, 1);
         assert_eq!(compatible.version.minor, 2);
     }
@@ -470,9 +485,13 @@ mod tests {
         let protocol_id = ProtocolId::new("test".to_string(), version.clone());
 
         let handler = Box::new(MockProtocolHandler::new("test", version));
-        registry.register(handler).unwrap();
+        registry
+            .register(handler)
+            .expect("test: registering handler should succeed");
 
-        registry.unregister(&protocol_id).unwrap();
+        registry
+            .unregister(&protocol_id)
+            .expect("test: unregistering a registered protocol should succeed");
         assert_eq!(registry.list_protocols().len(), 0);
     }
 
@@ -483,10 +502,14 @@ mod tests {
         let protocol_id = ProtocolId::new("test".to_string(), version.clone());
 
         let handler = Box::new(MockProtocolHandler::new("test", version));
-        registry.register(handler).unwrap();
+        registry
+            .register(handler)
+            .expect("test: registering handler should succeed");
 
         let request = b"test request";
-        let response = registry.handle_request(&protocol_id, request).unwrap();
+        let response = registry
+            .handle_request(&protocol_id, request)
+            .expect("test: handle_request should return response for registered protocol");
 
         assert_eq!(response, request);
     }

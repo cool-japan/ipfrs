@@ -161,7 +161,7 @@ fn build_preflight_response(config: &CorsConfig, origin: Option<&str>) -> Respon
     let mut response = Response::builder()
         .status(StatusCode::NO_CONTENT)
         .body(Body::empty())
-        .unwrap();
+        .expect("building NO_CONTENT response with empty body is infallible");
 
     add_cors_headers(response.headers_mut(), config, origin);
 
@@ -462,16 +462,6 @@ impl CompressionLevel {
             CompressionLevel::Custom(level) => level.min(9),
         }
     }
-
-    /// Get the quality level for brotli (0-11)
-    pub fn to_brotli_quality(self) -> u32 {
-        match self {
-            CompressionLevel::Fastest => 1,
-            CompressionLevel::Balanced => 6,
-            CompressionLevel::Best => 11,
-            CompressionLevel::Custom(level) => level.min(11),
-        }
-    }
 }
 
 /// Compression configuration
@@ -479,10 +469,6 @@ impl CompressionLevel {
 pub struct CompressionConfig {
     /// Enable gzip compression
     pub enable_gzip: bool,
-    /// Enable brotli compression
-    pub enable_brotli: bool,
-    /// Enable deflate compression
-    pub enable_deflate: bool,
     /// Compression level (speed vs size trade-off)
     pub level: CompressionLevel,
     /// Minimum size in bytes to compress (smaller files not compressed)
@@ -493,8 +479,6 @@ impl Default for CompressionConfig {
     fn default() -> Self {
         Self {
             enable_gzip: true,
-            enable_brotli: true,
-            enable_deflate: true,
             level: CompressionLevel::Balanced,
             min_size: 1024, // Don't compress files smaller than 1KB
         }
@@ -530,18 +514,16 @@ impl CompressionConfig {
         self
     }
 
-    /// Enable/disable specific compression algorithms
-    pub fn with_algorithms(mut self, gzip: bool, brotli: bool, deflate: bool) -> Self {
+    /// Enable/disable gzip compression
+    pub fn with_gzip(mut self, gzip: bool) -> Self {
         self.enable_gzip = gzip;
-        self.enable_brotli = brotli;
-        self.enable_deflate = deflate;
         self
     }
 
     /// Validate configuration
     pub fn validate(&self) -> Result<(), String> {
-        // At least one compression algorithm should be enabled if we're using compression
-        if !self.enable_gzip && !self.enable_brotli && !self.enable_deflate {
+        // Gzip must be enabled (only supported algorithm per COOLJAPAN OxiARC policy)
+        if !self.enable_gzip {
             return Err("At least one compression algorithm must be enabled".to_string());
         }
 
@@ -642,7 +624,7 @@ pub fn not_modified_response(cid: &str, config: &CacheConfig) -> Response {
     let mut response = Response::builder()
         .status(StatusCode::NOT_MODIFIED)
         .body(Body::empty())
-        .unwrap();
+        .expect("building NOT_MODIFIED response with empty body is infallible");
 
     add_caching_headers(response.headers_mut(), cid, config);
 
@@ -918,7 +900,11 @@ impl IntoResponse for ValidationError {
             "request_id": request_id.to_string(),
         });
 
-        (status, serde_json::to_string(&body).unwrap()).into_response()
+        (
+            status,
+            serde_json::to_string(&body).expect("serializing JSON Value is infallible"),
+        )
+            .into_response()
     }
 }
 
@@ -1097,14 +1083,18 @@ mod tests {
         assert!(headers.contains_key(header::ETAG));
         assert!(headers.contains_key(header::CACHE_CONTROL));
 
-        let etag = headers.get(header::ETAG).unwrap().to_str().unwrap();
+        let etag = headers
+            .get(header::ETAG)
+            .expect("test: ETAG header must be present")
+            .to_str()
+            .expect("test: ETAG header value must be valid UTF-8");
         assert_eq!(etag, "\"QmTest123\"");
 
         let cache_control = headers
             .get(header::CACHE_CONTROL)
-            .unwrap()
+            .expect("test: CACHE_CONTROL header must be present")
             .to_str()
-            .unwrap();
+            .expect("test: CACHE_CONTROL header value must be valid UTF-8");
         assert!(cache_control.contains("public"));
         assert!(cache_control.contains("max-age=3600"));
         assert!(cache_control.contains("immutable"));
@@ -1154,20 +1144,9 @@ mod tests {
     }
 
     #[test]
-    fn test_compression_level_to_brotli_quality() {
-        assert_eq!(CompressionLevel::Fastest.to_brotli_quality(), 1);
-        assert_eq!(CompressionLevel::Balanced.to_brotli_quality(), 6);
-        assert_eq!(CompressionLevel::Best.to_brotli_quality(), 11);
-        assert_eq!(CompressionLevel::Custom(8).to_brotli_quality(), 8);
-        assert_eq!(CompressionLevel::Custom(15).to_brotli_quality(), 11); // Capped at 11
-    }
-
-    #[test]
     fn test_compression_config_default() {
         let config = CompressionConfig::default();
         assert!(config.enable_gzip);
-        assert!(config.enable_brotli);
-        assert!(config.enable_deflate);
         assert_eq!(config.level, CompressionLevel::Balanced);
         assert_eq!(config.min_size, 1024);
     }
@@ -1183,7 +1162,6 @@ mod tests {
     fn test_compression_config_best() {
         let config = CompressionConfig::best();
         assert_eq!(config.level, CompressionLevel::Best);
-        assert!(config.enable_brotli);
     }
 
     #[test]
@@ -1191,13 +1169,11 @@ mod tests {
         let config = CompressionConfig::default()
             .with_level(CompressionLevel::Custom(7))
             .with_min_size(2048)
-            .with_algorithms(true, false, false);
+            .with_gzip(true);
 
         assert_eq!(config.level, CompressionLevel::Custom(7));
         assert_eq!(config.min_size, 2048);
         assert!(config.enable_gzip);
-        assert!(!config.enable_brotli);
-        assert!(!config.enable_deflate);
     }
 
     #[test]
@@ -1205,14 +1181,14 @@ mod tests {
         let config = CompressionConfig::default();
         assert!(config.validate().is_ok());
 
-        let config = CompressionConfig::default().with_algorithms(true, false, false);
+        let config = CompressionConfig::default().with_gzip(true);
         assert!(config.validate().is_ok());
     }
 
     #[test]
     fn test_compression_config_validation_invalid() {
         // No algorithms enabled
-        let config = CompressionConfig::default().with_algorithms(false, false, false);
+        let config = CompressionConfig::default().with_gzip(false);
         assert!(config.validate().is_err());
 
         // Min size too large

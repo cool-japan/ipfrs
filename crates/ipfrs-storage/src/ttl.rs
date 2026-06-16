@@ -412,7 +412,7 @@ mod tests {
         let ttl_store = TtlBlockStore::new(store, config);
 
         let block = create_block(b"hello world".to_vec()).unwrap();
-        let cid = block.cid().clone();
+        let cid = *block.cid();
 
         // Put block
         ttl_store.put(&block).await.unwrap();
@@ -435,7 +435,7 @@ mod tests {
         let ttl_store = TtlBlockStore::new(store, config);
 
         let block = create_block(b"test".to_vec()).unwrap();
-        let cid = block.cid().clone();
+        let cid = *block.cid();
 
         ttl_store.put(&block).await.unwrap();
 

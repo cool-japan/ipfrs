@@ -595,14 +595,17 @@ mod tests {
         let solver = LogicSolver::with_defaults();
         assert!(solver.is_ok());
 
-        let stats = solver.unwrap().stats();
+        let stats = solver
+            .expect("test: LogicSolver::with_defaults should succeed")
+            .stats();
         assert_eq!(stats.num_facts, 0);
         assert_eq!(stats.num_rules, 0);
     }
 
     #[test]
     fn test_add_fact() {
-        let mut solver = LogicSolver::with_defaults().unwrap();
+        let mut solver =
+            LogicSolver::with_defaults().expect("test: LogicSolver::with_defaults should succeed");
 
         let alice = Term::Const(Constant::String("Alice".to_string()));
         let bob = Term::Const(Constant::String("Bob".to_string()));
@@ -610,7 +613,7 @@ mod tests {
 
         let cid: Cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse()
-            .unwrap();
+            .expect("test: valid CID literal should parse");
 
         let result = solver.add_fact(fact, cid);
         assert!(result.is_ok());
@@ -622,7 +625,8 @@ mod tests {
 
     #[test]
     fn test_add_rule() {
-        let mut solver = LogicSolver::with_defaults().unwrap();
+        let mut solver =
+            LogicSolver::with_defaults().expect("test: LogicSolver::with_defaults should succeed");
 
         let x = Term::Var("X".to_string());
         let y = Term::Var("Y".to_string());
@@ -641,7 +645,8 @@ mod tests {
 
     #[test]
     fn test_query_empty() {
-        let solver = LogicSolver::with_defaults().unwrap();
+        let solver =
+            LogicSolver::with_defaults().expect("test: LogicSolver::with_defaults should succeed");
 
         let alice = Term::Const(Constant::String("Alice".to_string()));
         let bob = Term::Const(Constant::String("Bob".to_string()));
@@ -649,7 +654,9 @@ mod tests {
 
         let result = solver.query(&query);
         assert!(result.is_ok());
-        assert!(result.unwrap().is_empty());
+        assert!(result
+            .expect("test: query on empty KB should succeed")
+            .is_empty());
     }
 
     #[test]
@@ -661,7 +668,8 @@ mod tests {
 
     #[test]
     fn test_solver_clear() {
-        let mut solver = LogicSolver::with_defaults().unwrap();
+        let mut solver =
+            LogicSolver::with_defaults().expect("test: LogicSolver::with_defaults should succeed");
 
         let alice = Term::Const(Constant::String("Alice".to_string()));
         let bob = Term::Const(Constant::String("Bob".to_string()));
@@ -669,9 +677,11 @@ mod tests {
 
         let cid: Cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse()
-            .unwrap();
+            .expect("test: valid CID literal should parse");
 
-        solver.add_fact(fact, cid).unwrap();
+        solver
+            .add_fact(fact, cid)
+            .expect("test: add_fact with valid predicate and CID should succeed");
         assert_eq!(solver.stats().num_facts, 1);
 
         solver.clear();

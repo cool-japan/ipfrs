@@ -108,7 +108,7 @@ impl SemanticRoutingTable {
             clusters: Arc::new(RwLock::new(HashMap::new())),
             local_embedding: Arc::new(RwLock::new(local_embedding)),
             route_cache: Arc::new(RwLock::new(lru::LruCache::new(
-                std::num::NonZeroUsize::new(1000).unwrap(),
+                std::num::NonZeroUsize::new(1000).expect("1000 > 0"),
             ))),
         }
     }
@@ -202,7 +202,7 @@ impl SemanticRoutingTable {
             })
             .collect();
 
-        scored_peers.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        scored_peers.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
         scored_peers.into_iter().take(k).collect()
     }
 
@@ -349,8 +349,8 @@ impl SemanticRoutingTable {
 
             for (cluster_id, count) in counts.iter().enumerate() {
                 if *count > 0 {
-                    for j in 0..dim {
-                        new_centroids[cluster_id][j] /= *count as f32;
+                    for val in new_centroids[cluster_id].iter_mut().take(dim) {
+                        *val /= *count as f32;
                     }
                 }
             }
@@ -434,7 +434,7 @@ pub struct SemanticDHTStats {
 fn current_timestamp() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .expect("system time is after UNIX epoch")
         .as_secs()
 }
 
@@ -473,7 +473,9 @@ mod tests {
             let peer_id = PeerId::random();
             let embedding = vec![i as f32 * 0.1; 768];
             let peer = SemanticPeer::new(peer_id, embedding);
-            table.add_peer(peer).unwrap();
+            table
+                .add_peer(peer)
+                .expect("test: add_peer with valid embedding should succeed");
         }
 
         let query_embedding = vec![0.5; 768];
@@ -498,7 +500,9 @@ mod tests {
                 embedding[0] = -1.0;
             }
             let peer = SemanticPeer::new(peer_id, embedding);
-            table.add_peer(peer).unwrap();
+            table
+                .add_peer(peer)
+                .expect("test: add_peer with valid embedding should succeed");
         }
 
         assert!(table.update_clusters(2).is_ok());
@@ -521,7 +525,9 @@ mod tests {
             let embedding = vec![0.5; 768];
             let mut peer = SemanticPeer::new(peer_id, embedding);
             peer.update_load(i as f32 * 0.2); // Load: 0.0, 0.2, 0.4, 0.6, 0.8
-            table.add_peer(peer).unwrap();
+            table
+                .add_peer(peer)
+                .expect("test: add_peer with valid embedding should succeed");
         }
 
         let query_embedding = vec![0.5; 768];
@@ -541,7 +547,9 @@ mod tests {
             let peer_id = PeerId::random();
             let embedding = vec![i as f32 * 0.1; 768];
             let peer = SemanticPeer::new(peer_id, embedding);
-            table.add_peer(peer).unwrap();
+            table
+                .add_peer(peer)
+                .expect("test: add_peer with valid embedding should succeed");
         }
 
         let query_embedding = vec![0.5; 768];

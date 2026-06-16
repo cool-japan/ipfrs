@@ -434,7 +434,7 @@ mod tests {
         let mut rx = manager
             .subscribe(conn_id, "blocks".to_string())
             .await
-            .unwrap();
+            .expect("test: subscription to blocks topic should succeed");
 
         // Publish an event
         let event = RealtimeEvent::BlockAdded {
@@ -443,11 +443,17 @@ mod tests {
             timestamp: 12345,
         };
 
-        let count = manager.publish(event.clone()).await.unwrap();
+        let count = manager
+            .publish(event.clone())
+            .await
+            .expect("test: publish to subscribed topic should succeed");
         assert_eq!(count, 1);
 
         // Receive the event
-        let received = rx.recv().await.unwrap();
+        let received = rx
+            .recv()
+            .await
+            .expect("test: event should be received from subscription channel");
         match received {
             RealtimeEvent::BlockAdded { cid, size, .. } => {
                 assert_eq!(cid, "QmTest");
@@ -466,7 +472,7 @@ mod tests {
         let _rx = manager
             .subscribe(conn_id, "blocks".to_string())
             .await
-            .unwrap();
+            .expect("test: subscription should succeed");
         assert_eq!(manager.subscription_count().await, 1);
 
         // Unsubscribe
@@ -488,11 +494,11 @@ mod tests {
         let mut rx1 = manager
             .subscribe(conn1, "blocks".to_string())
             .await
-            .unwrap();
+            .expect("test: first subscriber connection should succeed");
         let mut rx2 = manager
             .subscribe(conn2, "blocks".to_string())
             .await
-            .unwrap();
+            .expect("test: second subscriber connection should succeed");
 
         // Publish event
         let event = RealtimeEvent::BlockAdded {
@@ -501,7 +507,10 @@ mod tests {
             timestamp: 12345,
         };
 
-        let count = manager.publish(event).await.unwrap();
+        let count = manager
+            .publish(event)
+            .await
+            .expect("test: publish to multiple subscribers should succeed");
         assert_eq!(count, 2); // Both subscribers receive it
 
         // Both should receive
@@ -539,11 +548,13 @@ mod tests {
             filter: Some("cid=Qm*".to_string()),
         };
 
-        let json = serde_json::to_string(&subscribe).unwrap();
+        let json = serde_json::to_string(&subscribe)
+            .expect("test: WsMessage serialization to JSON should succeed");
         assert!(json.contains("subscribe"));
         assert!(json.contains("blocks"));
 
-        let deserialized: WsMessage = serde_json::from_str(&json).unwrap();
+        let deserialized: WsMessage = serde_json::from_str(&json)
+            .expect("test: WsMessage deserialization from JSON should succeed");
         match deserialized {
             WsMessage::Subscribe { topic, .. } => {
                 assert_eq!(topic, "blocks");

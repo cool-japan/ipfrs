@@ -17,6 +17,7 @@
 //! - Load testing utilities
 
 pub mod advanced_scheduling;
+pub mod arrow_deframer;
 pub mod auto_tuner;
 pub mod bitswap;
 pub mod cdn_edge;
@@ -43,7 +44,10 @@ pub mod quic;
 pub mod range_request;
 pub mod recovery;
 pub mod request_coalescing;
+pub mod schema_migration;
+pub mod schema_registry;
 pub mod session;
+pub mod session_config;
 pub mod stats_aggregator;
 pub mod tcp;
 pub mod tensorswap;
@@ -111,9 +115,20 @@ pub use range_request::{ByteRange, RangeAssembler, RangeError, RangeRequest, Ran
 pub use recovery::{
     RecoveryConfig, RecoveryError, RecoveryManager, RecoveryMode, RecoveryStats, RecoveryStrategy,
 };
+pub use schema_migration::{
+    FieldDefault, FieldMigration, MigrationError, SchemaEvolutionManager, SchemaMigration,
+};
+pub use schema_registry::{
+    ipc_bytes_to_schema, schema_to_ipc_bytes, EvolutionStrategy, SchemaError, SchemaEvolutionFrame,
+    SchemaRegistry, SchemaVersion,
+};
 pub use session::{
     Session, SessionConfig, SessionError, SessionEvent, SessionId, SessionManager, SessionState,
     SessionStats,
+};
+pub use session_config::{
+    SessionConfig as BlockExchangeSessionConfig, SessionMetrics, SessionMetricsSnapshot,
+    SessionMetricsStore,
 };
 pub use tcp::{TcpConfig, TcpConnection, TcpTransport};
 pub use tensorswap::{
@@ -197,4 +212,10 @@ pub use load_tester::{
 pub use config_advisor::{
     ConfigAdvisor, ConfigRequirements, NetworkQuality, PerformanceProfile, RecommendedConfig,
     ResourceLevel, UseCase,
+};
+
+// Arrow IPC stream deframer
+pub use arrow_deframer::{
+    build_test_eos, build_test_frame, ArrowFrame, ArrowFrameType, ArrowStreamDeframer,
+    DeframerError, DeframerStats, DeframerStatsSnapshot,
 };

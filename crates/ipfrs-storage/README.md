@@ -18,7 +18,7 @@ Blockstore implementation for IPFRS - the persistent storage layer.
 - **ParityDB**: High-performance, designed for blockchain workloads
 - **RocksDB**: Battle-tested, C++ backend with Rust bindings
 
-### Differentiable Blockstore (v0.2.0 / v0.3.0)
+### Differentiable Blockstore (v0.2.0)
 - **Version Control System** for model states (Git for Tensors)
 - Track gradient updates as IPLD Merkle DAG
 - Time-travel to any historical model state
@@ -80,5 +80,5 @@ if store.has(&cid).await? {
 
 ## References
 
-- IPFRS v0.1.0 Whitepaper (Storage Architecture)
-- IPFRS v0.3.0 Whitepaper (Differentiable Storage)
+- IPFRS v0.2.0 Whitepaper (Storage Architecture)
+- *(planned v0.3.0)*

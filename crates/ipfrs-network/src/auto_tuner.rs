@@ -257,7 +257,10 @@ impl AutoTuner {
             self.analyze_system().await?;
         }
 
-        let resources = self.system_resources.as_ref().unwrap();
+        let resources = self
+            .system_resources
+            .as_ref()
+            .expect("just populated by analyze_system() if was None");
         let usable_factor = 1.0 - self.config.safety_margin;
 
         // Determine appropriate preset based on resources
@@ -373,7 +376,10 @@ impl AutoTuner {
             return 0.0;
         }
 
-        let resources = self.system_resources.as_ref().unwrap();
+        let resources = self
+            .system_resources
+            .as_ref()
+            .expect("just checked is_some above");
         let profile = &self.workload_profile;
 
         // Score based on resource utilization efficiency
@@ -464,7 +470,10 @@ mod tests {
     #[tokio::test]
     async fn test_system_resource_detection() {
         let mut tuner = AutoTuner::new();
-        let resources = tuner.analyze_system().await.unwrap();
+        let resources = tuner
+            .analyze_system()
+            .await
+            .expect("test: analyze_system should succeed");
         assert!(resources.cpu_cores > 0);
         assert!(resources.total_memory > 0);
     }
@@ -472,14 +481,20 @@ mod tests {
     #[tokio::test]
     async fn test_config_generation() {
         let mut tuner = AutoTuner::new();
-        let config = tuner.generate_config().await.unwrap();
+        let config = tuner
+            .generate_config()
+            .await
+            .expect("test: generate_config should succeed");
         assert!(config.max_connections.is_some());
     }
 
     #[tokio::test]
     async fn test_workload_update() {
         let mut tuner = AutoTuner::new();
-        tuner.analyze_system().await.unwrap();
+        tuner
+            .analyze_system()
+            .await
+            .expect("test: analyze_system should succeed");
 
         tuner.update_workload(10, 5.0, 100_000.0, 50_000_000);
         let profile = tuner.workload_profile();
@@ -491,7 +506,10 @@ mod tests {
         let mut tuner = AutoTuner::new();
         assert!(!tuner.is_monitoring());
 
-        tuner.start_monitoring().await.unwrap();
+        tuner
+            .start_monitoring()
+            .await
+            .expect("test: start_monitoring should succeed when not yet active");
         assert!(tuner.is_monitoring());
 
         tuner.stop_monitoring();
@@ -526,7 +544,10 @@ mod tests {
         let stats_before = tuner.stats();
         assert_eq!(stats_before.adjustments_made, 0);
 
-        tuner.generate_config().await.unwrap();
+        tuner
+            .generate_config()
+            .await
+            .expect("test: generate_config should succeed");
 
         let stats_after = tuner.stats();
         assert_eq!(stats_after.adjustments_made, 1);
@@ -536,7 +557,10 @@ mod tests {
     #[tokio::test]
     async fn test_recommendations() {
         let mut tuner = AutoTuner::new();
-        tuner.analyze_system().await.unwrap();
+        tuner
+            .analyze_system()
+            .await
+            .expect("test: analyze_system should succeed");
 
         // Simulate high memory usage to trigger a recommendation
         if let Some(resources) = &tuner.system_resources {
@@ -562,7 +586,10 @@ mod tests {
     #[tokio::test]
     async fn test_optimization_score() {
         let mut tuner = AutoTuner::new();
-        tuner.analyze_system().await.unwrap();
+        tuner
+            .analyze_system()
+            .await
+            .expect("test: analyze_system should succeed");
 
         let stats = tuner.stats();
         assert!(stats.optimization_score >= 0.0 && stats.optimization_score <= 1.0);

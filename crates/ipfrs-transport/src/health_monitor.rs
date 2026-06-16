@@ -189,7 +189,7 @@ impl HealthMonitor {
 
     /// Register a component for monitoring
     pub fn register_component(&self, component: ComponentType, max_history: usize) {
-        let mut components = self.components.write().unwrap();
+        let mut components = self.components.write().unwrap_or_else(|e| e.into_inner());
         components.insert(component, ComponentState::new(max_history));
     }
 
@@ -198,7 +198,7 @@ impl HealthMonitor {
         let component = check.component;
         let new_status = check.status;
 
-        let mut components = self.components.write().unwrap();
+        let mut components = self.components.write().unwrap_or_else(|e| e.into_inner());
         let state = components
             .entry(component)
             .or_insert_with(|| ComponentState::new(100));
@@ -215,7 +215,7 @@ impl HealthMonitor {
 
     /// Get current health status of a component
     pub fn get_health(&self, component: ComponentType) -> ComponentHealth {
-        let components = self.components.read().unwrap();
+        let components = self.components.read().unwrap_or_else(|e| e.into_inner());
         components
             .get(&component)
             .map(|s| s.health)
@@ -224,7 +224,7 @@ impl HealthMonitor {
 
     /// Get latest health check for a component
     pub fn get_latest_check(&self, component: ComponentType) -> Option<HealthCheck> {
-        let components = self.components.read().unwrap();
+        let components = self.components.read().unwrap_or_else(|e| e.into_inner());
         components
             .get(&component)
             .and_then(|s| s.get_latest_check())
@@ -233,7 +233,7 @@ impl HealthMonitor {
 
     /// Get health history for a component
     pub fn get_history(&self, component: ComponentType, limit: usize) -> Vec<HealthCheck> {
-        let components = self.components.read().unwrap();
+        let components = self.components.read().unwrap_or_else(|e| e.into_inner());
         if let Some(state) = components.get(&component) {
             let len = state.history.len();
             let start = len.saturating_sub(limit);
@@ -245,7 +245,7 @@ impl HealthMonitor {
 
     /// Get overall system health
     pub fn overall_health(&self) -> ComponentHealth {
-        let components = self.components.read().unwrap();
+        let components = self.components.read().unwrap_or_else(|e| e.into_inner());
 
         if components.is_empty() {
             return ComponentHealth::Unknown;
@@ -280,7 +280,7 @@ impl HealthMonitor {
     where
         F: Fn(HealthAlert) + Send + Sync + 'static,
     {
-        let mut callbacks = self.callbacks.write().unwrap();
+        let mut callbacks = self.callbacks.write().unwrap_or_else(|e| e.into_inner());
         callbacks.push(Arc::new(callback));
     }
 
@@ -302,7 +302,7 @@ impl HealthMonitor {
             ),
         };
 
-        let callbacks = self.callbacks.read().unwrap();
+        let callbacks = self.callbacks.read().unwrap_or_else(|e| e.into_inner());
         for callback in callbacks.iter() {
             callback(alert.clone());
         }
@@ -310,7 +310,7 @@ impl HealthMonitor {
 
     /// Get statistics for a component
     pub fn get_stats(&self, component: ComponentType) -> Option<ComponentStats> {
-        let components = self.components.read().unwrap();
+        let components = self.components.read().unwrap_or_else(|e| e.into_inner());
         components.get(&component).map(|state| {
             let total_checks = state.history.len();
             let healthy_count = state
@@ -339,7 +339,7 @@ impl HealthMonitor {
 
     /// Get all component statistics
     pub fn get_all_stats(&self) -> Vec<ComponentStats> {
-        let components = self.components.read().unwrap();
+        let components = self.components.read().unwrap_or_else(|e| e.into_inner());
         components
             .keys()
             .filter_map(|&comp| self.get_stats(comp))
@@ -463,7 +463,10 @@ mod tests {
 
         assert_eq!(check.component, ComponentType::WantList);
         assert_eq!(check.status, ComponentHealth::Healthy);
-        assert_eq!(check.message.unwrap(), "All systems operational");
+        assert_eq!(
+            check.message.expect("test: message field should be set"),
+            "All systems operational"
+        );
         assert_eq!(check.metrics.get("queue_size"), Some(&42.0));
     }
 
@@ -512,7 +515,9 @@ mod tests {
         let alert_triggered_clone = alert_triggered.clone();
 
         monitor.on_alert(move |_alert| {
-            *alert_triggered_clone.write().unwrap() = true;
+            *alert_triggered_clone
+                .write()
+                .unwrap_or_else(|e| e.into_inner()) = true;
         });
 
         // First check - sets to healthy
@@ -527,7 +532,7 @@ mod tests {
             .build();
         monitor.record_health_check(check2);
 
-        assert!(*alert_triggered.read().unwrap());
+        assert!(*alert_triggered.read().unwrap_or_else(|e| e.into_inner()));
     }
 
     #[test]
@@ -548,7 +553,9 @@ mod tests {
             monitor.record_health_check(check);
         }
 
-        let stats = monitor.get_stats(ComponentType::PeerManager).unwrap();
+        let stats = monitor
+            .get_stats(ComponentType::PeerManager)
+            .expect("test: stats should exist for registered component");
         assert_eq!(stats.total_checks, 10);
         assert_eq!(stats.uptime_ratio, 0.8); // 8 out of 10 healthy
     }
@@ -577,7 +584,7 @@ mod tests {
 
         let latest = monitor
             .get_latest_check(ComponentType::PeerManager)
-            .unwrap();
+            .expect("test: latest check should exist for registered component");
         assert_eq!(latest.status, ComponentHealth::Healthy);
         assert_eq!(latest.message, Some("Test message".to_string()));
     }

@@ -702,7 +702,9 @@ mod tests {
         let training = TrainingProvenance::new(model_cid, vec![dataset_cid], License::MIT);
         graph.add_training(training);
 
-        let lineage = graph.trace_lineage(&model_cid).unwrap();
+        let lineage = graph
+            .trace_lineage(&model_cid)
+            .expect("test: should succeed");
 
         assert_eq!(lineage.depth(), 1);
         assert_eq!(lineage.dataset_count(), 1);

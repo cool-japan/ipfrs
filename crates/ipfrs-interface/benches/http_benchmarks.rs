@@ -8,7 +8,8 @@
 //! - Memory per connection: < 100KB
 
 use bytes::Bytes;
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
@@ -173,20 +174,14 @@ fn bench_etag_validation(c: &mut Criterion) {
 
 /// Benchmark compression overhead
 fn bench_compression(c: &mut Criterion) {
-    use flate2::write::GzEncoder;
-    use flate2::Compression;
-    use std::io::Write;
+    use oxiarc_deflate::gzip_compress;
 
     let mut group = c.benchmark_group("compression");
     let data = vec![0u8; 1024 * 1024]; // 1MB
 
-    for level in [1, 3, 6, 9].iter() {
+    for level in [1u8, 3, 6, 9].iter() {
         group.bench_with_input(BenchmarkId::new("gzip", level), level, |b, &level| {
-            b.iter(|| {
-                let mut encoder = GzEncoder::new(Vec::new(), Compression::new(level));
-                encoder.write_all(black_box(&data)).unwrap();
-                encoder.finish().unwrap()
-            });
+            b.iter(|| gzip_compress(black_box(&data), level).expect("gzip compression failed"));
         });
     }
 

@@ -302,7 +302,7 @@ impl EventLogger {
             println!("{}", entry);
         }
 
-        let mut events = self.events.lock().unwrap();
+        let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
         events.push_back(entry);
 
         // Trim to max size
@@ -338,13 +338,13 @@ impl EventLogger {
 
     /// Get recent events (most recent first)
     pub fn get_recent_events(&self, count: usize) -> Vec<LogEntry> {
-        let events = self.events.lock().unwrap();
+        let events = self.events.lock().unwrap_or_else(|e| e.into_inner());
         events.iter().rev().take(count).cloned().collect()
     }
 
     /// Get all events matching a log level
     pub fn get_events_by_level(&self, level: LogLevel) -> Vec<LogEntry> {
-        let events = self.events.lock().unwrap();
+        let events = self.events.lock().unwrap_or_else(|e| e.into_inner());
         events
             .iter()
             .filter(|e| e.level == level)
@@ -354,7 +354,7 @@ impl EventLogger {
 
     /// Get events within a time range (milliseconds since UNIX epoch)
     pub fn get_events_by_time(&self, start_ms: u64, end_ms: u64) -> Vec<LogEntry> {
-        let events = self.events.lock().unwrap();
+        let events = self.events.lock().unwrap_or_else(|e| e.into_inner());
         events
             .iter()
             .filter(|e| e.timestamp_ms >= start_ms && e.timestamp_ms <= end_ms)
@@ -364,13 +364,13 @@ impl EventLogger {
 
     /// Clear all logged events
     pub fn clear(&mut self) {
-        let mut events = self.events.lock().unwrap();
+        let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
         events.clear();
     }
 
     /// Get total number of logged events
     pub fn event_count(&self) -> usize {
-        let events = self.events.lock().unwrap();
+        let events = self.events.lock().unwrap_or_else(|e| e.into_inner());
         events.len()
     }
 

@@ -452,7 +452,7 @@ impl PolicyEngine {
         }
 
         policies.push(policy);
-        policies.sort_by(|a, b| b.priority.cmp(&a.priority));
+        policies.sort_by_key(|p| std::cmp::Reverse(p.priority));
 
         Ok(())
     }
@@ -468,7 +468,7 @@ impl PolicyEngine {
         }
 
         policies.push(policy);
-        policies.sort_by(|a, b| b.priority.cmp(&a.priority));
+        policies.sort_by_key(|p| std::cmp::Reverse(p.priority));
 
         Ok(())
     }
@@ -484,7 +484,7 @@ impl PolicyEngine {
         }
 
         policies.push(policy);
-        policies.sort_by(|a, b| b.priority.cmp(&a.priority));
+        policies.sort_by_key(|p| std::cmp::Reverse(p.priority));
 
         Ok(())
     }
@@ -669,12 +669,20 @@ mod tests {
             .with_action(PolicyAction::Allow)
             .with_blacklist_peer("bad_peer");
 
-        engine.add_connection_policy(policy).unwrap();
+        engine
+            .add_connection_policy(policy)
+            .expect("test: should add blacklist policy");
 
-        let allowed = engine.evaluate_connection("bad_peer").await.unwrap();
+        let allowed = engine
+            .evaluate_connection("bad_peer")
+            .await
+            .expect("test: should evaluate bad_peer connection");
         assert!(!allowed);
 
-        let allowed = engine.evaluate_connection("good_peer").await.unwrap();
+        let allowed = engine
+            .evaluate_connection("good_peer")
+            .await
+            .expect("test: should evaluate good_peer connection");
         assert!(allowed);
     }
 
@@ -686,12 +694,20 @@ mod tests {
             .with_action(PolicyAction::Allow)
             .with_whitelist_peer("good_peer");
 
-        engine.add_connection_policy(policy).unwrap();
+        engine
+            .add_connection_policy(policy)
+            .expect("test: should add whitelist policy");
 
-        let allowed = engine.evaluate_connection("good_peer").await.unwrap();
+        let allowed = engine
+            .evaluate_connection("good_peer")
+            .await
+            .expect("test: should evaluate good_peer connection");
         assert!(allowed);
 
-        let allowed = engine.evaluate_connection("bad_peer").await.unwrap();
+        let allowed = engine
+            .evaluate_connection("bad_peer")
+            .await
+            .expect("test: should evaluate bad_peer connection");
         assert!(!allowed);
     }
 
@@ -722,11 +738,18 @@ mod tests {
             .with_action(PolicyAction::Allow)
             .with_priority(100);
 
-        engine.add_connection_policy(policy1).unwrap();
-        engine.add_connection_policy(policy2).unwrap();
+        engine
+            .add_connection_policy(policy1)
+            .expect("test: should add low-priority deny policy");
+        engine
+            .add_connection_policy(policy2)
+            .expect("test: should add high-priority allow policy");
 
         // High priority policy should match first
-        let allowed = engine.evaluate_connection("test_peer").await.unwrap();
+        let allowed = engine
+            .evaluate_connection("test_peer")
+            .await
+            .expect("test: should evaluate test_peer connection");
         assert!(allowed);
     }
 
@@ -735,7 +758,9 @@ mod tests {
         let engine = PolicyEngine::new(PolicyConfig::default());
 
         let policy = ConnectionPolicy::new("test");
-        engine.add_connection_policy(policy).unwrap();
+        engine
+            .add_connection_policy(policy)
+            .expect("test: should add test policy");
 
         assert!(engine.remove_connection_policy("test").is_ok());
         assert_eq!(engine.connection_policies().len(), 0);
@@ -748,10 +773,18 @@ mod tests {
         let engine = PolicyEngine::new(PolicyConfig::default());
 
         let policy = ConnectionPolicy::new("test").with_action(PolicyAction::Allow);
-        engine.add_connection_policy(policy).unwrap();
+        engine
+            .add_connection_policy(policy)
+            .expect("test: should add allow policy for stats");
 
-        engine.evaluate_connection("peer1").await.unwrap();
-        engine.evaluate_connection("peer2").await.unwrap();
+        engine
+            .evaluate_connection("peer1")
+            .await
+            .expect("test: should evaluate peer1 for stats");
+        engine
+            .evaluate_connection("peer2")
+            .await
+            .expect("test: should evaluate peer2 for stats");
 
         let stats = engine.stats();
         assert_eq!(stats.evaluations, 2);
@@ -798,7 +831,10 @@ mod tests {
         let engine = PolicyEngine::new(config);
 
         // No policies, should use default action (Deny)
-        let allowed = engine.evaluate_connection("peer1").await.unwrap();
+        let allowed = engine
+            .evaluate_connection("peer1")
+            .await
+            .expect("test: should evaluate peer1 with deny default");
         assert!(!allowed);
     }
 
@@ -807,9 +843,14 @@ mod tests {
         let engine = PolicyEngine::new(PolicyConfig::default());
 
         let policy = ConnectionPolicy::new("test");
-        engine.add_connection_policy(policy).unwrap();
+        engine
+            .add_connection_policy(policy)
+            .expect("test: should add policy for reset stats test");
 
-        engine.evaluate_connection("peer1").await.unwrap();
+        engine
+            .evaluate_connection("peer1")
+            .await
+            .expect("test: should evaluate peer1 before stats reset");
         assert_eq!(engine.stats().evaluations, 1);
 
         engine.reset_stats();

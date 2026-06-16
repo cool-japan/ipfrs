@@ -243,13 +243,13 @@ fn percentile_calibration_example() {
 
     // Create data with outliers
     let mut data = vec![0.0f32; 1000];
-    for i in 0..1000 {
-        if i < 10 || i >= 990 {
+    for (i, val) in data.iter_mut().enumerate() {
+        if !(10..990).contains(&i) {
             // Outliers
-            data[i] = if i < 10 { -100.0 } else { 100.0 };
+            *val = if i < 10 { -100.0 } else { 100.0 };
         } else {
             // Normal data: -1 to 1
-            data[i] = ((i as f32) - 500.0) / 500.0;
+            *val = ((i as f32) - 500.0) / 500.0;
         }
     }
 

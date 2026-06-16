@@ -321,7 +321,7 @@ impl QueryOptimizer {
             .collect();
 
         // Sort by selectivity (most selective first)
-        scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // Reorder body predicates
         let optimized_body: Vec<Predicate> = scores.iter().map(|(i, _)| body[*i].clone()).collect();
@@ -445,7 +445,7 @@ impl QueryOptimizer {
             .collect();
 
         // Sort by selectivity (most selective first)
-        scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
         scored.into_iter().map(|(p, _)| p).collect()
     }
@@ -875,11 +875,11 @@ mod tests {
         // Check stats
         assert_eq!(optimizer.total_facts(), 15);
 
-        let parent_stats = optimizer.get_stats("parent").unwrap();
+        let parent_stats = optimizer.get_stats("parent").expect("test: should succeed");
         assert_eq!(parent_stats.fact_count, 10);
         assert!((parent_stats.selectivity - (10.0 / 15.0)).abs() < 0.001);
 
-        let child_stats = optimizer.get_stats("child").unwrap();
+        let child_stats = optimizer.get_stats("child").expect("test: should succeed");
         assert_eq!(child_stats.fact_count, 5);
         assert!((child_stats.selectivity - (5.0 / 15.0)).abs() < 0.001);
     }
@@ -1107,13 +1107,13 @@ mod tests {
 
         manager
             .create_view("view1".to_string(), query, None)
-            .unwrap();
+            .expect("test: should succeed");
 
         let results = vec![vec![Term::Const(Constant::Int(1))]];
 
         assert!(manager.refresh_view("view1", results.clone()).is_ok());
 
-        let view = manager.get_view("view1").unwrap();
+        let view = manager.get_view("view1").expect("test: should succeed");
         assert_eq!(view.results.len(), 1);
     }
 
@@ -1128,12 +1128,12 @@ mod tests {
 
         manager
             .create_view("parent_view".to_string(), query1.clone(), None)
-            .unwrap();
+            .expect("test: should succeed");
 
         // Should find matching view
         let found = manager.find_matching_view(&query1);
         assert!(found.is_some());
-        assert_eq!(found.unwrap().name, "parent_view");
+        assert_eq!(found.expect("test: should succeed").name, "parent_view");
 
         // Should not find non-matching view
         let query2 = vec![Predicate::new(
@@ -1156,7 +1156,7 @@ mod tests {
             )];
             manager
                 .create_view(format!("view{}", i), query, None)
-                .unwrap();
+                .expect("test: should succeed");
         }
 
         assert_eq!(manager.all_views().len(), 3);
@@ -1177,7 +1177,7 @@ mod tests {
         )];
         manager
             .create_view("view3".to_string(), query, None)
-            .unwrap();
+            .expect("test: should succeed");
 
         assert_eq!(manager.all_views().len(), 3);
         assert!(manager.get_view("view2").is_none()); // view2 should be evicted
@@ -1200,7 +1200,7 @@ mod tests {
         )];
         manager
             .create_view("view1".to_string(), query1, Some(Duration::from_millis(10)))
-            .unwrap();
+            .expect("test: should succeed");
 
         // Create view with low access count
         let query2 = vec![Predicate::new(
@@ -1209,7 +1209,7 @@ mod tests {
         )];
         manager
             .create_view("view2".to_string(), query2, None)
-            .unwrap();
+            .expect("test: should succeed");
 
         // Create view with high access count
         let query3 = vec![Predicate::new(
@@ -1218,7 +1218,7 @@ mod tests {
         )];
         manager
             .create_view("view3".to_string(), query3, None)
-            .unwrap();
+            .expect("test: should succeed");
 
         if let Some(view) = manager.get_view_mut("view3") {
             for _ in 0..10 {
@@ -1251,7 +1251,7 @@ mod tests {
             )];
             manager
                 .create_view(format!("view{}", i), query, None)
-                .unwrap();
+                .expect("test: should succeed");
 
             if let Some(view) = manager.get_view_mut(&format!("view{}", i)) {
                 for _ in 0..((i + 1) * 5) {

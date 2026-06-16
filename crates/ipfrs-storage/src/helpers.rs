@@ -119,21 +119,36 @@ impl StorageStackBuilder {
 
     /// Build a cached storage stack
     pub fn build_cached(self) -> Result<CachedBlockStore<SledBlockStore>> {
+        use crate::CacheConfig;
+        use std::num::NonZeroUsize;
         let base = SledBlockStore::new(self.config)?;
-        let cache_size = self.cache_size_mb * 1024 * 1024;
-        Ok(CachedBlockStore::new(base, cache_size))
+        // Translate megabyte budget into a block-count capacity (assume ~4 KiB/block).
+        let block_capacity = std::cmp::max(1, self.cache_size_mb * 1024 * 1024 / 4096);
+        let config = CacheConfig {
+            l1_capacity: NonZeroUsize::new(block_capacity)
+                .unwrap_or_else(|| NonZeroUsize::new(1024).expect("1024>0")),
+            max_block_bytes: 256 * 1024,
+        };
+        Ok(CachedBlockStore::new(base, config))
     }
 
     /// Build a full storage stack with cache and bloom filter
     pub fn build_full(self) -> Result<BloomBlockStore<CachedBlockStore<SledBlockStore>>> {
+        use crate::CacheConfig;
+        use std::num::NonZeroUsize;
         let base = SledBlockStore::new(self.config)?;
 
-        let cache_size = if self.enable_cache {
-            self.cache_size_mb * 1024 * 1024
+        let block_capacity = if self.enable_cache {
+            std::cmp::max(1, self.cache_size_mb * 1024 * 1024 / 4096)
         } else {
-            1024 // Minimal cache if disabled
+            1 // Minimal cache if disabled
         };
-        let cached = CachedBlockStore::new(base, cache_size);
+        let cache_config = CacheConfig {
+            l1_capacity: NonZeroUsize::new(block_capacity)
+                .unwrap_or_else(|| NonZeroUsize::new(1).expect("1>0")),
+            max_block_bytes: 256 * 1024,
+        };
+        let cached = CachedBlockStore::new(base, cache_config);
 
         if self.enable_bloom {
             let bloom_config = BloomConfig::new(self.bloom_expected_items, 0.01);
@@ -595,7 +610,7 @@ mod tests {
     #[test]
     fn test_builder_simple() {
         let _stack = StorageStackBuilder::new()
-            .with_path(PathBuf::from("/tmp/test-simple"))
+            .with_path(std::env::temp_dir().join("test-simple"))
             .build_simple();
         assert!(_stack.is_ok());
     }
@@ -603,7 +618,7 @@ mod tests {
     #[test]
     fn test_builder_cached() {
         let _stack = StorageStackBuilder::new()
-            .with_path(PathBuf::from("/tmp/test-cached"))
+            .with_path(std::env::temp_dir().join("test-cached"))
             .with_cache(10)
             .build_cached();
         assert!(_stack.is_ok());
@@ -612,7 +627,7 @@ mod tests {
     #[test]
     fn test_builder_full() {
         let _stack = StorageStackBuilder::new()
-            .with_path(PathBuf::from("/tmp/test-full"))
+            .with_path(std::env::temp_dir().join("test-full"))
             .with_cache(10)
             .with_bloom(1000)
             .build_full();

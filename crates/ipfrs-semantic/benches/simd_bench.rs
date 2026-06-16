@@ -2,8 +2,9 @@
 //!
 //! Run with: cargo bench --bench simd_bench
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use ipfrs_semantic::simd;
+use std::hint::black_box;
 
 fn bench_l2_distance(c: &mut Criterion) {
     let mut group = c.benchmark_group("l2_distance");

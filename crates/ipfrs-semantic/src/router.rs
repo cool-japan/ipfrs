@@ -4,13 +4,42 @@
 //! CID-based lookups with vector similarity search for intelligent
 //! content discovery.
 
+use crate::diskann::DiskANNIndex;
 use crate::hnsw::{DistanceMetric, SearchResult, VectorIndex};
-use ipfrs_core::{Cid, Result};
+use crate::quantization::{dequantize_i8_to_f32, quantize_f32_to_i8};
+use ipfrs_core::{Cid, Error, Result};
 use lru::LruCache;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
 use std::sync::{Arc, RwLock};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Index backend selection
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Selectable vector index backend for [`SemanticRouter`].
+///
+/// Choose based on dataset size and storage constraints:
+/// - **HNSW** — fully in-memory, optimal for ≤ 10 M vectors.
+/// - **DiskANN** — memory-mapped graph; handles 100 M+ vectors with bounded RAM.
+#[derive(Debug, Clone, Default)]
+pub enum IndexBackend {
+    /// HNSW (default) — in-memory, fast search with high recall.
+    #[default]
+    Hnsw,
+    /// DiskANN — disk-backed graph index for massive-scale datasets.
+    DiskAnn {
+        /// Path at which the DiskANN graph file is created or opened.
+        graph_path: std::path::PathBuf,
+    },
+}
+
+/// Internal handle that owns either an HNSW or a DiskANN index.
+enum IndexHandle {
+    Hnsw(Arc<RwLock<VectorIndex>>),
+    DiskAnn(Arc<RwLock<DiskANNIndex>>),
+}
 
 /// Configuration for semantic router
 #[derive(Debug, Clone)]
@@ -27,6 +56,15 @@ pub struct RouterConfig {
     pub ef_search: usize,
     /// Query result cache size (number of queries to cache)
     pub cache_size: usize,
+    /// Which index backend to use (HNSW or DiskANN).
+    /// Defaults to [`IndexBackend::Hnsw`].
+    pub index_backend: IndexBackend,
+    /// When `true`, vectors are quantized to INT8 before being stored in the
+    /// index.  This trades a tiny accuracy loss for ~4× memory savings.
+    pub quantize_vectors: bool,
+    /// Bit-width for quantization: `8` for INT8 (default) or `1` for binary.
+    /// Only relevant when `quantize_vectors` is `true`.
+    pub quantization_bits: u8,
 }
 
 impl Default for RouterConfig {
@@ -38,6 +76,9 @@ impl Default for RouterConfig {
             ef_construction: 200,
             ef_search: 50,
             cache_size: 1000, // Cache up to 1000 recent queries
+            index_backend: IndexBackend::Hnsw,
+            quantize_vectors: false,
+            quantization_bits: 8,
         }
     }
 }
@@ -63,7 +104,8 @@ impl RouterConfig {
             max_connections: 12,
             ef_construction: 150,
             ef_search: 32,
-            cache_size: 2000, // Larger cache for frequently accessed queries
+            cache_size: 2000,
+            ..Self::default()
         }
     }
 
@@ -88,6 +130,7 @@ impl RouterConfig {
             ef_construction: 400,
             ef_search: 200,
             cache_size: 1000,
+            ..Self::default()
         }
     }
 
@@ -111,7 +154,8 @@ impl RouterConfig {
             max_connections: 8,
             ef_construction: 100,
             ef_search: 50,
-            cache_size: 500, // Smaller cache to save memory
+            cache_size: 500,
+            ..Self::default()
         }
     }
 
@@ -135,7 +179,8 @@ impl RouterConfig {
             max_connections: 24,
             ef_construction: 300,
             ef_search: 100,
-            cache_size: 5000, // Larger cache for diverse queries
+            cache_size: 5000,
+            ..Self::default()
         }
     }
 
@@ -160,6 +205,7 @@ impl RouterConfig {
             ef_construction: 200,
             ef_search: 50,
             cache_size: 1000,
+            ..Self::default()
         }
     }
 
@@ -296,10 +342,11 @@ type QueryCacheKey = u64;
 /// Semantic router combining CID-based and vector-based search
 ///
 /// Provides intelligent content discovery through vector similarity
-/// search over content embeddings.
+/// search over content embeddings.  Supports both HNSW (in-memory) and
+/// DiskANN (disk-backed) backends, and optional INT8 vector quantization.
 pub struct SemanticRouter {
-    /// Vector index for semantic search
-    index: Arc<RwLock<VectorIndex>>,
+    /// Underlying vector index (HNSW or DiskANN)
+    index: IndexHandle,
     /// Router configuration
     config: RouterConfig,
     /// Query result cache (LRU)
@@ -307,21 +354,39 @@ pub struct SemanticRouter {
 }
 
 impl SemanticRouter {
-    /// Create a new semantic router with the given configuration
+    /// Create a new semantic router with the given configuration.
+    ///
+    /// When the backend is [`IndexBackend::DiskAnn`] the graph file is created
+    /// at `graph_path` if it does not yet exist.
     pub fn new(config: RouterConfig) -> Result<Self> {
-        let index = VectorIndex::new(
-            config.dimension,
-            config.metric,
-            config.max_connections,
-            config.ef_construction,
-        )?;
-
-        let cache_size =
-            NonZeroUsize::new(config.cache_size).unwrap_or(NonZeroUsize::new(1000).unwrap());
+        let cache_size = NonZeroUsize::new(config.cache_size)
+            .unwrap_or_else(|| NonZeroUsize::new(1000).expect("1000 is non-zero"));
         let query_cache = LruCache::new(cache_size);
 
+        let index = match &config.index_backend {
+            IndexBackend::Hnsw => {
+                let hnsw = VectorIndex::new(
+                    config.dimension,
+                    config.metric,
+                    config.max_connections,
+                    config.ef_construction,
+                )?;
+                IndexHandle::Hnsw(Arc::new(RwLock::new(hnsw)))
+            }
+            IndexBackend::DiskAnn { graph_path } => {
+                use crate::diskann::DiskANNConfig;
+                let da_config = DiskANNConfig {
+                    dimension: config.dimension,
+                    ..DiskANNConfig::default()
+                };
+                let mut da_index = DiskANNIndex::new(da_config);
+                da_index.create(graph_path)?;
+                IndexHandle::DiskAnn(Arc::new(RwLock::new(da_index)))
+            }
+        };
+
         Ok(Self {
-            index: Arc::new(RwLock::new(index)),
+            index,
             config,
             query_cache: Arc::new(RwLock::new(query_cache)),
         })
@@ -332,33 +397,113 @@ impl SemanticRouter {
         Self::new(RouterConfig::default())
     }
 
-    /// Add content with its embedding to the router
+    /// Optionally quantize `embedding` to INT8 and back to f32.
+    ///
+    /// When `config.quantize_vectors` is `true` this reduces storage fidelity
+    /// slightly but saves ~4× memory inside the index.
+    fn maybe_quantize(&self, embedding: &[f32]) -> Vec<f32> {
+        if self.config.quantize_vectors {
+            let (q, scale, zero_point) = quantize_f32_to_i8(embedding);
+            dequantize_i8_to_f32(&q, scale, zero_point)
+        } else {
+            embedding.to_vec()
+        }
+    }
+
+    /// Helper: convert a `diskann::SearchResult` (distance-based) to the
+    /// common `hnsw::SearchResult` (score-based) used throughout the router.
+    ///
+    /// Score = 1 / (1 + distance) so that closer vectors get higher scores.
+    fn diskann_to_search_result(r: crate::diskann::SearchResult) -> SearchResult {
+        SearchResult {
+            cid: r.cid,
+            score: 1.0 / (1.0 + r.distance),
+        }
+    }
+
+    /// Add content with its embedding to the router.
+    ///
+    /// When `config.quantize_vectors` is `true` the embedding is first
+    /// quantized to INT8 and dequantized before being stored.
     ///
     /// # Arguments
     /// * `cid` - Content identifier
     /// * `embedding` - Vector embedding of the content
     pub fn add(&self, cid: &Cid, embedding: &[f32]) -> Result<()> {
-        self.index.write().unwrap().insert(cid, embedding)
+        let v = self.maybe_quantize(embedding);
+        match &self.index {
+            IndexHandle::Hnsw(idx) => idx
+                .write()
+                .map_err(|_| Error::Internal("HNSW index lock poisoned".into()))?
+                .insert(cid, &v),
+            IndexHandle::DiskAnn(idx) => idx
+                .write()
+                .map_err(|_| Error::Internal("DiskANN index lock poisoned".into()))?
+                .insert(cid, &v),
+        }
     }
 
-    /// Add multiple content items in batch
+    /// Add multiple content items in batch.
     ///
-    /// More efficient than adding one by one
+    /// For HNSW backends this uses the optimised bulk-insert path; for DiskANN
+    /// it falls back to sequential inserts.
     ///
     /// # Arguments
     /// * `items` - Vector of (CID, embedding) pairs
     pub fn add_batch(&self, items: &[(Cid, Vec<f32>)]) -> Result<()> {
-        self.index.write().unwrap().insert_batch(items)
+        match &self.index {
+            IndexHandle::Hnsw(idx) => {
+                if self.config.quantize_vectors {
+                    let quantized: Vec<(Cid, Vec<f32>)> = items
+                        .iter()
+                        .map(|(cid, emb)| (*cid, self.maybe_quantize(emb)))
+                        .collect();
+                    idx.write()
+                        .map_err(|_| Error::Internal("HNSW index lock poisoned".into()))?
+                        .insert_batch(&quantized)
+                } else {
+                    idx.write()
+                        .map_err(|_| Error::Internal("HNSW index lock poisoned".into()))?
+                        .insert_batch(items)
+                }
+            }
+            IndexHandle::DiskAnn(idx) => {
+                for (cid, emb) in items {
+                    let v = self.maybe_quantize(emb);
+                    idx.write()
+                        .map_err(|_| Error::Internal("DiskANN index lock poisoned".into()))?
+                        .insert(cid, &v)?;
+                }
+                Ok(())
+            }
+        }
     }
 
-    /// Remove content from the router
+    /// Remove content from the router.
+    ///
+    /// **Note:** DiskANN does not support deletion; this returns an error for
+    /// that backend.
     pub fn remove(&self, cid: &Cid) -> Result<()> {
-        self.index.write().unwrap().delete(cid)
+        match &self.index {
+            IndexHandle::Hnsw(idx) => idx
+                .write()
+                .map_err(|_| Error::Internal("HNSW index lock poisoned".into()))?
+                .delete(cid),
+            IndexHandle::DiskAnn(_) => Err(Error::InvalidInput(
+                "DiskANN backend does not support deletion".to_string(),
+            )),
+        }
     }
 
-    /// Check if content exists in the router
+    /// Check if content exists in the router.
+    ///
+    /// **Note:** For DiskANN this always returns `false` because the CID map
+    /// is not publicly exposed by the backend.
     pub fn contains(&self, cid: &Cid) -> bool {
-        self.index.read().unwrap().contains(cid)
+        match &self.index {
+            IndexHandle::Hnsw(idx) => idx.read().map(|g| g.contains(cid)).unwrap_or(false),
+            IndexHandle::DiskAnn(_) => false,
+        }
     }
 
     /// Query for content by semantic similarity
@@ -371,20 +516,30 @@ impl SemanticRouter {
             .await
     }
 
-    /// Query with auto-tuned ef_search parameter
+    /// Query with auto-tuned ef_search parameter.
     ///
-    /// Automatically determines the optimal ef_search based on k and index size
+    /// For HNSW backends, computes the optimal ef_search based on k and index
+    /// size.  For DiskANN, falls back to the configured `ef_search` value.
     ///
     /// # Arguments
     /// * `query_embedding` - Query vector
     /// * `k` - Number of results to return
     pub async fn query_auto(&self, query_embedding: &[f32], k: usize) -> Result<Vec<SearchResult>> {
-        let optimal_ef_search = self.index.read().unwrap().compute_optimal_ef_search(k);
+        let optimal_ef_search = match &self.index {
+            IndexHandle::Hnsw(idx) => idx
+                .read()
+                .map(|g| g.compute_optimal_ef_search(k))
+                .unwrap_or(self.config.ef_search),
+            IndexHandle::DiskAnn(_) => self.config.ef_search,
+        };
         self.query_with_ef(query_embedding, k, optimal_ef_search)
             .await
     }
 
-    /// Query with custom ef_search parameter
+    /// Query with custom ef_search parameter.
+    ///
+    /// The `ef_search` parameter is ignored for DiskANN (the backend controls
+    /// its own search list size).
     ///
     /// # Arguments
     /// * `query_embedding` - Query vector
@@ -396,28 +551,50 @@ impl SemanticRouter {
         k: usize,
         ef_search: usize,
     ) -> Result<Vec<SearchResult>> {
-        // Generate cache key
         let cache_key = Self::compute_cache_key(query_embedding, k, &QueryFilter::default());
 
-        // Try cache first
-        if let Some(cached) = self.query_cache.write().unwrap().get(&cache_key) {
+        if let Some(cached) = self
+            .query_cache
+            .write()
+            .map_err(|_| Error::Internal("cache lock poisoned".into()))?
+            .get(&cache_key)
+        {
             return Ok(cached.clone());
         }
 
-        // Search with custom ef_search
-        let results = self
-            .index
-            .read()
-            .unwrap()
-            .search(query_embedding, k, ef_search)?;
+        let results = self.search_backend(query_embedding, k, ef_search)?;
 
-        // Cache the results
         self.query_cache
             .write()
-            .unwrap()
+            .map_err(|_| Error::Internal("cache lock poisoned".into()))?
             .put(cache_key, results.clone());
 
         Ok(results)
+    }
+
+    /// Dispatch a search to the active backend and return unified `SearchResult`s.
+    fn search_backend(
+        &self,
+        query: &[f32],
+        k: usize,
+        ef_search: usize,
+    ) -> Result<Vec<SearchResult>> {
+        match &self.index {
+            IndexHandle::Hnsw(idx) => idx
+                .read()
+                .map_err(|_| Error::Internal("HNSW index lock poisoned".into()))?
+                .search(query, k, ef_search),
+            IndexHandle::DiskAnn(idx) => {
+                let raw = idx
+                    .read()
+                    .map_err(|_| Error::Internal("DiskANN index lock poisoned".into()))?
+                    .search(query, k)?;
+                Ok(raw
+                    .into_iter()
+                    .map(Self::diskann_to_search_result)
+                    .collect())
+            }
+        }
     }
 
     /// Query with filtering options
@@ -432,31 +609,27 @@ impl SemanticRouter {
         k: usize,
         filter: QueryFilter,
     ) -> Result<Vec<SearchResult>> {
-        // Generate cache key from query parameters
         let cache_key = Self::compute_cache_key(query_embedding, k, &filter);
 
-        // Try cache first (only if no filtering, as filtered results may vary)
         if filter.min_score.is_none() && filter.cid_prefix.is_none() {
-            if let Some(cached) = self.query_cache.write().unwrap().get(&cache_key) {
+            if let Some(cached) = self
+                .query_cache
+                .write()
+                .map_err(|_| Error::Internal("cache lock poisoned".into()))?
+                .get(&cache_key)
+            {
                 return Ok(cached.clone());
             }
         }
 
-        // Determine actual k to fetch (might need more if filtering)
         let fetch_k = if filter.min_score.is_some() || filter.cid_prefix.is_some() {
-            k * 2 // Fetch more to account for filtering
+            k * 2
         } else {
             k
         };
 
-        // Search the vector index
-        let mut results =
-            self.index
-                .read()
-                .unwrap()
-                .search(query_embedding, fetch_k, self.config.ef_search)?;
+        let mut results = self.search_backend(query_embedding, fetch_k, self.config.ef_search)?;
 
-        // Apply filters
         if let Some(min_score) = filter.min_score {
             results.retain(|r| r.score >= min_score);
         }
@@ -469,16 +642,14 @@ impl SemanticRouter {
             results.retain(|r| r.cid.to_string().starts_with(prefix));
         }
 
-        // Apply max results limit
         if let Some(max_results) = filter.max_results {
             results.truncate(max_results);
         }
 
-        // Cache the results (only unfiltered queries)
         if filter.min_score.is_none() && filter.cid_prefix.is_none() {
             self.query_cache
                 .write()
-                .unwrap()
+                .map_err(|_| Error::Internal("cache lock poisoned".into()))?
                 .put(cache_key, results.clone());
         }
 
@@ -502,83 +673,228 @@ impl SemanticRouter {
 
     /// Clear the query result cache
     pub fn clear_cache(&self) {
-        self.query_cache.write().unwrap().clear();
+        if let Ok(mut cache) = self.query_cache.write() {
+            cache.clear();
+        }
     }
 
     /// Get cache statistics
     pub fn cache_stats(&self) -> CacheStats {
-        let cache = self.query_cache.read().unwrap();
-        CacheStats {
-            size: cache.len(),
-            capacity: cache.cap().get(),
+        match self.query_cache.read() {
+            Ok(cache) => CacheStats {
+                size: cache.len(),
+                capacity: cache.cap().get(),
+            },
+            Err(_) => CacheStats {
+                size: 0,
+                capacity: 0,
+            },
         }
     }
 
     /// Get statistics about the router
     pub fn stats(&self) -> RouterStats {
-        let index = self.index.read().unwrap();
-        RouterStats {
-            num_vectors: index.len(),
-            dimension: index.dimension(),
-            metric: index.metric(),
+        match &self.index {
+            IndexHandle::Hnsw(idx) => {
+                let guard = idx.read().unwrap_or_else(|p| p.into_inner());
+                RouterStats {
+                    num_vectors: guard.len(),
+                    dimension: guard.dimension(),
+                    metric: guard.metric(),
+                }
+            }
+            IndexHandle::DiskAnn(idx) => {
+                let guard = idx.read().unwrap_or_else(|p| p.into_inner());
+                let s = guard.stats();
+                RouterStats {
+                    num_vectors: s.num_vectors,
+                    dimension: s.dimension,
+                    metric: DistanceMetric::L2,
+                }
+            }
         }
     }
 
-    /// Get optimization recommendations
+    /// Estimated memory usage in bytes for the underlying index.
     ///
-    /// Returns recommended HNSW parameters for the current index size
+    /// For HNSW delegates to [`VectorIndex::estimated_memory_bytes`].
+    /// For DiskANN returns the estimated disk size instead (most data is memory-mapped).
+    pub fn estimated_memory_bytes(&self) -> ipfrs_core::Result<usize> {
+        match &self.index {
+            IndexHandle::Hnsw(idx) => {
+                let guard = idx.read().map_err(|_| {
+                    ipfrs_core::Error::Storage("HNSW index lock poisoned".to_string())
+                })?;
+                Ok(guard.estimated_memory_bytes())
+            }
+            IndexHandle::DiskAnn(idx) => {
+                let guard = idx.read().map_err(|_| {
+                    ipfrs_core::Error::Storage("DiskANN index lock poisoned".to_string())
+                })?;
+                Ok(guard.stats().estimated_disk_size)
+            }
+        }
+    }
+
+    /// Get optimization recommendations.
+    ///
+    /// For DiskANN backends, returns defaults as HNSW-specific tuning does
+    /// not apply.
     pub fn optimization_recommendations(&self) -> OptimizationRecommendations {
-        let index = self.index.read().unwrap();
-        let (m, ef_construction) = index.compute_optimal_parameters();
-
-        OptimizationRecommendations {
-            recommended_m: m,
-            recommended_ef_construction: ef_construction,
-            current_size: index.len(),
+        match &self.index {
+            IndexHandle::Hnsw(idx) => {
+                let guard = idx.read().unwrap_or_else(|p| p.into_inner());
+                let (m, ef_construction) = guard.compute_optimal_parameters();
+                OptimizationRecommendations {
+                    recommended_m: m,
+                    recommended_ef_construction: ef_construction,
+                    current_size: guard.len(),
+                }
+            }
+            IndexHandle::DiskAnn(idx) => {
+                let guard = idx.read().unwrap_or_else(|p| p.into_inner());
+                let s = guard.stats();
+                OptimizationRecommendations {
+                    recommended_m: 64,
+                    recommended_ef_construction: 100,
+                    current_size: s.num_vectors,
+                }
+            }
         }
     }
 
-    /// Save the semantic index to a file
+    /// Save the semantic index to a file.
     ///
-    /// Serializes the entire HNSW index including all vectors and CID mappings
-    /// to a file for later loading.
+    /// For HNSW backends, serializes the full index to the given path.
+    /// For DiskANN, persists all in-memory graph data to the backing file.
     ///
     /// # Arguments
-    /// * `path` - Path to save the index file
+    /// * `path` - Path to save the index file (only used for HNSW)
     pub async fn save_index<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
-        self.index.read().unwrap().save(path.as_ref())
+        match &self.index {
+            IndexHandle::Hnsw(idx) => idx
+                .read()
+                .map_err(|_| Error::Internal("HNSW index lock poisoned".into()))?
+                .save(path.as_ref()),
+            IndexHandle::DiskAnn(idx) => idx
+                .read()
+                .map_err(|_| Error::Internal("DiskANN index lock poisoned".into()))?
+                .save(),
+        }
     }
 
-    /// Load a semantic index from a file
+    /// Save the semantic index using smart incremental logic.
     ///
-    /// Loads a previously saved HNSW index from disk, replacing the current index.
+    /// Only supported for HNSW backends (falls back to full save for DiskANN).
+    ///
+    /// # Arguments
+    /// * `path` - Base path of the snapshot file
+    pub async fn save_index_smart<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
+        match &self.index {
+            IndexHandle::Hnsw(idx) => {
+                use crate::persistence::IndexPersistence;
+                let persistence = IndexPersistence::new(path.as_ref());
+                let index_guard = idx.read().map_err(|_| {
+                    ipfrs_core::Error::Internal("index lock poisoned in save_index_smart".into())
+                })?;
+                persistence.save_smart(&index_guard)
+            }
+            IndexHandle::DiskAnn(idx) => idx
+                .read()
+                .map_err(|_| Error::Internal("DiskANN index lock poisoned".into()))?
+                .save(),
+        }
+    }
+
+    /// Load a semantic index from a file and apply any available incremental
+    /// delta on top of the loaded full snapshot.
+    ///
+    /// Only supported for HNSW backends.
+    ///
+    /// # Arguments
+    /// * `path` - Path to the full snapshot file
+    pub async fn load_index_with_delta<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
+        match &self.index {
+            IndexHandle::Hnsw(idx) => {
+                use crate::persistence::{IndexPersistence, IndexPersistence as IP};
+                let persistence = IP::new(path.as_ref());
+
+                let mut snap = persistence.load()?;
+
+                if let Ok(delta) = persistence.load_incremental() {
+                    if delta.delta_version > delta.base_version {
+                        tracing::debug!(
+                            base_version = delta.base_version,
+                            delta_version = delta.delta_version,
+                            changed = delta.changed_entries.len(),
+                            "Applying incremental HNSW delta on top of full snapshot"
+                        );
+                        IndexPersistence::apply_incremental(&mut snap, &delta)?;
+                    }
+                }
+
+                let loaded_index = VectorIndex::from_snapshot(&snap)?;
+                *idx.write().map_err(|_| {
+                    ipfrs_core::Error::Internal(
+                        "index write lock poisoned in load_index_with_delta".into(),
+                    )
+                })? = loaded_index;
+
+                self.clear_cache();
+                Ok(())
+            }
+            IndexHandle::DiskAnn(_) => Err(Error::InvalidInput(
+                "load_index_with_delta is not supported for DiskANN backend".to_string(),
+            )),
+        }
+    }
+
+    /// Load a semantic index from a file.
+    ///
+    /// Only supported for HNSW backends; DiskANN indices are always loaded via
+    /// `RouterConfig` at construction time.
     ///
     /// # Arguments
     /// * `path` - Path to the saved index file
     pub async fn load_index<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
-        let loaded_index = VectorIndex::load(path.as_ref())?;
-        *self.index.write().unwrap() = loaded_index;
-        // Clear cache after loading new index
-        self.clear_cache();
-        Ok(())
+        match &self.index {
+            IndexHandle::Hnsw(idx) => {
+                let loaded_index = VectorIndex::load(path.as_ref())?;
+                *idx.write()
+                    .map_err(|_| Error::Internal("HNSW index lock poisoned".into()))? =
+                    loaded_index;
+                self.clear_cache();
+                Ok(())
+            }
+            IndexHandle::DiskAnn(_) => Err(Error::InvalidInput(
+                "load_index is not supported for DiskANN backend; use RouterConfig at construction"
+                    .to_string(),
+            )),
+        }
     }
 
-    /// Clear all content from the router
+    /// Clear all content from the router.
+    ///
+    /// For DiskANN backends this returns an error; use a new router instance
+    /// with a fresh graph path to start over.
     pub fn clear(&self) -> Result<()> {
-        // Create new empty index
-        let new_index = VectorIndex::new(
-            self.config.dimension,
-            self.config.metric,
-            self.config.max_connections,
-            self.config.ef_construction,
-        )?;
-
-        *self.index.write().unwrap() = new_index;
-
-        // Clear the cache as well
-        self.query_cache.write().unwrap().clear();
-
-        Ok(())
+        match &self.index {
+            IndexHandle::Hnsw(idx) => {
+                let new_index = VectorIndex::new(
+                    self.config.dimension,
+                    self.config.metric,
+                    self.config.max_connections,
+                    self.config.ef_construction,
+                )?;
+                *idx.write()
+                    .map_err(|_| Error::Internal("HNSW index lock poisoned".into()))? = new_index;
+                self.clear_cache();
+                Ok(())
+            }
+            IndexHandle::DiskAnn(_) => Err(Error::InvalidInput(
+                "clear is not supported for DiskANN backend".to_string(),
+            )),
+        }
     }
 
     /// Query with aggregations
@@ -639,58 +955,46 @@ impl SemanticRouter {
     ) -> Result<Vec<Vec<SearchResult>>> {
         use rayon::prelude::*;
 
-        // Process queries in parallel using rayon
+        let ef_search = self.config.ef_search;
+
         let results: Result<Vec<Vec<SearchResult>>> = query_embeddings
             .par_iter()
             .map(|embedding| {
-                // Generate cache key
                 let cache_key = Self::compute_cache_key(embedding, k, &filter);
 
-                // Try cache first (only if no filtering)
                 if filter.min_score.is_none() && filter.cid_prefix.is_none() {
-                    if let Some(cached) = self.query_cache.write().unwrap().get(&cache_key) {
-                        return Ok(cached.clone());
+                    if let Ok(mut cache) = self.query_cache.write() {
+                        if let Some(cached) = cache.get(&cache_key) {
+                            return Ok(cached.clone());
+                        }
                     }
                 }
 
-                // Determine actual k to fetch (might need more if filtering)
                 let fetch_k = if filter.min_score.is_some() || filter.cid_prefix.is_some() {
-                    k * 2 // Fetch more to account for filtering
+                    k * 2
                 } else {
                     k
                 };
 
-                // Search the vector index
-                let mut results =
-                    self.index
-                        .read()
-                        .unwrap()
-                        .search(embedding, fetch_k, self.config.ef_search)?;
+                let mut results = self.search_backend(embedding, fetch_k, ef_search)?;
 
-                // Apply filters
                 if let Some(min_score) = filter.min_score {
                     results.retain(|r| r.score >= min_score);
                 }
-
                 if let Some(max_score) = filter.max_score {
                     results.retain(|r| r.score <= max_score);
                 }
-
                 if let Some(ref prefix) = filter.cid_prefix {
                     results.retain(|r| r.cid.to_string().starts_with(prefix));
                 }
-
-                // Apply max results limit
                 if let Some(max_results) = filter.max_results {
                     results.truncate(max_results);
                 }
 
-                // Cache the results (only unfiltered queries)
                 if filter.min_score.is_none() && filter.cid_prefix.is_none() {
-                    self.query_cache
-                        .write()
-                        .unwrap()
-                        .put(cache_key, results.clone());
+                    if let Ok(mut cache) = self.query_cache.write() {
+                        cache.put(cache_key, results.clone());
+                    }
                 }
 
                 Ok(results)
@@ -719,26 +1023,22 @@ impl SemanticRouter {
     ) -> Result<Vec<Vec<SearchResult>>> {
         use rayon::prelude::*;
 
-        // Process queries in parallel using rayon
         let results: Result<Vec<Vec<SearchResult>>> = query_embeddings
             .par_iter()
             .map(|embedding| {
-                // Generate cache key
                 let cache_key = Self::compute_cache_key(embedding, k, &QueryFilter::default());
 
-                // Try cache first
-                if let Some(cached) = self.query_cache.write().unwrap().get(&cache_key) {
-                    return Ok(cached.clone());
+                if let Ok(mut cache) = self.query_cache.write() {
+                    if let Some(cached) = cache.get(&cache_key) {
+                        return Ok(cached.clone());
+                    }
                 }
 
-                // Search with custom ef_search
-                let results = self.index.read().unwrap().search(embedding, k, ef_search)?;
+                let results = self.search_backend(embedding, k, ef_search)?;
 
-                // Cache the results
-                self.query_cache
-                    .write()
-                    .unwrap()
-                    .put(cache_key, results.clone());
+                if let Ok(mut cache) = self.query_cache.write() {
+                    cache.put(cache_key, results.clone());
+                }
 
                 Ok(results)
             })
@@ -866,13 +1166,13 @@ impl SearchAggregations {
         let min_score = results
             .iter()
             .map(|r| r.score)
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
+            .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .expect("results is non-empty (total_count > 0)");
         let max_score = results
             .iter()
             .map(|r| r.score)
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
+            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .expect("results is non-empty (total_count > 0)");
 
         // Create 10 buckets for score distribution
         let bucket_count = 10;
@@ -934,30 +1234,39 @@ mod tests {
 
     #[tokio::test]
     async fn test_add_and_query() {
-        let router = SemanticRouter::with_defaults().unwrap();
+        let router =
+            SemanticRouter::with_defaults().expect("test: SemanticRouter::with_defaults failed");
 
         let cid1 = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: CID parse failed");
         let embedding1 = vec![0.5; 768];
 
-        router.add(&cid1, &embedding1).unwrap();
+        router
+            .add(&cid1, &embedding1)
+            .expect("test: router.add cid1 failed");
 
-        let results = router.query(&embedding1, 1).await.unwrap();
+        let results = router
+            .query(&embedding1, 1)
+            .await
+            .expect("test: router.query failed");
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].cid, cid1);
     }
 
     #[tokio::test]
     async fn test_filtering() {
-        let router = SemanticRouter::with_defaults().unwrap();
+        let router =
+            SemanticRouter::with_defaults().expect("test: SemanticRouter::with_defaults failed");
 
         let cid1 = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: CID parse failed");
         let embedding1 = vec![0.5; 768];
 
-        router.add(&cid1, &embedding1).unwrap();
+        router
+            .add(&cid1, &embedding1)
+            .expect("test: router.add cid1 failed");
 
         // Query with score filter
         let filter = QueryFilter {
@@ -970,7 +1279,7 @@ mod tests {
         let results = router
             .query_with_filter(&embedding1, 10, filter)
             .await
-            .unwrap();
+            .expect("test: router.query_with_filter failed");
 
         // Should find the exact match
         assert!(!results.is_empty());
@@ -986,16 +1295,16 @@ mod tests {
             dimension: 3,
             ..Default::default()
         })
-        .unwrap();
+        .expect("test: SemanticRouter::new with dimension 3 failed");
 
         // Create test blocks
         let data1 = Bytes::from_static(b"Hello, semantic search!");
         let data2 = Bytes::from_static(b"Goodbye, semantic search!");
         let data3 = Bytes::from_static(b"Hello, world!");
 
-        let block1 = Block::new(data1).unwrap();
-        let block2 = Block::new(data2).unwrap();
-        let block3 = Block::new(data3).unwrap();
+        let block1 = Block::new(data1).expect("test: Block::new data1 failed");
+        let block2 = Block::new(data2).expect("test: Block::new data2 failed");
+        let block3 = Block::new(data3).expect("test: Block::new data3 failed");
 
         // Generate simple embeddings based on content
         // In real use, these would come from an embedding model
@@ -1004,13 +1313,22 @@ mod tests {
         let embedding3 = vec![0.9, 0.1, 0.0]; // Close to "Hello" cluster
 
         // Index blocks with their embeddings
-        router.add(block1.cid(), &embedding1).unwrap();
-        router.add(block2.cid(), &embedding2).unwrap();
-        router.add(block3.cid(), &embedding3).unwrap();
+        router
+            .add(block1.cid(), &embedding1)
+            .expect("test: router.add block1 failed");
+        router
+            .add(block2.cid(), &embedding2)
+            .expect("test: router.add block2 failed");
+        router
+            .add(block3.cid(), &embedding3)
+            .expect("test: router.add block3 failed");
 
         // Query for blocks similar to "Hello"
         let query_embedding = vec![1.0, 0.0, 0.0];
-        let results = router.query(&query_embedding, 2).await.unwrap();
+        let results = router
+            .query(&query_embedding, 2)
+            .await
+            .expect("test: router.query failed");
 
         // Should return block1 and block3 (both in "Hello" cluster)
         assert_eq!(results.len(), 2);
@@ -1025,7 +1343,7 @@ mod tests {
             dimension: 2,
             ..Default::default()
         })
-        .unwrap();
+        .expect("test: SemanticRouter::new with dimension 2 failed");
 
         // Create tensor metadata
         let shape1 = TensorShape::new(vec![1, 768]);
@@ -1049,24 +1367,31 @@ mod tests {
         // Create CIDs for metadata (in real use, these would be the tensor CIDs)
         let cid1 = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: CID1 parse failed");
         let cid2 = "bafybeibazl2z6vqxqqzmhmvx2hfpxqtwggqgbbyy3sxkq4vzq6cqsvwbjy"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: CID2 parse failed");
 
         // Index tensors by their semantic embeddings
-        router.add(&cid1, &vision_embedding).unwrap();
-        router.add(&cid2, &text_embedding).unwrap();
+        router
+            .add(&cid1, &vision_embedding)
+            .expect("test: router.add cid1 vision failed");
+        router
+            .add(&cid2, &text_embedding)
+            .expect("test: router.add cid2 text failed");
 
         // Search for vision-type tensors
-        let results = router.query(&vision_embedding, 1).await.unwrap();
+        let results = router
+            .query(&vision_embedding, 1)
+            .await
+            .expect("test: router.query vision failed");
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].cid, cid1);
     }
 
     #[tokio::test]
     async fn test_large_scale_indexing() {
-        use rand::Rng;
+        use rand::RngExt;
 
         let dimension = 128;
 
@@ -1075,7 +1400,7 @@ mod tests {
             dimension,
             ..Default::default()
         })
-        .unwrap();
+        .expect("test: SemanticRouter::new with dimension 128 failed");
 
         // Generate 1000 random embeddings and index them
         let mut rng = rand::rng();
@@ -1095,7 +1420,9 @@ mod tests {
                 .map(|_| rng.random_range(-1.0..1.0))
                 .collect();
 
-            router.add(&cid, &embedding).unwrap();
+            router
+                .add(&cid, &embedding)
+                .expect("test: router.add large scale failed");
             indexed_cids.push((cid, embedding));
         }
 
@@ -1105,7 +1432,10 @@ mod tests {
 
         // Test query on a known embedding
         let (test_cid, test_embedding) = &indexed_cids[42];
-        let results = router.query(test_embedding, 1).await.unwrap();
+        let results = router
+            .query(test_embedding, 1)
+            .await
+            .expect("test: router.query large scale failed");
 
         // Should return the exact match as the top result
         assert_eq!(results.len(), 1);
@@ -1114,18 +1444,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_effectiveness() {
-        let router = SemanticRouter::with_defaults().unwrap();
+        let router =
+            SemanticRouter::with_defaults().expect("test: SemanticRouter::with_defaults failed");
 
         let cid1 = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: CID parse failed");
         let embedding1 = vec![0.5; 768];
 
-        router.add(&cid1, &embedding1).unwrap();
+        router
+            .add(&cid1, &embedding1)
+            .expect("test: router.add cid1 failed");
 
         // Perform same query multiple times
         for _ in 0..10 {
-            let _ = router.query(&embedding1, 1).await.unwrap();
+            let _ = router
+                .query(&embedding1, 1)
+                .await
+                .expect("test: router.query cache test failed");
         }
 
         // Check cache stats - should have cached the query
@@ -1136,7 +1472,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_query() {
-        use rand::Rng;
+        use rand::RngExt;
 
         let dimension = 128;
 
@@ -1145,7 +1481,7 @@ mod tests {
             dimension,
             ..Default::default()
         })
-        .unwrap();
+        .expect("test: SemanticRouter::new with dimension 128 failed");
 
         // Generate and index 100 random embeddings
         let mut rng = rand::rng();
@@ -1163,7 +1499,9 @@ mod tests {
                 .map(|_| rng.random_range(-1.0..1.0))
                 .collect();
 
-            router.add(&cid, &embedding).unwrap();
+            router
+                .add(&cid, &embedding)
+                .expect("test: router.add batch test failed");
         }
 
         // Create batch of query embeddings
@@ -1177,7 +1515,10 @@ mod tests {
             .collect();
 
         // Execute batch query
-        let results = router.query_batch(&query_batch, 5).await.unwrap();
+        let results = router
+            .query_batch(&query_batch, 5)
+            .await
+            .expect("test: router.query_batch failed");
 
         // Verify results
         assert_eq!(results.len(), batch_size);
@@ -1195,7 +1536,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_query_with_filter() {
-        use rand::Rng;
+        use rand::RngExt;
 
         let dimension = 64;
 
@@ -1203,7 +1544,7 @@ mod tests {
             dimension,
             ..Default::default()
         })
-        .unwrap();
+        .expect("test: SemanticRouter::new with dimension 64 failed");
 
         // Generate and index embeddings
         let mut rng = rand::rng();
@@ -1219,7 +1560,9 @@ mod tests {
                 .map(|_| rng.random_range(-1.0..1.0))
                 .collect();
 
-            router.add(&cid, &embedding).unwrap();
+            router
+                .add(&cid, &embedding)
+                .expect("test: router.add filter batch test failed");
         }
 
         // Create batch queries
@@ -1242,7 +1585,7 @@ mod tests {
         let results = router
             .query_batch_with_filter(&query_batch, 5, filter)
             .await
-            .unwrap();
+            .expect("test: router.query_batch_with_filter failed");
 
         // Verify results
         assert_eq!(results.len(), batch_size);
@@ -1253,7 +1596,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_query_with_ef() {
-        use rand::Rng;
+        use rand::RngExt;
 
         let dimension = 64;
 
@@ -1261,7 +1604,7 @@ mod tests {
             dimension,
             ..Default::default()
         })
-        .unwrap();
+        .expect("test: SemanticRouter::new with dimension 64 failed");
 
         // Generate and index embeddings
         let mut rng = rand::rng();
@@ -1277,7 +1620,9 @@ mod tests {
                 .map(|_| rng.random_range(-1.0..1.0))
                 .collect();
 
-            router.add(&cid, &embedding).unwrap();
+            router
+                .add(&cid, &embedding)
+                .expect("test: router.add ef batch test failed");
         }
 
         // Create batch queries
@@ -1294,7 +1639,7 @@ mod tests {
         let results = router
             .query_batch_with_ef(&query_batch, 3, 100)
             .await
-            .unwrap();
+            .expect("test: router.query_batch_with_ef failed");
 
         // Verify results
         assert_eq!(results.len(), batch_size);
@@ -1302,5 +1647,98 @@ mod tests {
             assert!(!result.is_empty());
             assert!(result.len() <= 3);
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Tests for DiskANN backend and quantized mode
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_router_diskann_backend_selection() {
+        // Use a temp directory to host the graph file
+        let tmp = std::env::temp_dir().join(format!(
+            "ipfrs_diskann_test_{}.idx",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+
+        let config = RouterConfig {
+            dimension: 8,
+            index_backend: IndexBackend::DiskAnn {
+                graph_path: tmp.clone(),
+            },
+            ..RouterConfig::balanced(8)
+        };
+
+        let router = SemanticRouter::new(config).expect("should create DiskANN router");
+
+        // Insert a few vectors
+        use multihash_codetable::{Code, MultihashDigest};
+        for i in 0..3usize {
+            let data = format!("diskann_test_{i}");
+            let hash = Code::Sha2_256.digest(data.as_bytes());
+            let cid = Cid::new_v1(0x55, hash);
+            let emb: Vec<f32> = (0..8).map(|d| (i * 8 + d) as f32 * 0.01).collect();
+            router.add(&cid, &emb).expect("insert should succeed");
+        }
+
+        // Verify stats reflect the inserts
+        let s = router.stats();
+        assert_eq!(s.num_vectors, 3, "DiskANN should report 3 vectors");
+        assert_eq!(s.dimension, 8);
+
+        // Search should return something
+        let query: Vec<f32> = (0..8).map(|d| d as f32 * 0.01).collect();
+        let results = router
+            .query(&query, 2)
+            .await
+            .expect("search should succeed");
+        assert!(!results.is_empty(), "DiskANN search should return results");
+
+        // Cleanup
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(format!("{}.vectors", tmp.display()));
+    }
+
+    #[tokio::test]
+    async fn test_router_quantized_mode() {
+        use multihash_codetable::{Code, MultihashDigest};
+
+        let config = RouterConfig {
+            dimension: 16,
+            quantize_vectors: true,
+            quantization_bits: 8,
+            ..RouterConfig::balanced(16)
+        };
+
+        let router = SemanticRouter::new(config).expect("should create quantized router");
+
+        // Add 5 embeddings
+        let mut cids = Vec::new();
+        for i in 0..5usize {
+            let data = format!("quant_test_{i}");
+            let hash = Code::Sha2_256.digest(data.as_bytes());
+            let cid = Cid::new_v1(0x55, hash);
+            let emb: Vec<f32> = (0..16).map(|d| (i as f32 + d as f32) * 0.05).collect();
+            router
+                .add(&cid, &emb)
+                .expect("quantized insert should succeed");
+            cids.push((cid, emb));
+        }
+
+        assert_eq!(router.stats().num_vectors, 5);
+
+        // Search should return results
+        let (_, ref query_emb) = cids[0];
+        let results = router
+            .query(query_emb, 3)
+            .await
+            .expect("quantized search should succeed");
+        assert!(
+            !results.is_empty(),
+            "quantized search should return results"
+        );
     }
 }

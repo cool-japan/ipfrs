@@ -1,3 +1,4 @@
+#![cfg(feature = "parity-db-backend")]
 //! Block storage implementation using ParityDB
 //!
 //! ParityDB is optimized for SSD storage with better write amplification
@@ -310,112 +311,164 @@ mod tests {
 
     #[tokio::test]
     async fn test_paritydb_put_get_block() {
-        let config = ParityDbConfig::balanced(PathBuf::from("/tmp/ipfrs-test-paritydb"));
+        let config = ParityDbConfig::balanced(std::env::temp_dir().join("ipfrs-test-paritydb"));
 
         // Clean up from previous test
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let store = ParityDbBlockStore::new(config).unwrap();
+        let store = ParityDbBlockStore::new(config).expect("failed to create ParityDB store");
         let data = Bytes::from("hello paritydb");
-        let block = Block::new(data.clone()).unwrap();
+        let block = Block::new(data.clone()).expect("failed to create block from data");
 
         // Put block
-        store.put(&block).await.unwrap();
+        store
+            .put(&block)
+            .await
+            .expect("failed to put block into store");
 
         // Get block
-        let retrieved = store.get(block.cid()).await.unwrap();
+        let retrieved = store
+            .get(block.cid())
+            .await
+            .expect("failed to get block from store");
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().data(), &data);
+        assert_eq!(
+            retrieved.expect("retrieved block should be Some").data(),
+            &data
+        );
 
         // Check has
-        assert!(store.has(block.cid()).await.unwrap());
+        assert!(store
+            .has(block.cid())
+            .await
+            .expect("failed to check block existence"));
 
         // Delete block
-        store.delete(block.cid()).await.unwrap();
-        assert!(!store.has(block.cid()).await.unwrap());
+        store
+            .delete(block.cid())
+            .await
+            .expect("failed to delete block");
+        assert!(!store
+            .has(block.cid())
+            .await
+            .expect("failed to check block existence after delete"));
     }
 
     #[tokio::test]
     async fn test_paritydb_batch_operations() {
-        let config = ParityDbConfig::fast_write(PathBuf::from("/tmp/ipfrs-test-paritydb-batch"));
+        let config =
+            ParityDbConfig::fast_write(std::env::temp_dir().join("ipfrs-test-paritydb-batch"));
 
         // Clean up from previous test
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let store = ParityDbBlockStore::new(config).unwrap();
+        let store = ParityDbBlockStore::new(config)
+            .expect("test: ParityDB store creation should succeed for batch test");
 
         // Create multiple blocks
         let blocks: Vec<Block> = (0..10)
             .map(|i| {
                 let data = Bytes::from(format!("block {}", i));
-                Block::new(data).unwrap()
+                Block::new(data).expect("test: block creation should succeed")
             })
             .collect();
 
         // Batch put
-        store.put_many(&blocks).await.unwrap();
+        store
+            .put_many(&blocks)
+            .await
+            .expect("test: put_many should succeed");
 
         // Check all exist
         let cids: Vec<Cid> = blocks.iter().map(|b| *b.cid()).collect();
-        let exists = store.has_many(&cids).await.unwrap();
+        let exists = store
+            .has_many(&cids)
+            .await
+            .expect("test: has_many should succeed");
         assert!(exists.iter().all(|&x| x));
 
         // Batch get
-        let retrieved = store.get_many(&cids).await.unwrap();
+        let retrieved = store
+            .get_many(&cids)
+            .await
+            .expect("test: get_many should succeed");
         assert_eq!(retrieved.len(), blocks.len());
         for (i, opt_block) in retrieved.iter().enumerate() {
             assert!(opt_block.is_some());
-            assert_eq!(opt_block.as_ref().unwrap().data(), blocks[i].data());
+            assert_eq!(
+                opt_block
+                    .as_ref()
+                    .expect("test: retrieved block should be Some")
+                    .data(),
+                blocks[i].data()
+            );
         }
 
         // Batch delete
-        store.delete_many(&cids).await.unwrap();
-        let exists = store.has_many(&cids).await.unwrap();
+        store
+            .delete_many(&cids)
+            .await
+            .expect("test: delete_many should succeed");
+        let exists = store
+            .has_many(&cids)
+            .await
+            .expect("test: has_many after delete should succeed");
         assert!(exists.iter().all(|&x| !x));
     }
 
     #[tokio::test]
     async fn test_paritydb_presets() {
         // Test fast_write preset
-        let config1 = ParityDbConfig::fast_write(PathBuf::from("/tmp/ipfrs-test-paritydb-fast"));
+        let config1 =
+            ParityDbConfig::fast_write(std::env::temp_dir().join("ipfrs-test-paritydb-fast"));
         let _ = std::fs::remove_dir_all(&config1.path);
         assert_eq!(config1.preset, ParityDbPreset::FastWrite);
-        let _store1 = ParityDbBlockStore::new(config1).unwrap();
+        let _store1 = ParityDbBlockStore::new(config1)
+            .expect("test: fast_write store creation should succeed");
 
         // Test balanced preset
-        let config2 = ParityDbConfig::balanced(PathBuf::from("/tmp/ipfrs-test-paritydb-balanced"));
+        let config2 =
+            ParityDbConfig::balanced(std::env::temp_dir().join("ipfrs-test-paritydb-balanced"));
         let _ = std::fs::remove_dir_all(&config2.path);
         assert_eq!(config2.preset, ParityDbPreset::Balanced);
-        let _store2 = ParityDbBlockStore::new(config2).unwrap();
+        let _store2 =
+            ParityDbBlockStore::new(config2).expect("test: balanced store creation should succeed");
 
         // Test low_memory preset
-        let config3 = ParityDbConfig::low_memory(PathBuf::from("/tmp/ipfrs-test-paritydb-lowmem"));
+        let config3 =
+            ParityDbConfig::low_memory(std::env::temp_dir().join("ipfrs-test-paritydb-lowmem"));
         let _ = std::fs::remove_dir_all(&config3.path);
         assert_eq!(config3.preset, ParityDbPreset::LowMemory);
-        let _store3 = ParityDbBlockStore::new(config3).unwrap();
+        let _store3 = ParityDbBlockStore::new(config3)
+            .expect("test: low_memory store creation should succeed");
     }
 
     #[tokio::test]
     async fn test_paritydb_list_cids() {
-        let config = ParityDbConfig::balanced(PathBuf::from("/tmp/ipfrs-test-paritydb-list"));
+        let config =
+            ParityDbConfig::balanced(std::env::temp_dir().join("ipfrs-test-paritydb-list"));
 
         // Clean up from previous test
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let store = ParityDbBlockStore::new(config).unwrap();
+        let store =
+            ParityDbBlockStore::new(config).expect("test: list_cids store creation should succeed");
 
         // Create and store blocks
         let blocks: Vec<Block> = (0..5)
             .map(|i| {
                 let data = Bytes::from(format!("block {}", i));
-                Block::new(data).unwrap()
+                Block::new(data).expect("test: block creation should succeed")
             })
             .collect();
 
-        store.put_many(&blocks).await.unwrap();
+        store
+            .put_many(&blocks)
+            .await
+            .expect("test: put_many should succeed");
 
         // List CIDs
-        let cids = store.list_cids().unwrap();
+        let cids = store.list_cids().expect("test: list_cids should succeed");
         assert_eq!(cids.len(), 5);
 
         // Verify all CIDs are present

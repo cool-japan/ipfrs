@@ -944,7 +944,7 @@ mod tests {
     #[ignore] // QUIC tests need timing refinement
     async fn test_quic_transport_send_recv() {
         // Install default crypto provider for rustls
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        let _ = rustls_rustcrypto::provider().install_default();
 
         let peer_addrs1 = Arc::new(DashMap::new());
         let peer_addrs2 = Arc::new(DashMap::new());
@@ -998,7 +998,7 @@ mod tests {
     #[ignore] // QUIC tests need timing refinement
     async fn test_quic_transport_bidirectional() {
         // Install default crypto provider for rustls
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        let _ = rustls_rustcrypto::provider().install_default();
 
         let peer_addrs1 = Arc::new(DashMap::new());
         let peer_addrs2 = Arc::new(DashMap::new());

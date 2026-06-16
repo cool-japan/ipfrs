@@ -605,8 +605,8 @@ pub fn apply_subst_predicate(pred: &Predicate, subst: &Substitution) -> Predicat
     }
 }
 
-/// Rename variables in a rule to avoid conflicts
-fn rename_rule_vars(rule: &Rule, suffix: usize) -> Rule {
+/// Rename variables in a rule to avoid conflicts with depth-indexed suffixes.
+pub fn rename_rule_vars(rule: &Rule, suffix: usize) -> Rule {
     let var_map: HashMap<String, String> = rule
         .variables()
         .into_iter()
@@ -863,7 +863,7 @@ mod tests {
         let result = unify(&t1, &t2, &subst);
         assert!(result.is_some());
 
-        let result_subst = result.unwrap();
+        let result_subst = result.expect("test: should succeed");
         assert_eq!(
             result_subst.get("X"),
             Some(&Term::Const(Constant::String("Alice".to_string())))
@@ -918,7 +918,7 @@ mod tests {
             ],
         );
 
-        let solutions = engine.query(&goal, &kb).unwrap();
+        let solutions = engine.query(&goal, &kb).expect("test: should succeed");
         assert_eq!(solutions.len(), 1);
         assert_eq!(
             solutions[0].get("X"),
@@ -974,7 +974,7 @@ mod tests {
             ],
         );
 
-        let solutions = engine.query(&goal, &kb).unwrap();
+        let solutions = engine.query(&goal, &kb).expect("test: should succeed");
         assert!(!solutions.is_empty());
     }
 }

@@ -621,5 +621,5 @@ Supported environment variables (override config):
 
 ## References
 
-- IPFRS v0.1.0 Whitepaper (CLI Design)
+- IPFRS v0.2.0 Whitepaper (CLI Design)
 - IPFS CLI Documentation: https://docs.ipfs.tech/reference/kubo/cli/

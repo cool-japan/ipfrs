@@ -290,7 +290,10 @@ mod tests {
         let cid = test_cid();
 
         // Add to want list
-        bitswap.want(cid).await.unwrap();
+        bitswap
+            .want(cid)
+            .await
+            .expect("test: want() should succeed");
         assert!(bitswap.wants(&cid).await);
 
         let want_list = bitswap.get_want_list().await;
@@ -298,7 +301,10 @@ mod tests {
         assert!(want_list.contains(&cid));
 
         // Cancel want
-        bitswap.cancel_want(&cid).await.unwrap();
+        bitswap
+            .cancel_want(&cid)
+            .await
+            .expect("test: cancel_want() should succeed");
         assert!(!bitswap.wants(&cid).await);
     }
 
@@ -308,7 +314,10 @@ mod tests {
         let cid = test_cid();
 
         // Add to have list
-        bitswap.have(cid).await.unwrap();
+        bitswap
+            .have(cid)
+            .await
+            .expect("test: have() should succeed");
         assert!(bitswap.has(&cid).await);
 
         let have_list = bitswap.get_have_list().await;
@@ -322,7 +331,10 @@ mod tests {
         let cid = test_cid();
         let peer = test_peer_id();
 
-        bitswap.request_block(cid, peer).await.unwrap();
+        bitswap
+            .request_block(cid, peer)
+            .await
+            .expect("test: request_block() should succeed");
 
         let pending = bitswap.get_pending_requests(&peer).await;
         assert_eq!(pending.len(), 1);
@@ -336,16 +348,21 @@ mod tests {
         let peer = test_peer_id();
 
         // Add to have list
-        bitswap.have(cid).await.unwrap();
+        bitswap
+            .have(cid)
+            .await
+            .expect("test: have() should succeed");
 
         // Handle want message
         let response = bitswap
             .handle_message(BitswapMessage::Want(cid), peer)
             .await
-            .unwrap();
+            .expect("test: handle_message(Want) should succeed when block is in have list");
 
         assert!(response.is_some());
-        match response.unwrap() {
+        match response
+            .expect("test: handle_message should return Some(Have) when block is in have list")
+        {
             BitswapMessage::Have(received_cid) => assert_eq!(received_cid, cid),
             _ => panic!("Expected Have message"),
         }
@@ -361,10 +378,12 @@ mod tests {
         let response = bitswap
             .handle_message(BitswapMessage::Want(cid), peer)
             .await
-            .unwrap();
+            .expect("test: handle_message(Want) should succeed when block is not in have list");
 
         assert!(response.is_some());
-        match response.unwrap() {
+        match response
+            .expect("test: handle_message should return Some(DontHave) when block is absent")
+        {
             BitswapMessage::DontHave(received_cid) => assert_eq!(received_cid, cid),
             _ => panic!("Expected DontHave message"),
         }
@@ -377,13 +396,16 @@ mod tests {
         let peer = test_peer_id();
 
         // Add to want list
-        bitswap.want(cid).await.unwrap();
+        bitswap
+            .want(cid)
+            .await
+            .expect("test: want() should succeed");
 
         // Handle have message
         let response = bitswap
             .handle_message(BitswapMessage::Have(cid), peer)
             .await
-            .unwrap();
+            .expect("test: handle_message(Have) should succeed");
 
         assert!(response.is_none());
 
@@ -401,8 +423,14 @@ mod tests {
         let data = b"test block data".to_vec();
 
         // Add to want list and pending requests
-        bitswap.want(cid).await.unwrap();
-        bitswap.request_block(cid, peer).await.unwrap();
+        bitswap
+            .want(cid)
+            .await
+            .expect("test: want() should succeed");
+        bitswap
+            .request_block(cid, peer)
+            .await
+            .expect("test: request_block() should succeed");
 
         // Handle block message
         let response = bitswap
@@ -414,7 +442,7 @@ mod tests {
                 peer,
             )
             .await
-            .unwrap();
+            .expect("test: handle_message(Block) should succeed");
 
         assert!(response.is_none());
 
@@ -433,7 +461,10 @@ mod tests {
         let peer = test_peer_id();
         let data = b"test block data".to_vec();
 
-        let message = bitswap.send_block(cid, data.clone(), peer).await.unwrap();
+        let message = bitswap
+            .send_block(cid, data.clone(), peer)
+            .await
+            .expect("test: send_block() should succeed");
 
         match message {
             BitswapMessage::Block {
@@ -454,9 +485,18 @@ mod tests {
         let cid2 = test_cid();
         let peer = test_peer_id();
 
-        bitswap.want(cid1).await.unwrap();
-        bitswap.have(cid2).await.unwrap();
-        bitswap.request_block(cid1, peer).await.unwrap();
+        bitswap
+            .want(cid1)
+            .await
+            .expect("test: want() should succeed");
+        bitswap
+            .have(cid2)
+            .await
+            .expect("test: have() should succeed");
+        bitswap
+            .request_block(cid1, peer)
+            .await
+            .expect("test: request_block() should succeed");
 
         let stats = bitswap.stats().await;
 

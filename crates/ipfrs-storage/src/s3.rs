@@ -198,7 +198,10 @@ impl S3BlockStore {
             let sem = semaphore.clone();
 
             let future = async move {
-                let _permit = sem.acquire().await.unwrap();
+                let _permit = sem
+                    .acquire()
+                    .await
+                    .expect("semaphore is never explicitly closed");
 
                 // Retry logic for failed uploads (up to 3 attempts)
                 let mut attempts = 0;
@@ -233,7 +236,7 @@ impl S3BlockStore {
                     }
                 }
 
-                Err(last_error.unwrap())
+                Err(last_error.expect("loop ran at least max_attempts times so last_error is set"))
             };
 
             futures.push(future);

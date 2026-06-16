@@ -5,6 +5,47 @@
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
 
+/// Minimum file size (10 MB) for which a progress bar is shown.
+///
+/// Files smaller than this threshold use a hidden progress bar so that
+/// the caller code can call `pb.inc()` without any visible output.
+pub const LARGE_FILE_THRESHOLD: u64 = 10 * 1024 * 1024; // 10 MB
+
+/// Create a progress bar for a file operation that is conditionally visible.
+///
+/// The progress bar is **hidden** (no terminal output) when:
+/// - `total_bytes` is below [`LARGE_FILE_THRESHOLD`] (10 MB), or
+/// - stdout is not a TTY (e.g. when piped to another process or script).
+///
+/// For large files on a TTY the bar shows bytes transferred, rate, and ETA,
+/// matching the style used across all other IPFRS file operations.
+///
+/// # Arguments
+///
+/// * `total_bytes` – Total expected size of the transfer in bytes.
+/// * `operation`   – Short verb shown at the start of the bar line (e.g. `"Adding"`, `"Downloading"`).
+pub fn file_progress_bar(total_bytes: u64, operation: &str) -> ProgressBar {
+    // Hide for small files or non-interactive output.
+    use std::io::IsTerminal;
+    let is_tty = std::io::stdout().is_terminal();
+    if total_bytes < LARGE_FILE_THRESHOLD || !is_tty {
+        return ProgressBar::hidden();
+    }
+
+    let pb = ProgressBar::new(total_bytes);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template(&format!(
+                "{{spinner:.green}} {} [{{elapsed_precise}}] [{{bar:40.cyan/blue}}] {{bytes}}/{{total_bytes}} ({{bytes_per_sec}}, {{eta}})",
+                operation
+            ))
+            .expect("valid progress template")
+            .progress_chars("=>-"),
+    );
+    pb.enable_steady_tick(Duration::from_millis(100));
+    pb
+}
+
 /// Create a progress bar for file operations
 pub fn file_progress(total: u64, message: &str) -> ProgressBar {
     let pb = ProgressBar::new(total);

@@ -417,7 +417,7 @@ impl CostAnalyzer {
         recommendations.sort_by(|a, b| {
             a.estimated_monthly_cost
                 .partial_cmp(&b.estimated_monthly_cost)
-                .unwrap()
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         TierRecommendation {

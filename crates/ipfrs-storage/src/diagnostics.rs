@@ -73,7 +73,7 @@ impl MemoryTracker {
     fn new() -> Self {
         let mut system = System::new();
         system.refresh_processes(ProcessesToUpdate::All, true);
-        let pid = sysinfo::get_current_pid().unwrap();
+        let pid = sysinfo::get_current_pid().expect("current process always has a PID");
 
         Self {
             system,
@@ -262,7 +262,7 @@ impl<S: BlockStore> StorageDiagnostics<S> {
         let retrieved = self.store.get(&cid).await?;
 
         // Verify
-        Ok(retrieved.is_some() && retrieved.unwrap().cid() == &cid)
+        Ok(retrieved.is_some_and(|r| r.cid() == &cid))
     }
 
     /// Generate test data for diagnostics

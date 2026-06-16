@@ -4,14 +4,16 @@
 
 use ipfrs::{Node as RustNode, NodeConfig as RustNodeConfig, QueryFilter as RustQueryFilter};
 use ipfrs_core::{Block as RustBlock, Cid as RustCid, Error as RustError};
-use ipfrs_tensorlogic::ir::{Constant, Predicate as RustPredicate, Rule as RustRule, Term as RustTerm};
+use ipfrs_tensorlogic::ir::{
+    Constant, Predicate as RustPredicate, Rule as RustRule, Term as RustTerm,
+};
 use ipfrs_tensorlogic::reasoning::{Proof as RustProof, Substitution as RustSubstitution};
+use parking_lot::Mutex;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::path::PathBuf;
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 /// Python module for IPFRS
 #[pymodule]
@@ -31,11 +33,11 @@ fn ipfrs_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 /// Convert Rust errors to Python exceptions
 fn to_py_err(err: RustError) -> PyErr {
-    PyRuntimeError::new_err(format!("{}", err))
+    PyRuntimeError::new_err(err.to_string())
 }
 
 /// Node configuration
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct NodeConfig {
     inner: RustNodeConfig,
@@ -46,11 +48,7 @@ impl NodeConfig {
     /// Create a new node configuration
     #[new]
     #[pyo3(signature = (storage_path=None, enable_semantic=true, enable_tensorlogic=true))]
-    fn new(
-        storage_path: Option<String>,
-        enable_semantic: bool,
-        enable_tensorlogic: bool,
-    ) -> Self {
+    fn new(storage_path: Option<String>, enable_semantic: bool, enable_tensorlogic: bool) -> Self {
         let mut config = RustNodeConfig::default();
         if let Some(path) = storage_path {
             config.storage.path = PathBuf::from(path);
@@ -76,15 +74,17 @@ pub struct Node {
     runtime: Arc<tokio::runtime::Runtime>,
 }
 
+// The parking_lot::Mutex guard is intentionally held across await points here because
+// all async work is driven through `block_on`, which creates a synchronous barrier.
+// The guard is always released when `block_on` returns, so there is no real deadlock risk.
+#[allow(clippy::await_holding_lock)]
 #[pymethods]
 impl Node {
     /// Create a new IPFRS node
     #[new]
     #[pyo3(signature = (config=None))]
     fn new(config: Option<NodeConfig>) -> PyResult<Self> {
-        let config = config
-            .map(|c| c.inner)
-            .unwrap_or_else(RustNodeConfig::default);
+        let config = config.map(|c| c.inner).unwrap_or_default();
 
         let runtime = tokio::runtime::Runtime::new()
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {}", e)))?;
@@ -207,9 +207,7 @@ impl Node {
         k: usize,
         filter: Option<&Filter>,
     ) -> PyResult<Vec<(Cid, f32)>> {
-        let rust_filter = filter
-            .map(|f| f.inner.clone())
-            .unwrap_or_else(RustQueryFilter::default);
+        let rust_filter = filter.map(|f| f.inner.clone()).unwrap_or_default();
         let inner = self.inner.clone();
         let results = self
             .runtime
@@ -263,7 +261,7 @@ impl Node {
     fn kb_stats(&self) -> PyResult<Py<PyDict>> {
         let node = self.inner.lock();
         let stats = node.tensorlogic_stats().map_err(to_py_err)?;
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let dict = PyDict::new(py);
             dict.set_item("num_facts", stats.num_facts)?;
             dict.set_item("num_rules", stats.num_rules)?;
@@ -317,7 +315,7 @@ impl Node {
 }
 
 /// Content-addressed block
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct Block {
     inner: RustBlock,
@@ -351,7 +349,7 @@ impl Block {
 }
 
 /// Content Identifier
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct Cid {
     inner: RustCid,
@@ -380,7 +378,7 @@ impl Cid {
 }
 
 /// Logical term
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct Term {
     inner: RustTerm,
@@ -435,7 +433,7 @@ impl Term {
 }
 
 /// Logical predicate
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct Predicate {
     inner: RustPredicate,
@@ -446,7 +444,7 @@ impl Predicate {
     /// Create a new predicate
     #[new]
     fn new(name: String, args: Vec<Py<Term>>) -> PyResult<Self> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let rust_args: Vec<RustTerm> = args
                 .into_iter()
                 .map(|t| t.borrow(py).inner.clone())
@@ -464,7 +462,7 @@ impl Predicate {
 }
 
 /// Logical rule
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct Rule {
     inner: RustRule,
@@ -482,8 +480,9 @@ impl Rule {
 
     /// Create a rule with body
     #[staticmethod]
+    #[allow(clippy::self_named_constructors)]
     fn rule(head: &Predicate, body: Vec<Py<Predicate>>) -> PyResult<Self> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let rust_body: Vec<RustPredicate> = body
                 .into_iter()
                 .map(|p| p.borrow(py).inner.clone())
@@ -501,7 +500,7 @@ impl Rule {
 }
 
 /// Proof tree
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct Proof {
     inner: RustProof,
@@ -516,7 +515,7 @@ impl Proof {
 }
 
 /// Variable substitution
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct Substitution {
     inner: RustSubstitution,
@@ -526,7 +525,7 @@ pub struct Substitution {
 impl Substitution {
     /// Get bindings as dictionary
     fn bindings(&self) -> PyResult<Py<PyDict>> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let dict = PyDict::new(py);
             for (var, term) in self.inner.iter() {
                 dict.set_item(var, format!("{:?}", term))?;
@@ -542,7 +541,7 @@ impl Substitution {
 }
 
 /// Search filter
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct Filter {
     inner: RustQueryFilter,

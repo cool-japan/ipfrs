@@ -612,7 +612,7 @@ mod tests {
         let cids: Vec<Cid> = (0u64..10)
             .map(|i| {
                 let data = i.to_le_bytes();
-                let hash = Multihash::wrap(0x12, &data).unwrap();
+                let hash = Multihash::wrap(0x12, &data).expect("test: wrap multihash for test CID");
                 Cid::new_v1(0x55, hash)
             })
             .collect();
@@ -770,7 +770,7 @@ mod tests {
         assert_eq!(want_list.len(), 0);
 
         // Edge device should have fewer max wants than high-throughput
-        assert!(500 < 10000); // edge < high_throughput
+        // (500 < 10000) — documented as a constant relationship, not asserted.
     }
 
     #[test]
@@ -779,7 +779,7 @@ mod tests {
         assert_eq!(want_list.len(), 0);
 
         // Should have higher limits than high-throughput
-        assert!(50000 > 10000); // datacenter > high_throughput
+        // (50000 > 10000) — documented as a constant relationship, not asserted.
     }
 
     #[test]

@@ -519,7 +519,9 @@ mod tests {
         monitor.record_connection_established(addr, false);
         monitor.update_rtt(&addr, Duration::from_millis(50));
 
-        let info = monitor.get_connection(&addr).unwrap();
+        let info = monitor
+            .get_connection(&addr)
+            .expect("test: connection should exist after RTT update");
         assert_eq!(info.rtt, Some(Duration::from_millis(50)));
         assert_eq!(monitor.stats().avg_rtt_ms, 50.0);
     }
@@ -532,7 +534,9 @@ mod tests {
         monitor.record_connection_established(addr, false);
         monitor.update_bytes(&addr, 1000, 2000);
 
-        let info = monitor.get_connection(&addr).unwrap();
+        let info = monitor
+            .get_connection(&addr)
+            .expect("test: connection should exist after bytes update");
         assert_eq!(info.bytes_sent, 1000);
         assert_eq!(info.bytes_received, 2000);
     }
@@ -545,7 +549,9 @@ mod tests {
         monitor.record_connection_established(addr, false);
         monitor.update_streams(&addr, 5, 3);
 
-        let info = monitor.get_connection(&addr).unwrap();
+        let info = monitor
+            .get_connection(&addr)
+            .expect("test: connection should exist after update_streams");
         assert_eq!(info.active_bidi_streams, 5);
         assert_eq!(info.active_uni_streams, 3);
     }
@@ -559,7 +565,9 @@ mod tests {
         monitor.record_migration(&addr);
         monitor.record_migration(&addr);
 
-        let info = monitor.get_connection(&addr).unwrap();
+        let info = monitor
+            .get_connection(&addr)
+            .expect("test: connection should exist after record_migration");
         assert_eq!(info.migration_count, 2);
     }
 

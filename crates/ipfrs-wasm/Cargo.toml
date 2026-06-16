@@ -1,54 +1,73 @@
 [package]
 name = "ipfrs-wasm"
-version = "0.1.0"
-edition = "2021"
-authors = ["IPFRS Contributors"]
+version.workspace = true
+edition.workspace = true
+authors = ["COOLJAPAN OU (Team Kitasan)"]
 description = "WebAssembly bindings for IPFRS distributed content-addressed storage system"
 keywords = ["ipfs", "wasm", "webassembly", "bindings", "distributed"]
 categories = ["api-bindings", "wasm"]
 documentation = "https://docs.rs/ipfrs-wasm"
-homepage = "https://github.com/cool-japan/ipfrs"
-repository = "https://github.com/cool-japan/ipfrs"
-license = "MIT OR Apache-2.0"
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# IPFRS core dependencies
-ipfrs = { path = "../ipfrs", version = "0.1.0" }
-ipfrs-core = { path = "../ipfrs-core", version = "0.1.0" }
-ipfrs-semantic = { path = "../ipfrs-semantic", version = "0.1.0" }
-ipfrs-tensorlogic = { path = "../ipfrs-tensorlogic", version = "0.1.0" }
-
 # wasm-bindgen for WebAssembly
-wasm-bindgen = "0.2"
-wasm-bindgen-futures = "0.4"
-js-sys = "0.3"
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+js-sys.workspace = true
 
-# Web APIs
-web-sys = { version = "0.3", features = ["console"] }
-
-# Async runtime for WASM
-tokio = { version = "1.40", features = ["sync", "macros"], default-features = false }
-
-# Synchronization
-parking_lot = "0.12"
+# Web APIs — includes both IndexedDB and WebRTC feature flags so that a single
+# web-sys dependency entry covers all targets (WebRTC types are gated by
+# #[cfg(target_arch = "wasm32")] in source code).
+web-sys = { workspace = true, features = [
+    # Generic / shared
+    "console",
+    "Window",
+    "Event",
+    "EventTarget",
+    "DomException",
+    # IndexedDB
+    "IdbFactory",
+    "IdbDatabase",
+    "IdbOpenDbRequest",
+    "IdbRequest",
+    "IdbTransaction",
+    "IdbObjectStore",
+    "IdbKeyRange",
+    # WebRTC peer connection
+    "RtcPeerConnection",
+    "RtcConfiguration",
+    "RtcSessionDescription",
+    "RtcSessionDescriptionInit",
+    "RtcSdpType",
+    "RtcIceCandidate",
+    "RtcIceCandidateInit",
+    "RtcDataChannel",
+    "RtcDataChannelInit",
+    "RtcDataChannelState",
+    "RtcIceConnectionState",
+    "RtcPeerConnectionIceEvent",
+] }
 
 # Serialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-serde-wasm-bindgen = "0.6"
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 
-# Console error handling
-console_error_panic_hook = { version = "0.1", optional = true }
+# Console error handling (WASM only)
+console_error_panic_hook = { workspace = true, optional = true }
+
+# SHA-256 for CID computation (pure Rust, works on all targets)
+sha2.workspace = true
+
+# Hex encoding for CID display
+hex.workspace = true
 
 [dev-dependencies]
-wasm-bindgen-test = "0.3"
+wasm-bindgen-test.workspace = true
 
 [features]
 default = ["console_error_panic_hook"]
-
-[profile.release]
-opt-level = "s"  # Optimize for size
-lto = true

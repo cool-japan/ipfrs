@@ -496,7 +496,12 @@ mod tests {
 
         let active = registry.get_active();
         assert!(active.is_some());
-        assert_eq!(active.unwrap().name(), "kademlia");
+        assert_eq!(
+            active
+                .expect("test: active provider should be set after registration")
+                .name(),
+            "kademlia"
+        );
     }
 
     #[test]
@@ -505,8 +510,16 @@ mod tests {
         let provider1 = Arc::new(KademliaDhtProvider::new());
         registry.register("kademlia", provider1);
 
-        registry.set_active("kademlia").unwrap();
-        assert_eq!(registry.get_active().unwrap().name(), "kademlia");
+        registry
+            .set_active("kademlia")
+            .expect("test: set_active should succeed for registered provider");
+        assert_eq!(
+            registry
+                .get_active()
+                .expect("test: active provider should be kademlia after set_active")
+                .name(),
+            "kademlia"
+        );
     }
 
     #[test]
@@ -543,11 +556,15 @@ mod tests {
         assert!(!provider.is_healthy());
 
         // Bootstrap with peers
-        provider.bootstrap(vec![PeerId::random()]).unwrap();
+        provider
+            .bootstrap(vec![PeerId::random()])
+            .expect("test: bootstrap with one peer should succeed");
 
         // Perform a query to improve success rate
         let cid = Cid::default();
-        provider.find_providers(&cid).unwrap();
+        provider
+            .find_providers(&cid)
+            .expect("test: find_providers should succeed on bootstrapped provider");
 
         // Should be healthy now
         assert!(provider.is_healthy());

@@ -1,0 +1,20 @@
+{
+  "name": "@cool-japan/ipfrs",
+  "version": "0.2.0",
+  "description": "Inter-Planet File RUST System - WebAssembly bindings",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "build": "wasm-pack build ../.. --target web --out-dir npm/dist",
+    "test": "echo 'Run: cargo test -p ipfrs-wasm'"
+  },
+  "keywords": ["ipfs", "wasm", "p2p", "content-addressing", "distributed"],
+  "author": "COOLJAPAN OU (Team Kitasan)",
+  "license": "Apache-2.0",
+  "files": ["dist/", "index.js", "index.d.ts"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cool-japan/ipfrs"
+  },
+  "engines": { "node": ">=18" }
+}

@@ -26,8 +26,8 @@ async fn create_test_node(test_name: &str) -> Node {
 #[tokio::test]
 async fn test_node_lifecycle() {
     let mut node = create_test_node("lifecycle").await;
-    // Node should start successfully
-    assert!(true);
+    // Node should have started successfully (no panic above)
+    let _ = &node;
 
     // Stop node
     node.stop().await.expect("Failed to stop node");

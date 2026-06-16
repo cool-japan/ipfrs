@@ -18,7 +18,7 @@
 //! let mut want_list = WantList::new(config);
 //!
 //! // Create a test CID
-//! let hash = Multihash::wrap(0x12, &[1, 2, 3, 4]).unwrap();
+//! let hash = Multihash::wrap(0x12, &[1, 2, 3, 4]).expect("test: wrapping valid bytes into multihash");
 //! let cid = Cid::new_v1(0x55, hash);
 //!
 //! // Add a block request with normal priority
@@ -585,70 +585,97 @@ impl ConcurrentWantList {
 
     /// Add an entry to the want list
     pub fn add(&self, entry: WantEntry) -> bool {
-        self.inner.write().unwrap().add(entry)
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .add(entry)
     }
 
     /// Add with simple parameters
     pub fn add_simple(&self, cid: Cid, priority: i32) -> bool {
-        self.inner.write().unwrap().add_simple(cid, priority)
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .add_simple(cid, priority)
     }
 
     /// Remove an entry
     pub fn remove(&self, cid: &Cid) -> Option<WantEntry> {
-        self.inner.write().unwrap().remove(cid)
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(cid)
     }
 
     /// Update priority
     pub fn update_priority(&self, cid: &Cid, new_priority: i32) -> bool {
         self.inner
             .write()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .update_priority(cid, new_priority)
     }
 
     /// Pop highest priority entry
     pub fn pop(&self) -> Option<WantEntry> {
-        self.inner.write().unwrap().pop()
+        self.inner.write().unwrap_or_else(|e| e.into_inner()).pop()
     }
 
     /// Check if CID is wanted
     pub fn contains(&self, cid: &Cid) -> bool {
-        self.inner.read().unwrap().contains(cid)
+        self.inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(cid)
     }
 
     /// Get number of wants
     pub fn len(&self) -> usize {
-        self.inner.read().unwrap().len()
+        self.inner.read().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     /// Check if empty
     pub fn is_empty(&self) -> bool {
-        self.inner.read().unwrap().is_empty()
+        self.inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
     }
 
     /// Cleanup expired entries
     pub fn cleanup_expired(&self) -> Vec<WantEntry> {
-        self.inner.write().unwrap().cleanup_expired()
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .cleanup_expired()
     }
 
     /// Boost deadline priorities
     pub fn boost_deadline_priorities(&self) {
-        self.inner.write().unwrap().boost_deadline_priorities()
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .boost_deadline_priorities()
     }
 
     /// Get all CIDs
     pub fn cids(&self) -> Vec<Cid> {
-        self.inner.read().unwrap().cids()
+        self.inner.read().unwrap_or_else(|e| e.into_inner()).cids()
     }
 
     /// Mark entry as attempted
     pub fn mark_attempted(&self, cid: &Cid) {
-        self.inner.write().unwrap().mark_attempted(cid)
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .mark_attempted(cid)
     }
 
     /// Get retry delay
     pub fn retry_delay(&self, retry_count: u32) -> Duration {
-        self.inner.read().unwrap().retry_delay(retry_count)
+        self.inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .retry_delay(retry_count)
     }
 
     /// Clone the inner Arc
@@ -660,7 +687,10 @@ impl ConcurrentWantList {
     ///
     /// Returns the number of successfully added entries
     pub fn add_batch(&self, entries: &[(Cid, i32)]) -> usize {
-        self.inner.write().unwrap().add_batch(entries)
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .add_batch(entries)
     }
 
     /// Add multiple CIDs with the same priority in batch
@@ -669,7 +699,7 @@ impl ConcurrentWantList {
     pub fn add_batch_same_priority(&self, cids: &[Cid], priority: i32) -> usize {
         self.inner
             .write()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .add_batch_same_priority(cids, priority)
     }
 
@@ -677,31 +707,43 @@ impl ConcurrentWantList {
     ///
     /// Returns the removed entries
     pub fn remove_batch(&self, cids: &[Cid]) -> Vec<WantEntry> {
-        self.inner.write().unwrap().remove_batch(cids)
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove_batch(cids)
     }
 
     /// Update priorities for multiple CIDs in batch
     ///
     /// Returns the number of successfully updated entries
     pub fn update_priorities_batch(&self, updates: &[(Cid, i32)]) -> usize {
-        self.inner.write().unwrap().update_priorities_batch(updates)
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .update_priorities_batch(updates)
     }
 
     /// Check if any of the given CIDs are present
     pub fn contains_any(&self, cids: &[Cid]) -> bool {
-        self.inner.read().unwrap().contains_any(cids)
+        self.inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_any(cids)
     }
 
     /// Check if all of the given CIDs are present
     pub fn contains_all(&self, cids: &[Cid]) -> bool {
-        self.inner.read().unwrap().contains_all(cids)
+        self.inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_all(cids)
     }
 
     /// Get multiple entries by CID
     ///
     /// Returns only the entries that exist (note: returns clones for thread safety)
     pub fn get_batch(&self, cids: &[Cid]) -> Vec<WantEntry> {
-        let lock = self.inner.read().unwrap();
+        let lock = self.inner.read().unwrap_or_else(|e| e.into_inner());
         cids.iter()
             .filter_map(|cid| lock.get(cid).cloned())
             .collect()
@@ -724,13 +766,13 @@ mod tests {
     fn test_cid() -> Cid {
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse()
-            .unwrap()
+            .expect("test: parse known-good CID string")
     }
 
     fn test_cid2() -> Cid {
         "bafybeiczsscdsbs7ffqz55asqdf3smv6klcw3gofszvwlyarci47bgf354"
             .parse()
-            .unwrap()
+            .expect("test: parse known-good CID string")
     }
 
     #[test]
@@ -761,11 +803,13 @@ mod tests {
         list.add_simple(cid2, 100);
 
         // Higher priority should come first
-        let first = list.pop().unwrap();
+        let first = list
+            .pop()
+            .expect("test: pop highest-priority entry from non-empty want list");
         assert_eq!(first.cid, cid2);
         assert_eq!(first.priority, 100);
 
-        let second = list.pop().unwrap();
+        let second = list.pop().expect("test: pop second entry from want list");
         assert_eq!(second.cid, cid1);
     }
 
@@ -782,7 +826,9 @@ mod tests {
         assert!(list.update_priority(&cid1, 100));
 
         // Now cid1 should come first
-        let first = list.pop().unwrap();
+        let first = list
+            .pop()
+            .expect("test: pop updated-priority entry from non-empty want list");
         assert_eq!(first.cid, cid1);
     }
 
@@ -801,7 +847,9 @@ mod tests {
         std::thread::sleep(Duration::from_millis(50));
 
         // Effective priority should be boosted
-        let entry = list.get(&cid).unwrap();
+        let entry = list
+            .get(&cid)
+            .expect("test: get entry that was just added to want list");
         assert!(entry.effective_priority() > Priority::Low as i32);
     }
 
@@ -840,7 +888,8 @@ mod tests {
         let cids: Vec<_> = (0u64..10)
             .map(|i| {
                 let data = i.to_le_bytes();
-                let hash = Multihash::wrap(0x12, &data).unwrap();
+                let hash =
+                    Multihash::wrap(0x12, &data).expect("test: wrap raw bytes into Multihash");
                 Cid::new_v1(0x55, hash)
             })
             .collect();
@@ -864,7 +913,8 @@ mod tests {
         let cids: Vec<_> = (0u64..5)
             .map(|i| {
                 let data = i.to_le_bytes();
-                let hash = Multihash::wrap(0x12, &data).unwrap();
+                let hash =
+                    Multihash::wrap(0x12, &data).expect("test: wrap raw bytes into Multihash");
                 Cid::new_v1(0x55, hash)
             })
             .collect();
@@ -875,7 +925,9 @@ mod tests {
 
         // All should have the same priority
         for cid in &cids {
-            let entry = list.get(cid).unwrap();
+            let entry = list
+                .get(cid)
+                .expect("test: get entry that was batch-added to want list");
             assert_eq!(entry.priority, 200);
         }
     }
@@ -887,7 +939,8 @@ mod tests {
         let cids: Vec<_> = (0u64..8)
             .map(|i| {
                 let data = i.to_le_bytes();
-                let hash = Multihash::wrap(0x12, &data).unwrap();
+                let hash =
+                    Multihash::wrap(0x12, &data).expect("test: wrap raw bytes into Multihash");
                 Cid::new_v1(0x55, hash)
             })
             .collect();
@@ -916,7 +969,8 @@ mod tests {
         let cids: Vec<_> = (0u64..6)
             .map(|i| {
                 let data = i.to_le_bytes();
-                let hash = Multihash::wrap(0x12, &data).unwrap();
+                let hash =
+                    Multihash::wrap(0x12, &data).expect("test: wrap raw bytes into Multihash");
                 Cid::new_v1(0x55, hash)
             })
             .collect();
@@ -934,7 +988,9 @@ mod tests {
         assert_eq!(updated, 6);
 
         for (i, cid) in cids.iter().enumerate() {
-            let entry = list.get(cid).unwrap();
+            let entry = list
+                .get(cid)
+                .expect("test: get entry after batch priority update");
             assert_eq!(entry.priority, 200 + i as i32);
         }
     }
@@ -946,7 +1002,8 @@ mod tests {
         let cids: Vec<_> = (0u64..5)
             .map(|i| {
                 let data = i.to_le_bytes();
-                let hash = Multihash::wrap(0x12, &data).unwrap();
+                let hash =
+                    Multihash::wrap(0x12, &data).expect("test: wrap raw bytes into Multihash");
                 Cid::new_v1(0x55, hash)
             })
             .collect();
@@ -969,7 +1026,8 @@ mod tests {
         let cids: Vec<_> = (0u64..7)
             .map(|i| {
                 let data = i.to_le_bytes();
-                let hash = Multihash::wrap(0x12, &data).unwrap();
+                let hash =
+                    Multihash::wrap(0x12, &data).expect("test: wrap raw bytes into Multihash");
                 Cid::new_v1(0x55, hash)
             })
             .collect();
@@ -996,7 +1054,8 @@ mod tests {
         let cids: Vec<_> = (0u64..10)
             .map(|i| {
                 let data = i.to_le_bytes();
-                let hash = Multihash::wrap(0x12, &data).unwrap();
+                let hash =
+                    Multihash::wrap(0x12, &data).expect("test: wrap raw bytes into Multihash");
                 Cid::new_v1(0x55, hash)
             })
             .collect();

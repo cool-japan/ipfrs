@@ -150,7 +150,7 @@ fn main() -> Result<()> {
 
 /// Create random weights with Xavier initialization
 fn create_random_weights(shape: Vec<usize>, scale: f32) -> TensorData {
-    use rand::Rng;
+    use rand::RngExt;
     let mut rng = rand::rng();
 
     let num_elements: usize = shape.iter().product();

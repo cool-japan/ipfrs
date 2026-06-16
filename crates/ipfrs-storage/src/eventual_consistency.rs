@@ -129,7 +129,7 @@ impl VersionedValue {
 
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system time is after UNIX epoch")
             .as_millis() as u64;
 
         Self {

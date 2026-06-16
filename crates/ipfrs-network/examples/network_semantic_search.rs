@@ -28,6 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cache_ttl: Duration::from_secs(300),
         max_cache_size: 1000,
         top_k: 10,
+        ..Default::default()
     };
 
     let semantic_dht = SemanticDht::new(config);

@@ -1,6 +1,6 @@
 //! IPFRS - Inter-Planet File RUST System
 //!
-//! Version: 0.3.0 "The Fast & The Wise"
+//! Version: 0.2.0 "Network Release"
 //!
 //! A next-generation distributed file system built in Rust, combining:
 //! - High-performance zero-copy data transport
@@ -245,8 +245,8 @@ pub mod tls;
 pub mod tracing_setup;
 
 pub use node::{
-    BlockStat, DagExportStats, DagImportStats, FsckResult, GcResult, Node, NodeConfig, NodeStatus,
-    SemanticStats, StorageStats, TensorLogicStats,
+    BlockStat, DagExportStats, DagImportStats, DistributedInferResult, FsckResult, GcResult, Node,
+    NodeConfig, NodeStatus, SemanticStats, StorageStats, TensorLogicStats,
 };
 
 pub use auth::{AuthManager, AuthToken, OAuth2Config, Permission, Role, TokenType, User};

@@ -240,4 +240,4 @@ See the `examples/` directory for more complete examples:
 
 ## License
 
-MIT OR Apache-2.0
+Apache-2.0

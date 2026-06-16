@@ -1,8 +1,9 @@
 //! Benchmarks for DAG operations
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use ipfrs::{Ipld, Node, NodeConfig};
 use std::collections::BTreeMap;
+use std::hint::black_box;
 use tokio::runtime::Runtime;
 
 /// Create a simple DAG structure for testing

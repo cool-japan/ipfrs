@@ -52,9 +52,12 @@ impl PrometheusExporter {
         // Helper macro to write metrics
         macro_rules! write_metric {
             ($name:expr, $type:expr, $help:expr, $value:expr) => {
-                writeln!(output, "# HELP {}_{} {}", self.namespace, $name, $help).unwrap();
-                writeln!(output, "# TYPE {}_{} {}", self.namespace, $name, $type).unwrap();
-                writeln!(output, "{}_{}{} {}", self.namespace, $name, labels, $value).unwrap();
+                writeln!(output, "# HELP {}_{} {}", self.namespace, $name, $help)
+                    .expect("write to String is infallible");
+                writeln!(output, "# TYPE {}_{} {}", self.namespace, $name, $type)
+                    .expect("write to String is infallible");
+                writeln!(output, "{}_{}{} {}", self.namespace, $name, labels, $value)
+                    .expect("write to String is infallible");
             };
         }
 
@@ -243,13 +246,15 @@ mod tests {
 
     #[test]
     fn test_prometheus_export_basic() {
-        let mut metrics = StorageMetrics::default();
-        metrics.put_count = 100;
-        metrics.get_count = 200;
-        metrics.get_hits = 180;
-        metrics.get_misses = 20;
-        metrics.bytes_written = 1024000;
-        metrics.bytes_read = 2048000;
+        let metrics = StorageMetrics {
+            put_count: 100,
+            get_count: 200,
+            get_hits: 180,
+            get_misses: 20,
+            bytes_written: 1024000,
+            bytes_read: 2048000,
+            ..StorageMetrics::default()
+        };
 
         let exporter = PrometheusExporter::new("test".to_string());
         let output = exporter.export(&metrics);
@@ -280,9 +285,11 @@ mod tests {
 
     #[test]
     fn test_prometheus_export_cache_hit_rate() {
-        let mut metrics = StorageMetrics::default();
-        metrics.get_hits = 90;
-        metrics.get_misses = 10;
+        let metrics = StorageMetrics {
+            get_hits: 90,
+            get_misses: 10,
+            ..StorageMetrics::default()
+        };
 
         let exporter = PrometheusExporter::new("test".to_string());
         let output = exporter.export(&metrics);

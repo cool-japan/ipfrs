@@ -491,7 +491,8 @@ mod tests {
     #[test]
     fn test_add_query() {
         let config = QueryBatcherConfig::default();
-        let batcher = QueryBatcher::new(config).unwrap();
+        let batcher = QueryBatcher::new(config)
+            .expect("test: QueryBatcher::new should succeed with valid config");
 
         let query = QueryType::FindProviders("QmTest".to_string());
         let result = batcher.add_query(query);
@@ -504,12 +505,17 @@ mod tests {
     #[test]
     fn test_deduplication() {
         let config = QueryBatcherConfig::default();
-        let batcher = QueryBatcher::new(config).unwrap();
+        let batcher = QueryBatcher::new(config)
+            .expect("test: QueryBatcher::new should succeed with valid config");
 
         let query = QueryType::FindProviders("QmTest".to_string());
 
-        batcher.add_query(query.clone()).unwrap();
-        batcher.add_query(query).unwrap(); // Duplicate
+        batcher
+            .add_query(query.clone())
+            .expect("test: add_query should succeed");
+        batcher
+            .add_query(query)
+            .expect("test: add_query duplicate should succeed (deduplication path)"); // Duplicate
 
         let stats = batcher.stats();
         assert_eq!(stats.queries_deduplicated, 1);
@@ -522,11 +528,14 @@ mod tests {
             max_batch_size: 3,
             ..Default::default()
         };
-        let batcher = QueryBatcher::new(config).unwrap();
+        let batcher = QueryBatcher::new(config)
+            .expect("test: QueryBatcher::new should succeed with max_batch_size=3");
 
         for i in 0..3 {
             let query = QueryType::FindProviders(format!("QmTest{}", i));
-            batcher.add_query(query).unwrap();
+            batcher
+                .add_query(query)
+                .expect("test: add_query should succeed");
         }
 
         assert!(batcher.should_send_batch());
@@ -535,11 +544,14 @@ mod tests {
     #[test]
     fn test_take_batch() {
         let config = QueryBatcherConfig::default();
-        let batcher = QueryBatcher::new(config).unwrap();
+        let batcher = QueryBatcher::new(config)
+            .expect("test: QueryBatcher::new should succeed with valid config");
 
         for i in 0..5 {
             let query = QueryType::FindProviders(format!("QmTest{}", i));
-            batcher.add_query(query).unwrap();
+            batcher
+                .add_query(query)
+                .expect("test: add_query should succeed");
         }
 
         let batch = batcher.take_batch();
@@ -555,7 +567,8 @@ mod tests {
             max_queries_per_second: 5,
             ..Default::default()
         };
-        let batcher = QueryBatcher::new(config).unwrap();
+        let batcher = QueryBatcher::new(config)
+            .expect("test: QueryBatcher::new should succeed with max_queries_per_second=5");
 
         // Add 5 queries (should succeed)
         for i in 0..5 {
@@ -572,7 +585,8 @@ mod tests {
     #[test]
     fn test_adaptive_rate_limiting() {
         let config = QueryBatcherConfig::default();
-        let batcher = QueryBatcher::new(config).unwrap();
+        let batcher = QueryBatcher::new(config)
+            .expect("test: QueryBatcher::new should succeed with valid config");
 
         let initial_rate = batcher.rate_multiplier();
 
@@ -614,10 +628,13 @@ mod tests {
     #[test]
     fn test_cleanup_dedup_cache() {
         let config = QueryBatcherConfig::default();
-        let batcher = QueryBatcher::new(config).unwrap();
+        let batcher = QueryBatcher::new(config)
+            .expect("test: QueryBatcher::new should succeed with valid config");
 
         let query = QueryType::FindProviders("QmTest".to_string());
-        batcher.add_query(query).unwrap();
+        batcher
+            .add_query(query)
+            .expect("test: add_query should succeed");
 
         // Cache should have entry
         {

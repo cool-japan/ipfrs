@@ -471,10 +471,7 @@ impl SafetensorsWriter {
             Some(meta)
         };
 
-        Ok(safetensors::tensor::serialize(
-            tensors.into_iter(),
-            metadata,
-        )?)
+        Ok(safetensors::tensor::serialize(tensors, metadata)?)
     }
 }
 
@@ -660,22 +657,26 @@ mod tests {
         writer.add_f32("test_tensor", vec![3, 4], &data);
 
         // Write to temp file
-        let mut temp_file = NamedTempFile::new().unwrap();
-        let bytes = writer.serialize().unwrap();
-        temp_file.write_all(&bytes).unwrap();
-        temp_file.flush().unwrap();
+        let mut temp_file = NamedTempFile::new().expect("test: should succeed");
+        let bytes = writer.serialize().expect("test: should succeed");
+        temp_file.write_all(&bytes).expect("test: should succeed");
+        temp_file.flush().expect("test: should succeed");
 
         // Read back
-        let reader = SafetensorsReader::open(temp_file.path()).unwrap();
+        let reader = SafetensorsReader::open(temp_file.path()).expect("test: should succeed");
 
         assert_eq!(reader.len(), 1);
         assert!(reader.tensor_info("test_tensor").is_some());
 
-        let info = reader.tensor_info("test_tensor").unwrap();
+        let info = reader
+            .tensor_info("test_tensor")
+            .expect("test: should succeed");
         assert_eq!(info.shape, vec![3, 4]);
         assert_eq!(info.dtype, TensorDtype::Float32);
 
-        let loaded = reader.load_f32("test_tensor").unwrap();
+        let loaded = reader
+            .load_f32("test_tensor")
+            .expect("test: should succeed");
         assert_eq!(loaded, data);
     }
 
@@ -685,8 +686,9 @@ mod tests {
         writer.add_f32("layer1", vec![10, 10], &[0.0; 100]);
         writer.add_f32("layer2", vec![10, 5], &[0.0; 50]);
 
-        let bytes = writer.serialize().unwrap();
-        let reader = SafetensorsReader::from_bytes(Bytes::from(bytes)).unwrap();
+        let bytes = writer.serialize().expect("test: should succeed");
+        let reader =
+            SafetensorsReader::from_bytes(Bytes::from(bytes)).expect("test: should succeed");
 
         let summary = reader.summary();
         assert_eq!(summary.num_tensors, 2);
@@ -699,13 +701,16 @@ mod tests {
         let data: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         writer.add_f32("weights", vec![2, 3], &data);
 
-        let bytes = writer.serialize().unwrap();
-        let reader = SafetensorsReader::from_bytes(Bytes::from(bytes)).unwrap();
+        let bytes = writer.serialize().expect("test: should succeed");
+        let reader =
+            SafetensorsReader::from_bytes(Bytes::from(bytes)).expect("test: should succeed");
 
-        let tensor = reader.load_as_arrow("weights").unwrap();
+        let tensor = reader
+            .load_as_arrow("weights")
+            .expect("test: should succeed");
         assert_eq!(tensor.metadata.name, "weights");
         assert_eq!(tensor.metadata.shape, vec![2, 3]);
-        assert_eq!(tensor.as_slice_f32().unwrap(), &data);
+        assert_eq!(tensor.as_slice_f32().expect("test: should succeed"), &data);
     }
 
     #[test]
@@ -714,18 +719,23 @@ mod tests {
         let data: Vec<f64> = vec![1.5, 2.5, 3.5, 4.5];
         writer.add_f64("weights_f64", vec![2, 2], &data);
 
-        let bytes = writer.serialize().unwrap();
-        let reader = SafetensorsReader::from_bytes(Bytes::from(bytes)).unwrap();
+        let bytes = writer.serialize().expect("test: should succeed");
+        let reader =
+            SafetensorsReader::from_bytes(Bytes::from(bytes)).expect("test: should succeed");
 
         // Test load_f64
-        let loaded = reader.load_f64("weights_f64").unwrap();
+        let loaded = reader
+            .load_f64("weights_f64")
+            .expect("test: should succeed");
         assert_eq!(loaded, data);
 
         // Test load_as_arrow
-        let tensor = reader.load_as_arrow("weights_f64").unwrap();
+        let tensor = reader
+            .load_as_arrow("weights_f64")
+            .expect("test: should succeed");
         assert_eq!(tensor.metadata.name, "weights_f64");
         assert_eq!(tensor.metadata.dtype, TensorDtype::Float64);
-        assert_eq!(tensor.as_slice_f64().unwrap(), &data);
+        assert_eq!(tensor.as_slice_f64().expect("test: should succeed"), &data);
     }
 
     #[test]
@@ -734,18 +744,21 @@ mod tests {
         let data: Vec<i32> = vec![-10, 20, -30, 40, 50, -60];
         writer.add_i32("indices", vec![2, 3], &data);
 
-        let bytes = writer.serialize().unwrap();
-        let reader = SafetensorsReader::from_bytes(Bytes::from(bytes)).unwrap();
+        let bytes = writer.serialize().expect("test: should succeed");
+        let reader =
+            SafetensorsReader::from_bytes(Bytes::from(bytes)).expect("test: should succeed");
 
         // Test load_i32
-        let loaded = reader.load_i32("indices").unwrap();
+        let loaded = reader.load_i32("indices").expect("test: should succeed");
         assert_eq!(loaded, data);
 
         // Test load_as_arrow
-        let tensor = reader.load_as_arrow("indices").unwrap();
+        let tensor = reader
+            .load_as_arrow("indices")
+            .expect("test: should succeed");
         assert_eq!(tensor.metadata.name, "indices");
         assert_eq!(tensor.metadata.dtype, TensorDtype::Int32);
-        assert_eq!(tensor.as_slice_i32().unwrap(), &data);
+        assert_eq!(tensor.as_slice_i32().expect("test: should succeed"), &data);
     }
 
     #[test]
@@ -754,18 +767,23 @@ mod tests {
         let data: Vec<i64> = vec![-1000000000, 2000000000, -3000000000, 4000000000];
         writer.add_i64("large_indices", vec![2, 2], &data);
 
-        let bytes = writer.serialize().unwrap();
-        let reader = SafetensorsReader::from_bytes(Bytes::from(bytes)).unwrap();
+        let bytes = writer.serialize().expect("test: should succeed");
+        let reader =
+            SafetensorsReader::from_bytes(Bytes::from(bytes)).expect("test: should succeed");
 
         // Test load_i64
-        let loaded = reader.load_i64("large_indices").unwrap();
+        let loaded = reader
+            .load_i64("large_indices")
+            .expect("test: should succeed");
         assert_eq!(loaded, data);
 
         // Test load_as_arrow
-        let tensor = reader.load_as_arrow("large_indices").unwrap();
+        let tensor = reader
+            .load_as_arrow("large_indices")
+            .expect("test: should succeed");
         assert_eq!(tensor.metadata.name, "large_indices");
         assert_eq!(tensor.metadata.dtype, TensorDtype::Int64);
-        assert_eq!(tensor.as_slice_i64().unwrap(), &data);
+        assert_eq!(tensor.as_slice_i64().expect("test: should succeed"), &data);
     }
 
     #[test]
@@ -782,16 +800,29 @@ mod tests {
         writer.add_i32("layer3", vec![3], &i32_data);
         writer.add_i64("layer4", vec![2], &i64_data);
 
-        let bytes = writer.serialize().unwrap();
-        let reader = SafetensorsReader::from_bytes(Bytes::from(bytes)).unwrap();
+        let bytes = writer.serialize().expect("test: should succeed");
+        let reader =
+            SafetensorsReader::from_bytes(Bytes::from(bytes)).expect("test: should succeed");
 
         assert_eq!(reader.len(), 4);
 
         // Verify all tensors can be loaded correctly
-        assert_eq!(reader.load_f32("layer1").unwrap(), f32_data);
-        assert_eq!(reader.load_f64("layer2").unwrap(), f64_data);
-        assert_eq!(reader.load_i32("layer3").unwrap(), i32_data);
-        assert_eq!(reader.load_i64("layer4").unwrap(), i64_data);
+        assert_eq!(
+            reader.load_f32("layer1").expect("test: should succeed"),
+            f32_data
+        );
+        assert_eq!(
+            reader.load_f64("layer2").expect("test: should succeed"),
+            f64_data
+        );
+        assert_eq!(
+            reader.load_i32("layer3").expect("test: should succeed"),
+            i32_data
+        );
+        assert_eq!(
+            reader.load_i64("layer4").expect("test: should succeed"),
+            i64_data
+        );
 
         // Verify all can be loaded as arrow
         assert!(reader.load_as_arrow("layer1").is_some());
@@ -809,12 +840,15 @@ mod tests {
         let mut writer = SafetensorsWriter::new();
         writer.add_arrow_tensor(&f64_tensor);
 
-        let bytes = writer.serialize().unwrap();
-        let reader = SafetensorsReader::from_bytes(Bytes::from(bytes)).unwrap();
-        let loaded = reader.load_as_arrow("test_f64").unwrap();
+        let bytes = writer.serialize().expect("test: should succeed");
+        let reader =
+            SafetensorsReader::from_bytes(Bytes::from(bytes)).expect("test: should succeed");
+        let loaded = reader
+            .load_as_arrow("test_f64")
+            .expect("test: should succeed");
         assert_eq!(
-            loaded.as_slice_f64().unwrap(),
-            f64_tensor.as_slice_f64().unwrap()
+            loaded.as_slice_f64().expect("test: should succeed"),
+            f64_tensor.as_slice_f64().expect("test: should succeed")
         );
 
         // Test i32
@@ -822,12 +856,15 @@ mod tests {
         let mut writer = SafetensorsWriter::new();
         writer.add_arrow_tensor(&i32_tensor);
 
-        let bytes = writer.serialize().unwrap();
-        let reader = SafetensorsReader::from_bytes(Bytes::from(bytes)).unwrap();
-        let loaded = reader.load_as_arrow("test_i32").unwrap();
+        let bytes = writer.serialize().expect("test: should succeed");
+        let reader =
+            SafetensorsReader::from_bytes(Bytes::from(bytes)).expect("test: should succeed");
+        let loaded = reader
+            .load_as_arrow("test_i32")
+            .expect("test: should succeed");
         assert_eq!(
-            loaded.as_slice_i32().unwrap(),
-            i32_tensor.as_slice_i32().unwrap()
+            loaded.as_slice_i32().expect("test: should succeed"),
+            i32_tensor.as_slice_i32().expect("test: should succeed")
         );
 
         // Test i64
@@ -835,12 +872,15 @@ mod tests {
         let mut writer = SafetensorsWriter::new();
         writer.add_arrow_tensor(&i64_tensor);
 
-        let bytes = writer.serialize().unwrap();
-        let reader = SafetensorsReader::from_bytes(Bytes::from(bytes)).unwrap();
-        let loaded = reader.load_as_arrow("test_i64").unwrap();
+        let bytes = writer.serialize().expect("test: should succeed");
+        let reader =
+            SafetensorsReader::from_bytes(Bytes::from(bytes)).expect("test: should succeed");
+        let loaded = reader
+            .load_as_arrow("test_i64")
+            .expect("test: should succeed");
         assert_eq!(
-            loaded.as_slice_i64().unwrap(),
-            i64_tensor.as_slice_i64().unwrap()
+            loaded.as_slice_i64().expect("test: should succeed"),
+            i64_tensor.as_slice_i64().expect("test: should succeed")
         );
     }
 }

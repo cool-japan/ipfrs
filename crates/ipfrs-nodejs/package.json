@@ -1,11 +1,16 @@
 {
-  "name": "@ipfrs/core",
-  "version": "0.1.0",
-  "description": "Inter-Planetary File Rust System - Node.js bindings for content-addressed storage with semantic search and logic programming",
+  "name": "@cool-japan/ipfrs-node",
+  "version": "0.2.0",
+  "description": "IPFRS Node.js native addon — content-addressed storage with semantic search and TensorLogic reasoning",
   "main": "index.js",
   "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.node"
+  ],
   "napi": {
-    "name": "ipfrs",
+    "name": "ipfrs-node",
     "triples": {
       "defaults": true,
       "additional": [
@@ -17,18 +22,24 @@
       ]
     }
   },
-  "license": "MIT OR Apache-2.0",
+  "license": "Apache-2.0",
+  "author": "COOLJAPAN OU (Team Kitasan)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cool-japan/ipfrs"
+  },
   "keywords": [
     "ipfs",
+    "ipld",
     "content-addressed",
+    "p2p",
     "semantic-search",
     "logic-programming",
-    "distributed",
     "napi-rs",
     "rust"
   ],
   "engines": {
-    "node": ">= 14"
+    "node": ">=16"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
@@ -36,21 +47,12 @@
   },
   "scripts": {
     "artifacts": "napi artifacts",
-    "build": "napi build --platform --release",
-    "build:debug": "napi build --platform",
+    "build": "napi build --platform --release --features napi",
+    "build:debug": "napi build --platform --features napi",
     "prepublishOnly": "napi prepublish -t npm",
-    "test": "node --test test/*.test.js",
     "version": "napi version"
   },
   "devDependencies": {
     "@napi-rs/cli": "^2.18.0"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/ipfrs/ipfrs.git"
-  },
-  "files": [
-    "index.js",
-    "index.d.ts"
-  ]
+  }
 }

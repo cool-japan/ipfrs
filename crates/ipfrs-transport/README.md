@@ -91,6 +91,6 @@ while let Some(chunk) = stream.next().await {
 
 ## References
 
-- IPFRS v0.3.0 Whitepaper (TensorSwap Protocol)
+- IPFRS v0.3.0 Whitepaper (TensorSwap Protocol) *(planned v0.3.0)*
 - Bitswap Specification: https://github.com/ipfs/specs/blob/master/BITSWAP.md
 - GraphSync Spec: https://github.com/ipld/specs/blob/master/block-layer/graphsync/graphsync.md

@@ -54,7 +54,7 @@
 //!     gateway_config.storage_config = storage_config;
 //!     gateway_config.listen_addr = "127.0.0.1:8080".to_string();
 //!
-//!     // See /tmp/example_server.rs for complete implementation
+//!     // See the examples directory for complete implementation
 //!     Ok(())
 //! }
 //! ```
@@ -133,9 +133,16 @@ pub mod backpressure;
 pub mod binary_protocol;
 pub mod ffi;
 pub mod gateway;
+pub mod gradient_sync;
 pub mod graphql;
-// TODO: Re-enable when tonic-build 0.14 service generation is properly configured
-// pub mod grpc;
+// The `grpc` module contains hand-written gRPC service implementations that
+// depend on tonic-generated protobuf code produced by `build.rs`.  Because
+// tonic-build 0.14 service generation requires proto files to be present at
+// compile time and the feature-gated `grpc` build is still being stabilised,
+// the module is compiled only when the `grpc` Cargo feature is enabled.
+// See `crates/ipfrs-interface/build.rs` for the build configuration.
+#[cfg(feature = "grpc")]
+pub mod grpc;
 pub mod metrics;
 pub mod metrics_middleware;
 pub mod middleware;
@@ -158,6 +165,7 @@ pub use binary_protocol::{
     PutBlockRequest, SuccessResponse, PROTOCOL_VERSION,
 };
 pub use gateway::{Gateway, GatewayConfig};
+pub use gradient_sync::{GradientChunkResponse, GradientSyncRequest, GradientSyncService};
 pub use graphql::{create_schema, IpfrsSchema};
 pub use middleware::{
     cors_middleware, rate_limit_middleware, CacheConfig, CompressionConfig, CompressionLevel,
@@ -178,11 +186,13 @@ pub use tensor::{TensorLayout, TensorMetadata, TensorSlice};
 pub use websocket::{ws_handler, RealtimeEvent, SubscriptionManager, WsMessage, WsState};
 pub use zerocopy::ZeroCopyBuffer;
 
-// gRPC exports
-// TODO: Re-enable when tonic-build 0.14 service generation is properly configured
-// pub use grpc::{
-//     backpressure_support, AuthInterceptor, BlockServiceImpl, BlockServiceServer,
-//     ChainedInterceptor, DagServiceImpl, DagServiceServer, FileServiceImpl, FileServiceServer,
-//     GrpcServiceConfig, LoggingInterceptor, MetricsInterceptor, RateLimitInterceptor,
-//     TensorServiceImpl, TensorServiceServer,
-// };
+// gRPC exports — available only when the `grpc` feature is enabled.
+// The feature gate keeps the default build 100% pure-Rust without proto
+// compilation; enable `grpc` to get full tonic-backed service types.
+#[cfg(feature = "grpc")]
+pub use grpc::{
+    backpressure_support, AuthInterceptor, BlockServiceImpl, BlockServiceServer,
+    ChainedInterceptor, DagServiceImpl, DagServiceServer, FileServiceImpl, FileServiceServer,
+    GrpcServiceConfig, LoggingInterceptor, MetricsInterceptor, RateLimitInterceptor,
+    TensorServiceImpl, TensorServiceServer,
+};

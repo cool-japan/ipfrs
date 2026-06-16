@@ -808,16 +808,40 @@ mod tests {
 
         // Check that default aliases are set
         assert!(config.aliases.contains_key("ll"));
-        assert_eq!(config.aliases.get("ll").unwrap(), "ls");
+        assert_eq!(
+            config
+                .aliases
+                .get("ll")
+                .expect("test: alias 'll' should exist"),
+            "ls"
+        );
 
         assert!(config.aliases.contains_key("whoami"));
-        assert_eq!(config.aliases.get("whoami").unwrap(), "id");
+        assert_eq!(
+            config
+                .aliases
+                .get("whoami")
+                .expect("test: alias 'whoami' should exist"),
+            "id"
+        );
 
         assert!(config.aliases.contains_key("upload"));
-        assert_eq!(config.aliases.get("upload").unwrap(), "add");
+        assert_eq!(
+            config
+                .aliases
+                .get("upload")
+                .expect("test: alias 'upload' should exist"),
+            "add"
+        );
 
         assert!(config.aliases.contains_key("download"));
-        assert_eq!(config.aliases.get("download").unwrap(), "get");
+        assert_eq!(
+            config
+                .aliases
+                .get("download")
+                .expect("test: alias 'download' should exist"),
+            "get"
+        );
     }
 
     #[test]

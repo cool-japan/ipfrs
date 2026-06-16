@@ -995,4 +995,4 @@ println!("Power saving ratio: {:.3}", stats.power_saving_ratio());
 
 ## License
 
-IPFRS Storage is dual-licensed under MIT OR Apache-2.0.
+IPFRS Storage is licensed under Apache-2.0.

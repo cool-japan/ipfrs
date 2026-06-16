@@ -38,7 +38,7 @@
 //! ```
 
 use parking_lot::RwLock;
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -580,7 +580,11 @@ impl LoadTester {
         // Collect results
         let metrics = self.metrics.read();
         if !metrics.memory_samples.is_empty() {
-            results.peak_memory_usage = *metrics.memory_samples.iter().max().unwrap();
+            results.peak_memory_usage = *metrics
+                .memory_samples
+                .iter()
+                .max()
+                .expect("memory_samples is non-empty: checked above");
             results.average_memory_usage =
                 metrics.memory_samples.iter().sum::<u64>() / metrics.memory_samples.len() as u64;
         }
@@ -716,7 +720,9 @@ mod tests {
             ..LoadTestConfig::light()
         };
         let mut tester = LoadTester::new(config);
-        let results = tester.run_test(LoadTestType::ConnectionStress).unwrap();
+        let results = tester
+            .run_test(LoadTestType::ConnectionStress)
+            .expect("test: ConnectionStress should succeed");
         assert!(results.peak_connections > 0);
     }
 
@@ -728,7 +734,9 @@ mod tests {
             ..LoadTestConfig::light()
         };
         let mut tester = LoadTester::new(config);
-        let results = tester.run_test(LoadTestType::DhtQueryStorm).unwrap();
+        let results = tester
+            .run_test(LoadTestType::DhtQueryStorm)
+            .expect("test: DhtQueryStorm should succeed");
         assert!(results.total_queries > 0);
     }
 
@@ -740,7 +748,9 @@ mod tests {
             ..LoadTestConfig::light()
         };
         let mut tester = LoadTester::new(config);
-        let results = tester.run_test(LoadTestType::BandwidthSaturation).unwrap();
+        let results = tester
+            .run_test(LoadTestType::BandwidthSaturation)
+            .expect("test: BandwidthSaturation should succeed");
         assert!(results.total_bytes_sent > 0 || results.total_bytes_received > 0);
     }
 
@@ -752,7 +762,9 @@ mod tests {
             ..LoadTestConfig::light()
         };
         let mut tester = LoadTester::new(config);
-        let results = tester.run_test(LoadTestType::ProviderFlood).unwrap();
+        let results = tester
+            .run_test(LoadTestType::ProviderFlood)
+            .expect("test: ProviderFlood should succeed");
         assert!(results.total_queries > 0);
     }
 
@@ -764,7 +776,9 @@ mod tests {
             ..LoadTestConfig::light()
         };
         let mut tester = LoadTester::new(config);
-        let results = tester.run_test(LoadTestType::ConcurrentOps).unwrap();
+        let results = tester
+            .run_test(LoadTestType::ConcurrentOps)
+            .expect("test: ConcurrentOps should succeed");
         assert_eq!(results.total_queries, 20);
     }
 
@@ -776,7 +790,9 @@ mod tests {
             ..LoadTestConfig::light()
         };
         let mut tester = LoadTester::new(config);
-        let results = tester.run_test(LoadTestType::MemoryPressure).unwrap();
+        let results = tester
+            .run_test(LoadTestType::MemoryPressure)
+            .expect("test: MemoryPressure should succeed");
         assert!(results.peak_memory_usage > 0);
     }
 

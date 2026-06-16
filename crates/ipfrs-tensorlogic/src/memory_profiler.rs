@@ -20,7 +20,7 @@
 //!     drop(data);
 //! }
 //!
-//! let stats = profiler.get_stats("my_operation").unwrap();
+//! let stats = profiler.get_stats("my_operation").expect("example: should succeed in docs");
 //! println!("Peak memory: {} bytes", stats.peak_bytes);
 //! ```
 
@@ -64,10 +64,11 @@ impl MemoryStats {
         self.peak_bytes = self.peak_bytes.max(bytes);
         self.total_duration += duration;
 
-        if self.track_count > 0 {
-            self.avg_bytes = self.total_bytes / self.track_count;
-            self.avg_duration = self.total_duration / self.track_count as u32;
-        }
+        self.avg_bytes = self.total_bytes.checked_div(self.track_count).unwrap_or(0);
+        self.avg_duration = self
+            .total_duration
+            .checked_div(self.track_count as u32)
+            .unwrap_or(Duration::ZERO);
     }
 }
 
@@ -166,7 +167,7 @@ impl MemoryProfiler {
         let max_peak = stats.values().map(|s| s.peak_bytes).max().unwrap_or(0);
 
         let mut operations: Vec<_> = stats.into_iter().collect();
-        operations.sort_by(|a, b| b.1.peak_bytes.cmp(&a.1.peak_bytes));
+        operations.sort_by_key(|a| std::cmp::Reverse(a.1.peak_bytes));
 
         MemoryProfilingReport {
             total_operations,
@@ -277,7 +278,7 @@ mod tests {
         let stats = profiler.get_stats("test_operation");
         assert!(stats.is_some());
 
-        let stats = stats.unwrap();
+        let stats = stats.expect("test: should succeed");
         assert_eq!(stats.track_count, 1);
         assert!(stats.total_duration >= Duration::from_millis(10));
     }
@@ -291,7 +292,9 @@ mod tests {
             std::thread::sleep(Duration::from_millis(5));
         }
 
-        let stats = profiler.get_stats("repeated_op").unwrap();
+        let stats = profiler
+            .get_stats("repeated_op")
+            .expect("test: should succeed");
         assert_eq!(stats.track_count, 5);
         assert!(stats.avg_duration >= Duration::from_millis(5));
     }

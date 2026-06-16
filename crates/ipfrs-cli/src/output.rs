@@ -36,7 +36,8 @@ use std::io::{self, Write};
 /// assert!(tty == true || tty == false); // Platform dependent
 /// ```
 pub fn is_tty() -> bool {
-    atty::is(atty::Stream::Stdout)
+    use std::io::IsTerminal;
+    std::io::stdout().is_terminal()
 }
 
 /// Output style configuration for controlling formatting and colors
@@ -340,6 +341,53 @@ pub fn compact_list(items: &[String]) {
 pub fn compact_kv_pairs(pairs: &[(&str, &str)]) {
     for (key, value) in pairs {
         println!("{}:{}", key, value);
+    }
+}
+
+/// Type of query result
+#[derive(Debug, Clone)]
+pub enum QueryResultType {
+    SemanticMatch,
+    LogicBinding,
+    HybridMatch,
+}
+
+/// Unified query result for semantic, logic, and hybrid queries
+#[derive(Debug, Clone)]
+pub struct QueryResult {
+    pub result_type: QueryResultType,
+    pub cid: Option<String>,
+    pub score: Option<f32>,
+    pub bindings: std::collections::HashMap<String, String>,
+    pub metadata: std::collections::HashMap<String, String>,
+}
+
+impl QueryResult {
+    /// Format as a JSON object string
+    pub fn to_json(&self) -> String {
+        let mut parts = Vec::new();
+        if let Some(cid) = &self.cid {
+            parts.push(format!("\"cid\": \"{}\"", cid));
+        }
+        if let Some(score) = self.score {
+            parts.push(format!("\"score\": {:.4}", score));
+        }
+        if !self.bindings.is_empty() {
+            let bindings_str = self
+                .bindings
+                .iter()
+                .map(|(k, v)| format!("\"{}\": \"{}\"", k, v))
+                .collect::<Vec<_>>()
+                .join(", ");
+            parts.push(format!("\"bindings\": {{{}}}", bindings_str));
+        }
+        let result_type = match self.result_type {
+            QueryResultType::SemanticMatch => "semantic",
+            QueryResultType::LogicBinding => "logic",
+            QueryResultType::HybridMatch => "hybrid",
+        };
+        parts.push(format!("\"type\": \"{}\"", result_type));
+        format!("{{{}}}", parts.join(", "))
     }
 }
 

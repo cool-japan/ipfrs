@@ -72,7 +72,7 @@
 //!     Term::Var("Z".to_string()),
 //! ]);
 //!
-//! let solutions = engine.query(&goal, &kb).unwrap();
+//! let solutions = engine.query(&goal, &kb).expect("example: should succeed in docs");
 //! // Should find at least bob as an ancestor
 //! assert!(!solutions.is_empty());
 //! ```
@@ -376,17 +376,99 @@ impl FixpointEngine {
         Ok(current_kb)
     }
 
-    /// Derive facts from a single rule
-    fn derive_facts_from_rule(&self, _rule: &Rule, _kb: &KnowledgeBase) -> Result<Vec<Predicate>> {
-        let derived = Vec::new();
+    /// Derive all ground facts entailed by a single rule given the current KB.
+    ///
+    /// Uses backward-chaining via `solve_body` to collect every complete
+    /// substitution that satisfies the rule body, then applies each
+    /// substitution to the rule head to produce a new ground fact.
+    fn derive_facts_from_rule(&self, rule: &Rule, kb: &KnowledgeBase) -> Result<Vec<Predicate>> {
+        // Collect all substitutions that satisfy the entire body.
+        let body_solutions = self.solve_body(&rule.body, &Substitution::new(), kb, 0)?;
 
-        // This is a simplified implementation
-        // A full implementation would do proper unification and substitution
-
-        // For now, just return empty
-        // TODO: Implement full derivation
-
+        let mut derived = Vec::new();
+        for subst in body_solutions {
+            let grounded_head = apply_subst_predicate(&rule.head, &subst);
+            // Only emit fully-ground facts (no residual variables).
+            if !self.has_variables(&grounded_head) {
+                derived.push(grounded_head);
+            }
+        }
         Ok(derived)
+    }
+
+    /// Solve a conjunction of body goals and return all satisfying substitutions.
+    fn solve_body(
+        &self,
+        goals: &[Predicate],
+        subst: &Substitution,
+        kb: &KnowledgeBase,
+        depth: usize,
+    ) -> Result<Vec<Substitution>> {
+        if depth > self.max_iterations {
+            return Ok(Vec::new());
+        }
+        if goals.is_empty() {
+            return Ok(vec![subst.clone()]);
+        }
+
+        let current_goal = apply_subst_predicate(&goals[0], subst);
+        let rest = &goals[1..];
+
+        let mut all_solutions: Vec<Substitution> = Vec::new();
+
+        // Match against ground facts in the KB.
+        for fact in kb.get_predicates(&current_goal.name) {
+            if let Some(new_subst) = unify_predicates(&current_goal, fact, subst) {
+                let tail_solutions = self.solve_body(rest, &new_subst, kb, depth + 1)?;
+                all_solutions.extend(tail_solutions);
+            }
+        }
+
+        // Match against rule heads (backward chaining into rules).
+        for rule in kb.get_rules(&current_goal.name) {
+            // Rename variables to avoid collisions.
+            let suffix = depth * 1000 + all_solutions.len();
+            let renamed = self.rename_rule_fixpoint(rule, suffix);
+            if let Some(new_subst) = unify_predicates(&current_goal, &renamed.head, subst) {
+                // Prepend the rule body in front of the remaining goals.
+                let mut combined: Vec<Predicate> = renamed.body.clone();
+                combined.extend_from_slice(rest);
+                let tail_solutions = self.solve_body(&combined, &new_subst, kb, depth + 1)?;
+                all_solutions.extend(tail_solutions);
+            }
+        }
+
+        Ok(all_solutions)
+    }
+
+    /// Return `true` if any argument of `pred` is still an unbound variable.
+    fn has_variables(&self, pred: &Predicate) -> bool {
+        pred.args
+            .iter()
+            .any(|t| matches!(t, crate::ir::Term::Var(_)))
+    }
+
+    /// Rename variables in a rule using a numeric suffix (fixpoint variant).
+    fn rename_rule_fixpoint(&self, rule: &Rule, suffix: usize) -> Rule {
+        let var_map: HashMap<String, String> = rule
+            .variables()
+            .into_iter()
+            .map(|v| (v.clone(), format!("{}__fp{}", v, suffix)))
+            .collect();
+
+        let rename_subst: Substitution = var_map
+            .into_iter()
+            .map(|(old, new)| (old, crate::ir::Term::Var(new)))
+            .collect();
+
+        Rule {
+            head: apply_subst_predicate(&rule.head, &rename_subst),
+            body: rule
+                .body
+                .iter()
+                .map(|p| apply_subst_predicate(p, &rename_subst))
+                .collect(),
+        }
     }
 }
 
@@ -604,7 +686,7 @@ mod tests {
             ],
         );
 
-        let solutions = engine.query(&goal, &kb).unwrap();
+        let solutions = engine.query(&goal, &kb).expect("test: should succeed");
         assert!(!solutions.is_empty());
     }
 
@@ -658,7 +740,7 @@ mod tests {
         let kb = KnowledgeBase::new();
 
         // Compute fixpoint (should return same KB for empty KB)
-        let result = engine.compute_fixpoint(&kb).unwrap();
+        let result = engine.compute_fixpoint(&kb).expect("test: should succeed");
         assert_eq!(result.facts.len(), kb.facts.len());
     }
 }

@@ -524,7 +524,9 @@ mod tests {
         manager.create_session(peer_id);
         manager.activate_session(&peer_id);
 
-        let session = manager.get_session(&peer_id).unwrap();
+        let session = manager
+            .get_session(&peer_id)
+            .expect("test: session should exist after activate_session");
         assert_eq!(session.state, SessionState::Active);
     }
 
@@ -536,7 +538,9 @@ mod tests {
         manager.create_session(peer_id);
         manager.update_bandwidth(&peer_id, 1024, 2048);
 
-        let session = manager.get_session(&peer_id).unwrap();
+        let session = manager
+            .get_session(&peer_id)
+            .expect("test: session should exist after update_bandwidth");
         assert_eq!(session.bytes_sent, 1024);
         assert_eq!(session.bytes_received, 2048);
 
@@ -553,7 +557,9 @@ mod tests {
         manager.create_session(peer_id);
         manager.close_session(&peer_id);
 
-        let session = manager.get_session(&peer_id).unwrap();
+        let session = manager
+            .get_session(&peer_id)
+            .expect("test: session should exist after close_session");
         assert_eq!(session.state, SessionState::Closing);
         assert!(session.closed_at.is_some());
 

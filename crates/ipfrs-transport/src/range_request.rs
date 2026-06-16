@@ -299,7 +299,7 @@ impl RangeAssembler {
             if !is_covered && start.is_none() {
                 start = Some(i as u64);
             } else if is_covered && start.is_some() {
-                missing.push(start.unwrap()..i as u64);
+                missing.push(start.expect("just checked start.is_some()")..i as u64);
                 start = None;
             }
         }
@@ -358,36 +358,48 @@ mod tests {
     fn test_cid() -> Cid {
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse()
-            .unwrap()
+            .expect("test: valid CID string")
     }
 
     #[test]
     fn test_byte_range_from_to() {
-        let range = ByteRange::from_to(0, 99).unwrap();
-        assert_eq!(range.to_range(1000).unwrap(), 0..100);
+        let range = ByteRange::from_to(0, 99).expect("test: create byte range");
+        assert_eq!(
+            range.to_range(1000).expect("test: convert to range"),
+            0..100
+        );
     }
 
     #[test]
     fn test_byte_range_from() {
         let range = ByteRange::from(500);
-        assert_eq!(range.to_range(1000).unwrap(), 500..1000);
+        assert_eq!(
+            range.to_range(1000).expect("test: convert to range"),
+            500..1000
+        );
     }
 
     #[test]
     fn test_byte_range_suffix() {
         let range = ByteRange::suffix(100);
-        assert_eq!(range.to_range(1000).unwrap(), 900..1000);
+        assert_eq!(
+            range.to_range(1000).expect("test: convert to range"),
+            900..1000
+        );
     }
 
     #[test]
     fn test_byte_range_all() {
         let range = ByteRange::All;
-        assert_eq!(range.to_range(1000).unwrap(), 0..1000);
+        assert_eq!(
+            range.to_range(1000).expect("test: convert to range"),
+            0..1000
+        );
     }
 
     #[test]
     fn test_byte_range_out_of_bounds() {
-        let range = ByteRange::from_to(0, 1500).unwrap();
+        let range = ByteRange::from_to(0, 1500).expect("test: create byte range");
         assert!(range.to_range(1000).is_err());
     }
 
@@ -398,32 +410,35 @@ mod tests {
 
     #[test]
     fn test_byte_range_overlaps() {
-        let range1 = ByteRange::from_to(0, 99).unwrap();
-        let range2 = ByteRange::from_to(50, 149).unwrap();
+        let range1 = ByteRange::from_to(0, 99).expect("test: create byte range");
+        let range2 = ByteRange::from_to(50, 149).expect("test: create byte range");
         assert!(range1.overlaps(&range2, 1000));
 
-        let range3 = ByteRange::from_to(200, 299).unwrap();
+        let range3 = ByteRange::from_to(200, 299).expect("test: create byte range");
         assert!(!range1.overlaps(&range3, 1000));
     }
 
     #[test]
     fn test_byte_range_merge() {
-        let range1 = ByteRange::from_to(0, 99).unwrap();
-        let range2 = ByteRange::from_to(50, 149).unwrap();
-        let merged = range1.merge(&range2, 1000).unwrap();
-        assert_eq!(merged.to_range(1000).unwrap(), 0..150);
+        let range1 = ByteRange::from_to(0, 99).expect("test: create byte range");
+        let range2 = ByteRange::from_to(50, 149).expect("test: create byte range");
+        let merged = range1.merge(&range2, 1000).expect("test: merge ranges");
+        assert_eq!(
+            merged.to_range(1000).expect("test: convert to range"),
+            0..150
+        );
     }
 
     #[test]
     fn test_byte_range_size() {
-        let range = ByteRange::from_to(100, 199).unwrap();
+        let range = ByteRange::from_to(100, 199).expect("test: create byte range");
         assert_eq!(range.size(1000), 100);
     }
 
     #[test]
     fn test_range_request() {
         let cid = test_cid();
-        let range = ByteRange::from_to(0, 99).unwrap();
+        let range = ByteRange::from_to(0, 99).expect("test: create byte range");
         let req = RangeRequest::new(cid, range);
         assert_eq!(req.priority, 0);
 
@@ -434,7 +449,7 @@ mod tests {
     #[test]
     fn test_range_response_satisfies() {
         let cid = test_cid();
-        let range = ByteRange::from_to(0, 99).unwrap();
+        let range = ByteRange::from_to(0, 99).expect("test: create byte range");
         let req = RangeRequest::new(cid, range);
 
         let response = RangeResponse::new(cid, 0..100, vec![0u8; 100], 1000);
@@ -450,7 +465,9 @@ mod tests {
         let data = (0..100).collect::<Vec<u8>>();
         let response = RangeResponse::new(cid, 0..100, data.clone(), 1000);
 
-        let extracted = response.extract_range(&(10..20)).unwrap();
+        let extracted = response
+            .extract_range(&(10..20))
+            .expect("test: extract range");
         assert_eq!(extracted, &data[10..20]);
     }
 
@@ -463,15 +480,19 @@ mod tests {
         assert_eq!(assembler.completion_percentage(), 0.0);
 
         let resp1 = RangeResponse::new(cid, 0..50, vec![1u8; 50], 100);
-        assembler.add_range(resp1).unwrap();
+        assembler
+            .add_range(resp1)
+            .expect("test: add range to assembler");
         assert_eq!(assembler.completion_percentage(), 50.0);
 
         let resp2 = RangeResponse::new(cid, 50..100, vec![2u8; 50], 100);
-        assembler.add_range(resp2).unwrap();
+        assembler
+            .add_range(resp2)
+            .expect("test: add range to assembler");
         assert!(assembler.is_complete());
         assert_eq!(assembler.completion_percentage(), 100.0);
 
-        let data = assembler.assemble().unwrap();
+        let data = assembler.assemble().expect("test: assemble ranges");
         assert_eq!(data.len(), 100);
         assert_eq!(&data[0..50], &vec![1u8; 50][..]);
         assert_eq!(&data[50..100], &vec![2u8; 50][..]);
@@ -483,10 +504,14 @@ mod tests {
         let mut assembler = RangeAssembler::new(cid, 100);
 
         let resp1 = RangeResponse::new(cid, 0..25, vec![0u8; 25], 100);
-        assembler.add_range(resp1).unwrap();
+        assembler
+            .add_range(resp1)
+            .expect("test: add range to assembler");
 
         let resp2 = RangeResponse::new(cid, 75..100, vec![0u8; 25], 100);
-        assembler.add_range(resp2).unwrap();
+        assembler
+            .add_range(resp2)
+            .expect("test: add range to assembler");
 
         let missing = assembler.missing_ranges();
         assert_eq!(missing, vec![25..75]);
@@ -498,10 +523,14 @@ mod tests {
         let mut assembler = RangeAssembler::new(cid, 100);
 
         let resp1 = RangeResponse::new(cid, 0..60, vec![1u8; 60], 100);
-        assembler.add_range(resp1).unwrap();
+        assembler
+            .add_range(resp1)
+            .expect("test: add range to assembler");
 
         let resp2 = RangeResponse::new(cid, 40..100, vec![2u8; 60], 100);
-        assembler.add_range(resp2).unwrap();
+        assembler
+            .add_range(resp2)
+            .expect("test: add range to assembler");
 
         assert!(assembler.is_complete());
     }
@@ -512,7 +541,9 @@ mod tests {
         let mut assembler = RangeAssembler::new(cid, 100);
 
         let resp = RangeResponse::new(cid, 0..50, vec![0u8; 50], 100);
-        assembler.add_range(resp).unwrap();
+        assembler
+            .add_range(resp)
+            .expect("test: add range to assembler");
 
         assert!(assembler.assemble().is_err());
     }

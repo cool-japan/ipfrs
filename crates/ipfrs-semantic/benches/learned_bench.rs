@@ -1,6 +1,7 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use ipfrs_core::Cid;
 use ipfrs_semantic::{LearnedIndex, ModelType, RMIConfig};
+use std::hint::black_box;
 
 fn generate_random_vector(dim: usize, seed: usize) -> Vec<f32> {
     (0..dim).map(|i| ((seed + i) as f32).sin()).collect()

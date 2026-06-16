@@ -162,7 +162,7 @@ impl MultiModalIndex {
         // Each element ~ N(0, 1/to_dim)
         let mut projection = Vec::with_capacity(from_dim);
 
-        use rand::Rng;
+        use rand::RngExt;
         let mut rng = rand::rng();
         let scale = (1.0 / to_dim as f32).sqrt();
 
@@ -459,8 +459,12 @@ mod tests {
         assert_eq!(index.total_len(), 0);
 
         // Register modalities
-        index.register_modality(Modality::Text, 768).unwrap();
-        index.register_modality(Modality::Image, 512).unwrap();
+        index
+            .register_modality(Modality::Text, 768)
+            .expect("test: register Text modality dim 768 should succeed");
+        index
+            .register_modality(Modality::Image, 512)
+            .expect("test: register Image modality dim 512 should succeed");
 
         assert_eq!(index.len_for_modality(Modality::Text), 0);
         assert_eq!(index.len_for_modality(Modality::Image), 0);
@@ -470,22 +474,30 @@ mod tests {
     fn test_add_and_search_single_modality() {
         let config = MultiModalConfig::default();
         let mut index = MultiModalIndex::new(config);
-        index.register_modality(Modality::Text, 3).unwrap();
+        index
+            .register_modality(Modality::Text, 3)
+            .expect("test: register Text modality dim 3 should succeed");
 
         // Add embeddings
         let cid1 = generate_test_cid(1);
         let emb1 = MultiModalEmbedding::new(vec![1.0, 0.0, 0.0], Modality::Text);
-        index.add(cid1, emb1).unwrap();
+        index
+            .add(cid1, emb1)
+            .expect("test: add Text embedding cid1 should succeed");
 
         let cid2 = generate_test_cid(2);
         let emb2 = MultiModalEmbedding::new(vec![0.0, 1.0, 0.0], Modality::Text);
-        index.add(cid2, emb2).unwrap();
+        index
+            .add(cid2, emb2)
+            .expect("test: add Text embedding cid2 should succeed");
 
         assert_eq!(index.len_for_modality(Modality::Text), 2);
 
         // Search
         let query = MultiModalEmbedding::new(vec![0.9, 0.1, 0.0], Modality::Text);
-        let results = index.search_modality(&query, 1, None).unwrap();
+        let results = index
+            .search_modality(&query, 1, None)
+            .expect("test: single-modality search should succeed");
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, cid1);
@@ -496,22 +508,32 @@ mod tests {
         let config = MultiModalConfig::default();
         let mut index = MultiModalIndex::new(config);
 
-        index.register_modality(Modality::Text, 3).unwrap();
-        index.register_modality(Modality::Image, 3).unwrap();
+        index
+            .register_modality(Modality::Text, 3)
+            .expect("test: register Text modality dim 3 should succeed");
+        index
+            .register_modality(Modality::Image, 3)
+            .expect("test: register Image modality dim 3 should succeed");
 
         // Add text embedding
         let cid1 = generate_test_cid(3);
         let emb1 = MultiModalEmbedding::new(vec![1.0, 0.0, 0.0], Modality::Text);
-        index.add(cid1, emb1).unwrap();
+        index
+            .add(cid1, emb1)
+            .expect("test: add Text embedding cid1 should succeed");
 
         // Add image embedding
         let cid2 = generate_test_cid(4);
         let emb2 = MultiModalEmbedding::new(vec![0.0, 1.0, 0.0], Modality::Image);
-        index.add(cid2, emb2).unwrap();
+        index
+            .add(cid2, emb2)
+            .expect("test: add Image embedding cid2 should succeed");
 
         // Cross-modal search from text
         let query = MultiModalEmbedding::new(vec![0.9, 0.1, 0.0], Modality::Text);
-        let results = index.search_cross_modal(&query, 2, None).unwrap();
+        let results = index
+            .search_cross_modal(&query, 2, None)
+            .expect("test: cross-modal search should succeed");
 
         assert!(!results.is_empty());
     }
@@ -526,7 +548,9 @@ mod tests {
             (vec![0.0, 1.0, 0.0], vec![0.1, 0.9, 0.0]),
         ];
 
-        alignment.learn_from_pairs(&pairs).unwrap();
+        alignment
+            .learn_from_pairs(&pairs)
+            .expect("test: learn_from_pairs with valid aligned pairs should succeed");
 
         // Transform a source embedding
         let source = vec![1.0, 0.0, 0.0];
@@ -541,14 +565,30 @@ mod tests {
         let config = MultiModalConfig::default();
         let mut index = MultiModalIndex::new(config);
 
-        index.register_modality(Modality::Text, 768).unwrap();
-        index.register_modality(Modality::Image, 512).unwrap();
+        index
+            .register_modality(Modality::Text, 768)
+            .expect("test: register Text modality dim 768 should succeed");
+        index
+            .register_modality(Modality::Image, 512)
+            .expect("test: register Image modality dim 512 should succeed");
 
         let stats = index.stats();
 
         assert_eq!(stats.len(), 2);
-        assert_eq!(stats.get(&Modality::Text).unwrap().dimension, 768);
-        assert_eq!(stats.get(&Modality::Image).unwrap().dimension, 512);
+        assert_eq!(
+            stats
+                .get(&Modality::Text)
+                .expect("test: Text modality should be present in stats")
+                .dimension,
+            768
+        );
+        assert_eq!(
+            stats
+                .get(&Modality::Image)
+                .expect("test: Image modality should be present in stats")
+                .dimension,
+            512
+        );
     }
 
     #[test]
@@ -560,12 +600,16 @@ mod tests {
         };
 
         let mut index = MultiModalIndex::new(config);
-        index.register_modality(Modality::Text, 768).unwrap();
+        index
+            .register_modality(Modality::Text, 768)
+            .expect("test: register Text modality dim 768 should succeed");
 
         // Add an embedding (should be projected from 768 to 512)
         let cid = generate_test_cid(5);
         let emb = MultiModalEmbedding::new(vec![0.5; 768], Modality::Text);
-        index.add(cid, emb).unwrap();
+        index
+            .add(cid, emb)
+            .expect("test: add Text embedding with projection should succeed");
 
         assert_eq!(index.len_for_modality(Modality::Text), 1);
     }

@@ -28,6 +28,7 @@ path = "src/bin/genman.rs"
 # Main IPFRS library
 ipfrs = { workspace = true }
 ipfrs-core = { workspace = true }
+ipfrs-network = { workspace = true }
 ipfrs-storage = { workspace = true }
 ipfrs-interface = { workspace = true }
 ipfrs-semantic = { workspace = true }
@@ -63,7 +64,7 @@ colored = { workspace = true }
 indicatif = { workspace = true }
 toml = { workspace = true }
 dirs = { workspace = true }
-atty = { workspace = true }
+is-terminal = { workspace = true }
 rustyline = { workspace = true }
 ratatui = { workspace = true }
 crossterm = { workspace = true }

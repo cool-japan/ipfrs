@@ -1,10 +1,10 @@
 # ipfrs TODO
 
-## 🎯 Version 0.1.0 Milestone - "Complete Foundation Release"
+## 🎯 Version 0.2.0 Milestone - "Network Release" ✅ COMPLETE
 
 ### Status: ~99.9% → Target: 100% (All Features!)
 
-**SCOPE ACHIEVED:** Implemented ALL features originally planned for 0.2.0, 0.3.0, 0.4.0 in 0.1.0!
+**0.2.0 RELEASED 2026-06-14:** P2P networking, DHT, Bitswap, TensorSwap, WASM/Node.js bindings, OxiARC compression migration, abductive reasoning engine all complete.
 
 **Expanded Release Goals:**
 - ✅ Content-addressed storage with DAG support
@@ -24,7 +24,7 @@
 
 ---
 
-## ✅ Already COMPLETED for 0.1.0 (98%)
+## ✅ Completed in v0.1.0 and v0.2.0 (98%)
 
 ### Core Storage & Retrieval ✅
 - ✅ Block storage, batch operations, file operations
@@ -65,7 +65,7 @@
 
 ---
 
-## 🚀 NEW Features to Implement (0.1.0 Expansion)
+## 🚀 Features for v0.3.0 "Intelligence Release" (In Progress)
 
 ### Priority 1: Networking & Distribution (Originally 0.2.0) ✅ COMPLETED
 
@@ -634,7 +634,7 @@
 - Video tutorials (not code-related)
 - Community infrastructure setup (Discord/Slack)
 
-🎯 **IPFRS 0.1.0 is production-ready!**
+🎯 **IPFRS 0.2.0 is production-ready! Released 2026-06-14.**
 
 ---
 

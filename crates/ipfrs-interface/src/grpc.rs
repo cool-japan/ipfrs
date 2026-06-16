@@ -57,12 +57,12 @@ use proto::tensor::{
     TensorMetadata, TensorStatsResponse, TensorStreamRequest, TensorStreamResponse,
 };
 
-// Re-export for convenience
-// TODO: Re-enable when tonic service generation is working with tonic-build 0.14
-// pub use proto::block::block_service_server::BlockServiceServer;
-// pub use proto::dag::dag_service_server::DagServiceServer;
-// pub use proto::file::file_service_server::FileServiceServer;
-// pub use proto::tensor::tensor_service_server::TensorServiceServer;
+// Re-export server wrapper types so callers can build tonic routers without
+// having to import the generated proto module directly.
+pub use proto::block::block_service_server::BlockServiceServer;
+pub use proto::dag::dag_service_server::DagServiceServer;
+pub use proto::file::file_service_server::FileServiceServer;
+pub use proto::tensor::tensor_service_server::TensorServiceServer;
 
 /// Request validation module for gRPC services
 mod validation {
@@ -991,15 +991,22 @@ mod tests {
 
         // First add a block
         let test_data = vec![1, 2, 3, 4];
-        let block = ipfrs_core::Block::new(test_data.clone().into()).unwrap();
+        let block = ipfrs_core::Block::new(test_data.clone().into())
+            .expect("test: block creation should succeed");
         let test_cid = block.cid().to_string();
-        storage.put(&block).await.unwrap();
+        storage
+            .put(&block)
+            .await
+            .expect("test: block storage put should succeed");
 
         // Now get it
         let request = Request::new(GetBlockRequest {
             cid: test_cid.clone(),
         });
-        let response = service.get_block(request).await.unwrap();
+        let response = service
+            .get_block(request)
+            .await
+            .expect("test: get block request should succeed");
         let inner = response.into_inner();
         assert_eq!(inner.cid, test_cid);
         assert_eq!(inner.data, test_data);
@@ -1014,7 +1021,10 @@ mod tests {
             data: vec![1, 2, 3, 4],
             format: None,
         });
-        let response = service.put_block(request).await.unwrap();
+        let response = service
+            .put_block(request)
+            .await
+            .expect("test: put block request should succeed");
         assert_eq!(response.into_inner().size, 4);
     }
 
@@ -1025,7 +1035,10 @@ mod tests {
             cid: "QmTest".to_string(),
             path: None,
         });
-        let response = service.get_dag(request).await.unwrap();
+        let response = service
+            .get_dag(request)
+            .await
+            .expect("test: get dag request should succeed");
         assert_eq!(response.into_inner().format, "dag-cbor");
     }
 
@@ -1035,7 +1048,10 @@ mod tests {
         let request = Request::new(GetFileInfoRequest {
             cid: "QmTest".to_string(),
         });
-        let response = service.get_file_info(request).await.unwrap();
+        let response = service
+            .get_file_info(request)
+            .await
+            .expect("test: get file info request should succeed");
         assert_eq!(response.into_inner().cid, "QmTest");
     }
 
@@ -1045,7 +1061,10 @@ mod tests {
         let request = Request::new(GetTensorInfoRequest {
             cid: "QmTest".to_string(),
         });
-        let response = service.get_tensor_info(request).await.unwrap();
+        let response = service
+            .get_tensor_info(request)
+            .await
+            .expect("test: get tensor info request should succeed");
         assert_eq!(response.into_inner().cid, "QmTest");
     }
 }
@@ -1316,6 +1335,164 @@ impl Default for GrpcServiceConfig {
     }
 }
 
+// ── Gradient sync service ─────────────────────────────────────────────────
+
+/// Request to initiate a distributed gradient synchronisation session.
+///
+/// The `local_gradient` field carries the caller's local gradient encoded
+/// as Arrow IPC bytes (use
+/// [`ipfrs_tensorlogic::gradient::arrow_ipc::store_gradient_as_arrow`] to
+/// produce them).
+#[derive(Debug, Clone)]
+pub struct GradientSyncRequest {
+    /// Unique identifier for this synchronisation round.
+    pub session_id: String,
+    /// Arrow IPC-encoded local gradient contributed by the caller.
+    pub local_gradient: Vec<u8>,
+    /// Minimum number of peer gradients required before aggregating.
+    pub min_peers: u32,
+    /// Wall-clock timeout in seconds before the session is abandoned.
+    pub timeout_secs: u64,
+}
+
+/// A single gradient chunk streamed back to the client.
+///
+/// During a [`GradientSyncService::sync_gradients`] call the service pushes
+/// one `GradientChunkResponse` per Arrow IPC chunk received from a peer so
+/// that clients can start processing data before all peers have responded.
+#[derive(Debug, Clone)]
+pub struct GradientChunkResponse {
+    /// Session identifier matching [`GradientSyncRequest::session_id`].
+    pub session_id: String,
+    /// Zero-based index of this chunk within the peer's gradient stream.
+    pub chunk_index: u32,
+    /// Total chunks expected from this peer.
+    pub total_chunks: u32,
+    /// Arrow IPC bytes for this chunk.
+    pub data: Vec<u8>,
+    /// Peer that contributed this chunk.
+    pub peer_id: String,
+}
+
+/// gRPC service that streams gradient chunks to clients as they arrive from peers.
+///
+/// The service wraps a `DistributedGradientAccumulator` stored behind an
+/// `Arc<Mutex<…>>` so that concurrent sync sessions can safely share the same
+/// block store without requiring access to the full `Node` type (which lives in
+/// the `ipfrs` crate and cannot be referenced from `ipfrs-interface` without a
+/// circular dependency).
+pub struct GradientSyncService {
+    store: std::sync::Arc<dyn ipfrs_storage::traits::BlockStore>,
+}
+
+impl GradientSyncService {
+    /// Create a new service backed by `store`.
+    pub fn new(store: std::sync::Arc<dyn ipfrs_storage::traits::BlockStore>) -> Self {
+        Self { store }
+    }
+
+    /// Start a gradient sync session and stream chunks via `chunk_tx`.
+    ///
+    /// Workflow:
+    /// 1. Decode `request.local_gradient` from Arrow IPC.
+    /// 2. Commit the local gradient to the block store via
+    ///    `DistributedGradientAccumulator::commit_local`.
+    /// 3. Poll for peer gradients (stubbed — no live network in this layer).
+    /// 4. Push one [`GradientChunkResponse`] per local chunk onto `chunk_tx`
+    ///    so that the caller can observe streaming behaviour end-to-end.
+    ///
+    /// When full peer-to-peer transport is wired up, step 3 would await
+    /// actual peer CIDs from the network layer.
+    pub async fn sync_gradients(
+        &self,
+        request: GradientSyncRequest,
+        chunk_tx: tokio::sync::mpsc::Sender<GradientChunkResponse>,
+    ) -> anyhow::Result<()> {
+        use ipfrs_tensorlogic::gradient::arrow_ipc::{
+            load_gradient_from_arrow, store_gradient_as_arrow,
+        };
+        use ipfrs_tensorlogic::gradient::backward_pass::BackwardPassConfig;
+        use ipfrs_tensorlogic::gradient::federated::DistributedGradientAccumulator;
+
+        // Decode the caller's local gradient from Arrow IPC.
+        let local_gradient = load_gradient_from_arrow(&request.local_gradient)
+            .map_err(|e| anyhow::anyhow!("failed to decode local gradient: {e}"))?;
+
+        tracing::debug!(
+            session_id = %request.session_id,
+            gradient_len = local_gradient.len(),
+            min_peers = request.min_peers,
+            timeout_secs = request.timeout_secs,
+            "GradientSyncService: starting sync session"
+        );
+
+        // Commit the local gradient to the block store.
+        let mut accumulator =
+            DistributedGradientAccumulator::new(&request.session_id, BackwardPassConfig::default());
+
+        let _local_cid = accumulator
+            .commit_local(local_gradient.clone(), self.store.as_ref())
+            .await
+            .map_err(|e| anyhow::anyhow!("commit_local failed: {e}"))?;
+
+        tracing::debug!(
+            session_id = %request.session_id,
+            "GradientSyncService: local gradient committed, CID = {_local_cid}"
+        );
+
+        // In a live deployment peer CIDs would be discovered via the network
+        // layer and fed into `accumulator.add_peer_gradient(...)`.  Since
+        // ipfrs-interface has no direct access to the network, we stream the
+        // local gradient back in chunks so that the caller can observe the
+        // server-streaming pattern end-to-end.
+        let chunk_size = 65_536usize;
+        let total_chunks = local_gradient.len().div_ceil(chunk_size).max(1);
+
+        if local_gradient.is_empty() {
+            // Send a single empty chunk to signal stream completion.
+            let ipc = store_gradient_as_arrow(&[])
+                .map_err(|e| anyhow::anyhow!("Arrow IPC encode: {e}"))?;
+            chunk_tx
+                .send(GradientChunkResponse {
+                    session_id: request.session_id.clone(),
+                    chunk_index: 0,
+                    total_chunks: 1,
+                    data: ipc,
+                    peer_id: "local".to_string(),
+                })
+                .await
+                .map_err(|_| anyhow::anyhow!("chunk_tx receiver dropped"))?;
+            return Ok(());
+        }
+
+        for (idx, window) in local_gradient.chunks(chunk_size).enumerate() {
+            let ipc = store_gradient_as_arrow(window)
+                .map_err(|e| anyhow::anyhow!("Arrow IPC encode chunk {idx}: {e}"))?;
+
+            let response = GradientChunkResponse {
+                session_id: request.session_id.clone(),
+                chunk_index: idx as u32,
+                total_chunks: total_chunks as u32,
+                data: ipc,
+                peer_id: "local".to_string(),
+            };
+
+            chunk_tx
+                .send(response)
+                .await
+                .map_err(|_| anyhow::anyhow!("chunk_tx receiver dropped at chunk {idx}"))?;
+        }
+
+        tracing::debug!(
+            session_id = %request.session_id,
+            total_chunks,
+            "GradientSyncService: streamed all local chunks"
+        );
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod interceptor_tests {
     use super::*;
@@ -1371,15 +1548,19 @@ mod interceptor_tests {
         use tonic::metadata::MetadataValue;
 
         let secret = "test_secret";
-        let user = User::new("test_user".to_string(), "password", Role::Admin).unwrap();
+        let user = User::new("test_user".to_string(), "password", Role::Admin)
+            .expect("test: user creation should succeed");
         let jwt_manager = JwtManager::new(secret.as_bytes());
-        let token = jwt_manager.generate_token(&user, 24).unwrap();
+        let token = jwt_manager
+            .generate_token(&user, 24)
+            .expect("test: JWT token generation should succeed");
 
         let mut interceptor = AuthInterceptor::new(secret);
         let mut request = Request::new(());
 
         // Add authorization header
-        let auth_value = MetadataValue::try_from(format!("Bearer {}", token)).unwrap();
+        let auth_value = MetadataValue::try_from(format!("Bearer {}", token))
+            .expect("test: metadata value creation from bearer token should succeed");
         request.metadata_mut().insert("authorization", auth_value);
 
         let result = interceptor.call(request);
@@ -1474,5 +1655,66 @@ mod interceptor_tests {
         let config = GrpcServiceConfig::default();
         assert!(config.backpressure.is_some());
         assert!(config.enable_monitoring);
+    }
+
+    /// Verify `GradientSyncService` constructs without panic.
+    #[test]
+    fn test_gradient_sync_service_new() {
+        use ipfrs_storage::{BlockStoreConfig, SledBlockStore};
+        use std::sync::Arc;
+
+        let config = BlockStoreConfig {
+            path: std::env::temp_dir().join("ipfrs-test-grpc-grad-sync-svc"),
+            cache_size: 16 * 1024 * 1024,
+        };
+        let _ = std::fs::remove_dir_all(&config.path);
+        let store = Arc::new(SledBlockStore::new(config).expect("SledBlockStore::new"));
+        let _service = GradientSyncService::new(store);
+        // Construction must not panic.
+    }
+
+    /// Verify `GradientSyncService::sync_gradients` streams chunks for a small gradient.
+    #[tokio::test]
+    async fn test_gradient_sync_service_streams_chunks() {
+        use ipfrs_storage::{BlockStoreConfig, SledBlockStore};
+        use ipfrs_tensorlogic::gradient::arrow_ipc::store_gradient_as_arrow;
+        use std::sync::Arc;
+
+        let config = BlockStoreConfig {
+            path: std::env::temp_dir().join("ipfrs-test-grpc-grad-sync-chunks"),
+            cache_size: 16 * 1024 * 1024,
+        };
+        let _ = std::fs::remove_dir_all(&config.path);
+        let store = Arc::new(SledBlockStore::new(config).expect("SledBlockStore::new"));
+        let service = GradientSyncService::new(store);
+
+        let gradient: Vec<f32> = (0u32..128).map(|i| i as f32 * 0.1).collect();
+        let local_gradient_bytes = store_gradient_as_arrow(&gradient).expect("encode");
+
+        let request = GradientSyncRequest {
+            session_id: "test-sync-session".to_string(),
+            local_gradient: local_gradient_bytes,
+            min_peers: 0,
+            timeout_secs: 5,
+        };
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+        service
+            .sync_gradients(request, tx)
+            .await
+            .expect("sync_gradients");
+
+        let mut received = Vec::new();
+        while let Some(chunk) = rx.recv().await {
+            assert_eq!(chunk.session_id, "test-sync-session");
+            assert_eq!(chunk.peer_id, "local");
+            received.push(chunk);
+        }
+
+        assert!(
+            !received.is_empty(),
+            "at least one chunk must be streamed back"
+        );
+        assert_eq!(received[0].chunk_index, 0);
     }
 }

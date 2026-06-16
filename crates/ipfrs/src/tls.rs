@@ -454,13 +454,13 @@ mod tests {
 
     #[test]
     fn test_tls_config_validation_success() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let cert_path = temp_dir.path().join("cert.pem");
         let key_path = temp_dir.path().join("key.pem");
 
         // Create dummy files
-        std::fs::write(&cert_path, b"cert").unwrap();
-        std::fs::write(&key_path, b"key").unwrap();
+        std::fs::write(&cert_path, b"cert").expect("test: write cert should succeed");
+        std::fs::write(&key_path, b"key").expect("test: write key should succeed");
 
         let config = TlsConfig::new().with_cert_and_key(cert_path, key_path);
         assert!(config.validate().is_ok());
@@ -513,14 +513,14 @@ mod tests {
         let result = gen.generate();
         assert!(result.is_ok());
 
-        let (cert, key) = result.unwrap();
+        let (cert, key) = result.expect("test: self-signed cert generation should succeed");
         assert!(cert.contains("BEGIN CERTIFICATE"));
         assert!(key.contains("BEGIN PRIVATE KEY"));
     }
 
     #[test]
     fn test_self_signed_cert_to_files() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let cert_path = temp_dir.path().join("cert.pem");
         let key_path = temp_dir.path().join("key.pem");
 
@@ -535,45 +535,49 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::metadata(&key_path).unwrap().permissions();
+            let perms = std::fs::metadata(&key_path)
+                .expect("test: key file metadata should be readable")
+                .permissions();
             assert_eq!(perms.mode() & 0o777, 0o600);
         }
     }
 
     #[test]
     fn test_tls_manager_creation() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let cert_path = temp_dir.path().join("cert.pem");
         let key_path = temp_dir.path().join("key.pem");
 
-        std::fs::write(&cert_path, b"cert data").unwrap();
-        std::fs::write(&key_path, b"key data").unwrap();
+        std::fs::write(&cert_path, b"cert data").expect("test: write cert should succeed");
+        std::fs::write(&key_path, b"key data").expect("test: write key should succeed");
 
         let config = TlsConfig::new().with_cert_and_key(cert_path, key_path);
         let manager = TlsManager::new(config);
         assert!(manager.is_ok());
 
-        let mgr = manager.unwrap();
+        let mgr = manager.expect("test: TLS manager creation should succeed");
         assert!(mgr.is_enabled());
     }
 
     #[test]
     fn test_tls_manager_load_files() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let cert_path = temp_dir.path().join("cert.pem");
         let key_path = temp_dir.path().join("key.pem");
 
         let cert_data = b"certificate data";
         let key_data = b"private key data";
 
-        std::fs::write(&cert_path, cert_data).unwrap();
-        std::fs::write(&key_path, key_data).unwrap();
+        std::fs::write(&cert_path, cert_data).expect("test: write cert should succeed");
+        std::fs::write(&key_path, key_data).expect("test: write key should succeed");
 
         let config = TlsConfig::new().with_cert_and_key(cert_path, key_path);
-        let manager = TlsManager::new(config).unwrap();
+        let manager = TlsManager::new(config).expect("test: TLS manager creation should succeed");
 
-        let loaded_cert = manager.load_certificate().unwrap();
-        let loaded_key = manager.load_key().unwrap();
+        let loaded_cert = manager
+            .load_certificate()
+            .expect("test: load_certificate should succeed");
+        let loaded_key = manager.load_key().expect("test: load_key should succeed");
 
         assert_eq!(loaded_cert, cert_data);
         assert_eq!(loaded_key, key_data);
@@ -581,17 +585,19 @@ mod tests {
 
     #[test]
     fn test_tls_manager_get_certificate_info() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("test: temp dir creation should succeed");
         let cert_path = temp_dir.path().join("cert.pem");
         let key_path = temp_dir.path().join("key.pem");
 
-        std::fs::write(&cert_path, b"cert").unwrap();
-        std::fs::write(&key_path, b"key").unwrap();
+        std::fs::write(&cert_path, b"cert").expect("test: write cert should succeed");
+        std::fs::write(&key_path, b"key").expect("test: write key should succeed");
 
         let config = TlsConfig::new().with_cert_and_key(cert_path, key_path);
-        let manager = TlsManager::new(config).unwrap();
+        let manager = TlsManager::new(config).expect("test: TLS manager creation should succeed");
 
-        let info = manager.get_certificate_info().unwrap();
+        let info = manager
+            .get_certificate_info()
+            .expect("test: get_certificate_info should succeed");
         assert_eq!(info.common_name, "ipfrs.local");
         assert!(info.is_valid());
     }

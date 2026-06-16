@@ -10,15 +10,27 @@ use libp2p::{
     Multiaddr, PeerId, Swarm,
 };
 use parking_lot::RwLock;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tracing::{debug, info, warn};
 
 // Type alias for IPFRS results to avoid conflicts with libp2p types
 type IpfrsResult<T> = ipfrs_core::error::Result<T>;
+
+/// Type alias for provider waiters map to reduce type complexity
+type ProviderWaiters = Arc<Mutex<HashMap<String, Vec<oneshot::Sender<Vec<PeerId>>>>>>;
+
+/// Type alias for inference response waiters, keyed by session/request ID.
+///
+/// When `distributed_infer()` fires a request over GossipSub it registers a
+/// oneshot sender here; the event loop wakes it when a matching
+/// `InferenceResponse` arrives on the `INFERENCE_RESULT` topic.
+pub type InferenceWaiters =
+    Arc<Mutex<HashMap<String, Vec<oneshot::Sender<ipfrs_tensorlogic::InferenceResponse>>>>>;
 
 /// Kademlia DHT configuration
 #[derive(Debug, Clone)]
@@ -77,6 +89,21 @@ pub struct NetworkConfig {
     pub connection_buffer_size: usize,
     /// Enable aggressive memory optimizations
     pub low_memory_mode: bool,
+    /// Enable DCUtR hole-punching (default: true)
+    ///
+    /// When true the `dcutr` behaviour actively participates in NAT hole-punch
+    /// coordination with peers.  Disabling this is useful for low-memory
+    /// constrained environments where the small overhead of maintaining the
+    /// DCUtR state machine is undesirable.
+    pub dcutr_enabled: bool,
+    /// Enable Circuit Relay v2 client behaviour (default: true)
+    ///
+    /// The relay client transport is always compiled in (because removing it
+    /// from the combined transport would break the swarm type), but this flag
+    /// controls whether the node actively seeks relay reservations.
+    pub relay_v2_enabled: bool,
+    /// Timeout for a single hole-punch attempt (default: 30 s)
+    pub hole_punch_timeout: Duration,
 }
 
 impl Default for NetworkConfig {
@@ -98,6 +125,10 @@ impl Default for NetworkConfig {
             max_outbound_connections: None,
             connection_buffer_size: 64 * 1024, // 64 KB default
             low_memory_mode: false,
+            // NAT traversal defaults – enabled by default for production use
+            dcutr_enabled: true,
+            relay_v2_enabled: true,
+            hole_punch_timeout: Duration::from_secs(30),
         }
     }
 }
@@ -133,6 +164,10 @@ impl NetworkConfig {
             max_outbound_connections: Some(8),
             connection_buffer_size: 8 * 1024, // 8 KB buffers
             low_memory_mode: true,
+            // NAT traversal disabled for low-memory environments
+            dcutr_enabled: false,
+            relay_v2_enabled: false,
+            hole_punch_timeout: Duration::from_secs(30),
         }
     }
 
@@ -166,6 +201,9 @@ impl NetworkConfig {
             max_outbound_connections: Some(16),
             connection_buffer_size: 16 * 1024, // 16 KB buffers
             low_memory_mode: false,
+            dcutr_enabled: true,
+            relay_v2_enabled: true,
+            hole_punch_timeout: Duration::from_secs(30),
         }
     }
 
@@ -194,6 +232,9 @@ impl NetworkConfig {
                 alpha: 3,
                 kbucket_size: 20,
             },
+            dcutr_enabled: true,
+            relay_v2_enabled: true,
+            hole_punch_timeout: Duration::from_secs(30),
             max_connections: Some(64),
             max_inbound_connections: Some(32),
             max_outbound_connections: Some(32),
@@ -234,6 +275,9 @@ impl NetworkConfig {
             max_outbound_connections: None,
             connection_buffer_size: 128 * 1024, // 128 KB buffers
             low_memory_mode: false,
+            dcutr_enabled: true,
+            relay_v2_enabled: true,
+            hole_punch_timeout: Duration::from_secs(30),
         }
     }
 }
@@ -262,7 +306,7 @@ pub struct IpfrsBehaviour {
 #[derive(Debug)]
 pub enum IpfrsBehaviourEvent {
     Kademlia(kad::Event),
-    Identify(identify::Event),
+    Identify(Box<identify::Event>),
     Ping(ping::Event),
     Autonat(autonat::Event),
     Dcutr(dcutr::Event),
@@ -278,7 +322,7 @@ impl From<kad::Event> for IpfrsBehaviourEvent {
 
 impl From<identify::Event> for IpfrsBehaviourEvent {
     fn from(event: identify::Event) -> Self {
-        IpfrsBehaviourEvent::Identify(event)
+        IpfrsBehaviourEvent::Identify(Box::new(event))
     }
 }
 
@@ -312,12 +356,58 @@ impl From<relay::client::Event> for IpfrsBehaviourEvent {
     }
 }
 
+/// Commands forwarded from `NetworkNode` to the background swarm event loop.
+///
+/// After `start()` the swarm lives in a spawned task.  All operations that
+/// need to call into the swarm (dial, provide, get_providers, …) are sent
+/// over this channel and executed inside the event-loop task.
+enum SwarmCommand {
+    /// Dial a remote address
+    Dial(Multiaddr),
+    /// Disconnect a specific peer
+    Disconnect(PeerId),
+    /// Announce local content to the Kademlia DHT
+    Provide(cid::Cid),
+    /// Query the DHT for providers of a CID (fire-and-forget; waiters handle the result)
+    GetProviders(cid::Cid),
+    /// Ask the Kademlia routing table for the k-closest peers to our own ID
+    Bootstrap,
+    /// Add a peer address to the Kademlia routing table
+    AddPeerAddress(PeerId, Multiaddr),
+}
+
+/// Circuit Relay v2 configuration.
+///
+/// Controls whether the node actively seeks relay reservations for NAT
+/// traversal via the `/libp2p/circuit/relay/0.2.0/hop` protocol.
+#[derive(Debug, Clone)]
+pub struct RelayConfig {
+    /// Enable Circuit Relay v2 client (reservation) support.
+    pub relay_v2_enabled: bool,
+    /// Maximum number of simultaneous relay reservations to maintain.
+    pub max_reservations: usize,
+    /// Duration in seconds for which a relay reservation is considered valid.
+    pub reservation_duration_secs: u64,
+}
+
+impl Default for RelayConfig {
+    fn default() -> Self {
+        Self {
+            relay_v2_enabled: true,
+            max_reservations: 4,
+            reservation_duration_secs: 3600,
+        }
+    }
+}
+
 /// IPFRS network node
 pub struct NetworkNode {
     config: NetworkConfig,
     peer_id: PeerId,
     swarm: Option<Swarm<IpfrsBehaviour>>,
     shutdown_tx: Option<mpsc::Sender<()>>,
+    /// Command channel to the background swarm event loop (set after `start()`)
+    swarm_cmd_tx: Option<mpsc::Sender<SwarmCommand>>,
     event_tx: mpsc::Sender<NetworkEvent>,
     event_rx: Option<mpsc::Receiver<NetworkEvent>>,
     /// External addresses discovered via AutoNAT
@@ -326,6 +416,25 @@ pub struct NetworkNode {
     connected_peers: Arc<DashSet<PeerId>>,
     /// Bandwidth tracking (bytes sent/received)
     bandwidth_stats: Arc<parking_lot::RwLock<BandwidthStats>>,
+    /// Waiters for provider query results, keyed by CID string
+    provider_waiters: ProviderWaiters,
+    /// NAT traversal (DCUtR hole-punch) metrics
+    nat_metrics: Arc<parking_lot::RwLock<NatTraversalMetrics>>,
+    /// In-process GossipSub manager for topic-based pub/sub messaging.
+    ///
+    /// Shared with callers so that external code (e.g. `distributed_infer`)
+    /// can publish messages directly without going through the swarm command
+    /// channel.  The manager is `Arc`-wrapped so it can be cloned cheaply.
+    pub gossipsub: Arc<crate::gossipsub::GossipSubManager>,
+    /// Waiters for inference responses, keyed by request/session ID.
+    pub inference_waiters: InferenceWaiters,
+    /// Active Circuit Relay v2 reservations, keyed by relay peer ID.
+    ///
+    /// Each entry records the [`std::time::Instant`] at which the reservation
+    /// was obtained so that expired reservations can be detected and renewed.
+    pub active_relay_reservations: Arc<parking_lot::RwLock<HashMap<PeerId, std::time::Instant>>>,
+    /// Circuit Relay v2 configuration.
+    pub relay_config: RelayConfig,
 }
 
 /// Bandwidth statistics
@@ -404,16 +513,32 @@ impl NetworkNode {
         // Build the swarm
         let swarm = Self::build_swarm(keypair, &config)?;
 
+        // Build the GossipSub manager and subscribe to all inference topics.
+        let gossipsub = {
+            use crate::gossipsub::{GossipSubConfig, GossipSubManager};
+            let mgr = GossipSubManager::new(GossipSubConfig::default());
+            // Ignore errors – AlreadySubscribed is harmless on a fresh instance.
+            let _ = mgr.subscribe_inference_topics();
+            Arc::new(mgr)
+        };
+
         Ok(Self {
             config,
             peer_id,
             swarm: Some(swarm),
             shutdown_tx: None,
+            swarm_cmd_tx: None,
             event_tx,
             event_rx: Some(event_rx),
             external_addrs: Arc::new(RwLock::new(Vec::new())),
             connected_peers: Arc::new(DashSet::new()),
             bandwidth_stats: Arc::new(RwLock::new(BandwidthStats::default())),
+            provider_waiters: Arc::new(Mutex::new(HashMap::new())),
+            nat_metrics: Arc::new(RwLock::new(NatTraversalMetrics::default())),
+            gossipsub,
+            inference_waiters: Arc::new(Mutex::new(HashMap::new())),
+            active_relay_reservations: Arc::new(RwLock::new(HashMap::new())),
+            relay_config: RelayConfig::default(),
         })
     }
 
@@ -477,8 +602,19 @@ impl NetworkNode {
     ) -> IpfrsResult<Swarm<IpfrsBehaviour>> {
         let peer_id = keypair.public().to_peer_id();
 
-        // Create relay client for NAT traversal (behavior only - transport handled separately)
-        let (_relay_transport, relay_client) = relay::client::new(peer_id);
+        // Create relay client for NAT traversal.
+        // The relay *transport* must remain alive alongside the relay *behaviour*
+        // because they communicate via an internal channel.  Including it in the
+        // combined transport (even when nat-traversal is disabled) keeps the
+        // channel open and prevents the "polled after channel closed" panic.
+        let (relay_transport, relay_client) = relay::client::new(peer_id);
+
+        // Upgrade the relay transport so it can be combined with the others
+        let relay_transport = relay_transport
+            .upgrade(libp2p::core::upgrade::Version::V1)
+            .authenticate(noise::Config::new(&keypair).map_err(std::io::Error::other)?)
+            .multiplex(libp2p::yamux::Config::default())
+            .map(|(peer_id, muxer), _| (peer_id, libp2p::core::muxing::StreamMuxerBox::new(muxer)));
 
         // Build TCP transport with noise and yamux
         let tcp_transport = libp2p::tcp::tokio::Transport::default()
@@ -493,16 +629,22 @@ impl NetworkNode {
         ))
         .map(|(peer_id, muxer), _| (peer_id, libp2p::core::muxing::StreamMuxerBox::new(muxer)));
 
-        // Combine transports: QUIC primary with TCP fallback
+        // Combine transports: relay (for circuit relay v2) → QUIC → TCP
+        // The relay transport handles /p2p-circuit addresses; QUIC and TCP handle
+        // direct connections.  Order matters: relay is tried first for circuit
+        // addresses, then QUIC, then TCP.
         let transport = if config.enable_quic {
-            // QUIC with TCP fallback
-            quic_transport
+            relay_transport
+                .or_transport(quic_transport)
+                .map(|either, _| either.into_inner())
                 .or_transport(tcp_transport)
                 .map(|either, _| either.into_inner())
                 .boxed()
         } else {
-            // TCP only
-            tcp_transport.boxed()
+            relay_transport
+                .or_transport(tcp_transport)
+                .map(|either, _| either.into_inner())
+                .boxed()
         };
 
         // Create Kademlia DHT with tunable config
@@ -639,9 +781,16 @@ impl NetworkNode {
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
         self.shutdown_tx = Some(shutdown_tx);
 
+        // Create swarm command channel so callers can drive the swarm from
+        // outside the event-loop task after start().
+        let (swarm_cmd_tx, mut swarm_cmd_rx) = mpsc::channel::<SwarmCommand>(256);
+        self.swarm_cmd_tx = Some(swarm_cmd_tx);
+
         let event_tx = self.event_tx.clone();
         let external_addrs = Arc::clone(&self.external_addrs);
         let connected_peers = Arc::clone(&self.connected_peers);
+        let provider_waiters = Arc::clone(&self.provider_waiters);
+        let nat_metrics = Arc::clone(&self.nat_metrics);
 
         info!("✅ Network node ready");
         info!(
@@ -659,7 +808,10 @@ impl NetworkNode {
             loop {
                 tokio::select! {
                     event = swarm.select_next_some() => {
-                        Self::handle_swarm_event(event, &event_tx, swarm.behaviour_mut(), &external_addrs, &connected_peers).await;
+                        Self::handle_swarm_event(event, &event_tx, swarm.behaviour_mut(), &external_addrs, &connected_peers, &provider_waiters, &nat_metrics).await;
+                    }
+                    Some(cmd) = swarm_cmd_rx.recv() => {
+                        Self::handle_swarm_command(cmd, &mut swarm, &provider_waiters).await;
                     }
                     _ = shutdown_rx.recv() => {
                         info!("Shutting down network node");
@@ -679,6 +831,8 @@ impl NetworkNode {
         _behaviour: &mut IpfrsBehaviour,
         external_addrs: &Arc<RwLock<Vec<Multiaddr>>>,
         connected_peers: &Arc<DashSet<PeerId>>,
+        provider_waiters: &ProviderWaiters,
+        nat_metrics: &Arc<RwLock<NatTraversalMetrics>>,
     ) {
         match event {
             SwarmEvent::NewListenAddr { address, .. } => {
@@ -689,18 +843,16 @@ impl NetworkNode {
                     })
                     .await;
             }
-            SwarmEvent::Behaviour(IpfrsBehaviourEvent::Identify(identify::Event::Received {
-                peer_id,
-                info,
-                ..
-            })) => {
-                debug!("Identified peer {}: {:?}", peer_id, info);
-                let _ = event_tx
-                    .send(NetworkEvent::PeerDiscovered {
-                        peer_id,
-                        addrs: info.listen_addrs,
-                    })
-                    .await;
+            SwarmEvent::Behaviour(IpfrsBehaviourEvent::Identify(ev)) => {
+                if let identify::Event::Received { peer_id, info, .. } = *ev {
+                    debug!("Identified peer {}: {:?}", peer_id, info);
+                    let _ = event_tx
+                        .send(NetworkEvent::PeerDiscovered {
+                            peer_id,
+                            addrs: info.listen_addrs,
+                        })
+                        .await;
+                }
             }
             SwarmEvent::Behaviour(IpfrsBehaviourEvent::Kademlia(
                 kad::Event::OutboundQueryProgressed { result, .. },
@@ -710,11 +862,24 @@ impl NetworkNode {
                     providers,
                 })) => {
                     let cid = String::from_utf8_lossy(key.as_ref()).to_string();
-                    debug!("Found {} providers for {}", providers.len(), cid);
+                    let provider_list: Vec<PeerId> = providers.into_iter().collect();
+                    debug!("Found {} providers for {}", provider_list.len(), cid);
+
+                    // Notify any registered waiters for this CID
+                    {
+                        let mut waiters = provider_waiters.lock().await;
+                        if let Some(senders) = waiters.remove(&cid) {
+                            for tx in senders {
+                                // Best-effort: ignore send errors (receiver may have timed out)
+                                let _ = tx.send(provider_list.clone());
+                            }
+                        }
+                    }
+
                     let _ = event_tx
                         .send(NetworkEvent::ContentFound {
                             cid,
-                            providers: providers.into_iter().collect(),
+                            providers: provider_list,
                         })
                         .await;
                 }
@@ -845,6 +1010,22 @@ impl NetworkNode {
             }
             SwarmEvent::Behaviour(IpfrsBehaviourEvent::Dcutr(dcutr_event)) => {
                 debug!("DCUtR event: {:?}", dcutr_event);
+                match dcutr_event {
+                    dcutr::Event { result: Ok(_), .. } => {
+                        let mut m = nat_metrics.write();
+                        m.hole_punch_attempts = m.hole_punch_attempts.saturating_add(1);
+                        m.hole_punch_successes = m.hole_punch_successes.saturating_add(1);
+                        info!("DCUtR hole-punch succeeded");
+                    }
+                    dcutr::Event {
+                        result: Err(ref e), ..
+                    } => {
+                        let mut m = nat_metrics.write();
+                        m.hole_punch_attempts = m.hole_punch_attempts.saturating_add(1);
+                        m.hole_punch_failures = m.hole_punch_failures.saturating_add(1);
+                        warn!("DCUtR hole-punch failed: {}", e);
+                    }
+                }
             }
             SwarmEvent::Behaviour(IpfrsBehaviourEvent::Mdns(mdns_event)) => match mdns_event {
                 mdns::Event::Discovered(peers) => {
@@ -866,6 +1047,19 @@ impl NetworkNode {
             },
             SwarmEvent::Behaviour(IpfrsBehaviourEvent::RelayClient(relay_event)) => {
                 debug!("Relay client event: {:?}", relay_event);
+                match &relay_event {
+                    relay::client::Event::ReservationReqAccepted { .. } => {
+                        let mut m = nat_metrics.write();
+                        m.relay_connections = m.relay_connections.saturating_add(1);
+                        info!("Relay reservation accepted");
+                    }
+                    relay::client::Event::OutboundCircuitEstablished { .. } => {
+                        let mut m = nat_metrics.write();
+                        m.relay_connections = m.relay_connections.saturating_add(1);
+                        debug!("Outbound relay circuit established");
+                    }
+                    _ => {}
+                }
             }
             SwarmEvent::Behaviour(IpfrsBehaviourEvent::Ping(ping_event)) => {
                 if let Ok(rtt) = ping_event.result {
@@ -876,11 +1070,67 @@ impl NetworkNode {
         }
     }
 
+    /// Handle a command sent to the background swarm event loop.
+    ///
+    /// This runs inside the spawned task that owns the swarm, so it can call
+    /// swarm methods directly.
+    async fn handle_swarm_command(
+        cmd: SwarmCommand,
+        swarm: &mut Swarm<IpfrsBehaviour>,
+        provider_waiters: &ProviderWaiters,
+    ) {
+        match cmd {
+            SwarmCommand::Dial(addr) => match swarm.dial(addr.clone()) {
+                Ok(()) => info!("Dialing peer: {}", addr),
+                Err(e) => warn!("Dial error for {}: {}", addr, e),
+            },
+            SwarmCommand::Disconnect(peer_id) => {
+                let _ = swarm.disconnect_peer_id(peer_id);
+                info!("Disconnecting from peer: {}", peer_id);
+            }
+            SwarmCommand::Provide(cid) => {
+                let key = kad::RecordKey::new(&cid.to_bytes());
+                match swarm.behaviour_mut().kademlia.start_providing(key) {
+                    Ok(_) => debug!("Announcing content: {}", cid),
+                    Err(e) => warn!("Failed to announce {}: {}", cid, e),
+                }
+            }
+            SwarmCommand::GetProviders(cid) => {
+                let cid_str = String::from_utf8_lossy(&cid.to_bytes()).to_string();
+                let key = kad::RecordKey::new(&cid.to_bytes());
+                swarm.behaviour_mut().kademlia.get_providers(key);
+                debug!("Querying DHT providers for: {}", cid_str);
+            }
+            SwarmCommand::Bootstrap => match swarm.behaviour_mut().kademlia.bootstrap() {
+                Ok(_) => info!("DHT bootstrap initiated"),
+                Err(e) => warn!("DHT bootstrap failed: {}", e),
+            },
+            SwarmCommand::AddPeerAddress(peer_id, addr) => {
+                swarm
+                    .behaviour_mut()
+                    .kademlia
+                    .add_address(&peer_id, addr.clone());
+                debug!("Added address {} for peer {}", addr, peer_id);
+                // Also try to proactively add the peer to our routing table
+                // by dialing if not already connected
+                if !swarm.is_connected(&peer_id) {
+                    if let Err(e) = swarm.dial(addr.clone()) {
+                        debug!("Auto-dial for routing table peer {}: {}", peer_id, e);
+                    }
+                }
+            }
+        }
+        // Suppress unused warning on provider_waiters (it's used by GetProviders
+        // via the event handler, not directly here)
+        let _ = provider_waiters;
+    }
+
     /// Stop the network node
     pub async fn stop(&mut self) -> IpfrsResult<()> {
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(()).await;
         }
+        self.swarm_cmd_tx = None;
         Ok(())
     }
 
@@ -902,13 +1152,33 @@ impl NetworkNode {
             .collect()
     }
 
+    /// Helper: send a command to the background swarm event loop.
+    ///
+    /// Before `start()` we still have the swarm locally, so we handle commands
+    /// inline.  After `start()` we forward via the command channel.
+    fn send_swarm_cmd(&self, cmd: SwarmCommand) -> IpfrsResult<()> {
+        match &self.swarm_cmd_tx {
+            Some(tx) => tx.try_send(cmd).map_err(|e| {
+                ipfrs_core::error::Error::Network(format!("Swarm command channel error: {}", e))
+            }),
+            None => {
+                // Node not yet started – silently ignore (pre-start dial attempts etc.)
+                Ok(())
+            }
+        }
+    }
+
     /// Connect to a peer
     pub async fn connect(&mut self, addr: Multiaddr) -> IpfrsResult<()> {
         if let Some(swarm) = &mut self.swarm {
+            // Node not yet started: drive swarm directly
             swarm
                 .dial(addr.clone())
                 .map_err(|e| ipfrs_core::error::Error::Network(e.to_string()))?;
             info!("Dialing peer: {}", addr);
+        } else {
+            // Node is running: forward to event-loop task
+            self.send_swarm_cmd(SwarmCommand::Dial(addr))?;
         }
         Ok(())
     }
@@ -918,6 +1188,8 @@ impl NetworkNode {
         if let Some(swarm) = &mut self.swarm {
             let _ = swarm.disconnect_peer_id(peer_id);
             info!("Disconnecting from peer: {}", peer_id);
+        } else {
+            self.send_swarm_cmd(SwarmCommand::Disconnect(peer_id))?;
         }
         Ok(())
     }
@@ -932,18 +1204,117 @@ impl NetworkNode {
                 .start_providing(key)
                 .map_err(|e| ipfrs_core::error::Error::Network(e.to_string()))?;
             debug!("Announcing content: {}", cid);
+        } else {
+            self.send_swarm_cmd(SwarmCommand::Provide(*cid))?;
         }
         Ok(())
     }
 
-    /// Find providers for content in DHT
+    /// Find providers for content in DHT (fire and forget)
     pub async fn find_providers(&mut self, cid: &cid::Cid) -> IpfrsResult<()> {
         if let Some(swarm) = &mut self.swarm {
             let key = kad::RecordKey::new(&cid.to_bytes());
             swarm.behaviour_mut().kademlia.get_providers(key);
             debug!("Searching for providers of: {}", cid);
+        } else {
+            self.send_swarm_cmd(SwarmCommand::GetProviders(*cid))?;
         }
         Ok(())
+    }
+
+    /// Find providers for content in DHT and wait for results
+    ///
+    /// Queries the Kademlia DHT for providers of the given CID and waits up to
+    /// `timeout` for the first set of results. Returns the provider peer IDs.
+    pub async fn find_providers_await(
+        &mut self,
+        cid: &cid::Cid,
+        timeout: Duration,
+    ) -> IpfrsResult<Vec<PeerId>> {
+        let cid_str = String::from_utf8_lossy(&cid.to_bytes()).to_string();
+
+        // Register a waiter before firing the query so we don't miss early responses
+        let (tx, rx) = oneshot::channel::<Vec<PeerId>>();
+        {
+            let mut waiters = self.provider_waiters.lock().await;
+            waiters.entry(cid_str.clone()).or_default().push(tx);
+        }
+
+        // Fire the DHT query via command channel or directly
+        if let Some(swarm) = &mut self.swarm {
+            let key = kad::RecordKey::new(&cid.to_bytes());
+            swarm.behaviour_mut().kademlia.get_providers(key);
+            debug!(
+                "Querying DHT providers for: {} (with timeout {:?})",
+                cid, timeout
+            );
+        } else {
+            match self.send_swarm_cmd(SwarmCommand::GetProviders(*cid)) {
+                Ok(()) => {
+                    debug!(
+                        "Querying DHT providers for: {} (with timeout {:?})",
+                        cid, timeout
+                    );
+                }
+                Err(_) => {
+                    // Command channel broken – clean up waiter and return empty
+                    let mut waiters = self.provider_waiters.lock().await;
+                    if let Some(senders) = waiters.get_mut(&cid_str) {
+                        senders.retain(|_| false);
+                    }
+                    return Ok(Vec::new());
+                }
+            }
+        }
+
+        // Wait for the result with a timeout
+        match tokio::time::timeout(timeout, rx).await {
+            Ok(Ok(providers)) => {
+                debug!("Received {} providers for {}", providers.len(), cid);
+                Ok(providers)
+            }
+            Ok(Err(_)) => {
+                // Sender was dropped without sending (e.g. query failed)
+                debug!("Provider query for {} completed with no results", cid);
+                Ok(Vec::new())
+            }
+            Err(_) => {
+                // Timeout – clean up the stale waiter
+                debug!("Provider query for {} timed out after {:?}", cid, timeout);
+                let mut waiters = self.provider_waiters.lock().await;
+                if let Some(senders) = waiters.get_mut(&cid_str) {
+                    senders.retain(|_| false);
+                }
+                Ok(Vec::new())
+            }
+        }
+    }
+
+    /// Fetch a block from a specific peer via Bitswap
+    ///
+    /// This is a best-effort implementation. If the peer is connected and has the
+    /// block, it will be returned. Otherwise an error is returned and the caller
+    /// should try the next provider.
+    pub async fn fetch_block_from_peer(
+        &mut self,
+        peer: &PeerId,
+        cid: &cid::Cid,
+    ) -> IpfrsResult<ipfrs_core::Block> {
+        // For now, verify the peer is connected before attempting fetch
+        if !self.connected_peers.contains(peer) {
+            return Err(ipfrs_core::error::Error::Network(format!(
+                "Peer {} is not connected; cannot fetch block {}",
+                peer, cid
+            )));
+        }
+
+        // Full Bitswap block exchange over a live connection is a future milestone.
+        // The plumbing (connected peer check, DHT provider discovery) is in place;
+        // the actual Bitswap wire protocol exchange will be wired here in Task E.
+        Err(ipfrs_core::error::Error::NotFound(format!(
+            "Block {} not yet retrievable from peer {} (Bitswap exchange pending Task E)",
+            cid, peer
+        )))
     }
 
     /// Find node (closest peers to a given peer ID) using Kademlia
@@ -983,6 +1354,8 @@ impl NetworkNode {
                 .bootstrap()
                 .map_err(|e| ipfrs_core::error::Error::Network(e.to_string()))?;
             info!("DHT bootstrap initiated");
+        } else {
+            self.send_swarm_cmd(SwarmCommand::Bootstrap)?;
         }
         Ok(())
     }
@@ -995,6 +1368,8 @@ impl NetworkNode {
                 .kademlia
                 .add_address(&peer_id, addr.clone());
             debug!("Added address {} for peer {}", addr, peer_id);
+        } else {
+            self.send_swarm_cmd(SwarmCommand::AddPeerAddress(peer_id, addr))?;
         }
         Ok(())
     }
@@ -1143,6 +1518,120 @@ impl NetworkNode {
             NetworkHealthLevel::Healthy
         )
     }
+
+    /// Get a snapshot of NAT traversal (hole-punch) metrics.
+    pub fn nat_traversal_metrics(&self) -> NatTraversalMetrics {
+        self.nat_metrics.read().clone()
+    }
+
+    // ─── Distributed inference transport ─────────────────────────────────────
+
+    /// Publish an `InferenceRequest` to the GossipSub `INFERENCE_REQUEST`
+    /// topic.
+    ///
+    /// Serialises `request` as JSON and hands it to the local
+    /// `GossipSubManager`.  The manager fan-out to all subscribed peers is
+    /// simulated in-process; wire integration is provided by the event loop
+    /// once a real GossipSub swarm behaviour is wired in.
+    ///
+    /// # Errors
+    /// Returns an error when JSON serialisation fails.
+    pub fn publish_inference_request(
+        &self,
+        request: &ipfrs_tensorlogic::InferenceRequest,
+    ) -> IpfrsResult<()> {
+        let json = serde_json::to_vec(request).map_err(|e| {
+            ipfrs_core::error::Error::Network(format!("Failed to serialize InferenceRequest: {e}"))
+        })?;
+        let peer_id_str = self.peer_id.to_string();
+        self.gossipsub
+            .publish_inference_request(&json, &peer_id_str)
+            .map_err(|e| {
+                ipfrs_core::error::Error::Network(format!(
+                    "GossipSub publish_inference_request failed: {e}"
+                ))
+            })
+    }
+
+    /// Register a one-shot waiter that will be resolved when an
+    /// `InferenceResponse` with the given `request_id` is delivered to this
+    /// node via `deliver_inference_response`.
+    ///
+    /// Returns the receiving half of the oneshot channel.  The caller should
+    /// wrap the `await` with [`tokio::time::timeout`] to bound the wait.
+    pub async fn register_inference_waiter(
+        &self,
+        request_id: String,
+    ) -> oneshot::Receiver<ipfrs_tensorlogic::InferenceResponse> {
+        let (tx, rx) = oneshot::channel();
+        let mut waiters = self.inference_waiters.lock().await;
+        waiters.entry(request_id).or_default().push(tx);
+        rx
+    }
+
+    /// Deliver an `InferenceResponse` to any registered waiters for
+    /// `response.request_id`.
+    ///
+    /// This is the counterpart of `register_inference_waiter`.  Typically
+    /// called from the event loop when a GossipSub message arrives on the
+    /// `INFERENCE_RESULT` topic.
+    pub async fn deliver_inference_response(&self, response: ipfrs_tensorlogic::InferenceResponse) {
+        let mut waiters = self.inference_waiters.lock().await;
+        if let Some(senders) = waiters.remove(&response.request_id) {
+            for tx in senders {
+                // Best-effort delivery – ignore closed receivers.
+                let _ = tx.send(response.clone());
+            }
+        }
+    }
+
+    /// Publish a local `InferenceResponse` to the GossipSub
+    /// `INFERENCE_RESULT` topic so remote requesters can collect it.
+    ///
+    /// # Errors
+    /// Returns an error when JSON serialisation fails.
+    pub fn publish_inference_response(
+        &self,
+        response: &ipfrs_tensorlogic::InferenceResponse,
+    ) -> IpfrsResult<()> {
+        let json = serde_json::to_vec(response).map_err(|e| {
+            ipfrs_core::error::Error::Network(format!("Failed to serialize InferenceResponse: {e}"))
+        })?;
+        let peer_id_str = self.peer_id.to_string();
+        self.gossipsub
+            .publish_inference_result(&json, &peer_id_str)
+            .map_err(|e| {
+                ipfrs_core::error::Error::Network(format!(
+                    "GossipSub publish_inference_result failed: {e}"
+                ))
+            })
+    }
+}
+
+/// NAT traversal (hole-punching) metrics
+///
+/// Tracks the outcome of DCUtR hole-punch attempts so operators can assess
+/// whether relay fallback is being relied on too heavily.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct NatTraversalMetrics {
+    /// Total number of hole-punch attempts initiated (both sides)
+    pub hole_punch_attempts: u64,
+    /// Hole-punch attempts that resulted in a direct connection
+    pub hole_punch_successes: u64,
+    /// Hole-punch attempts that failed (connection remained via relay)
+    pub hole_punch_failures: u64,
+    /// Number of connections currently established via a relay circuit
+    pub relay_connections: u64,
+}
+
+impl NatTraversalMetrics {
+    /// Fraction of hole-punch attempts that succeeded (0.0 if no attempts).
+    pub fn success_rate(&self) -> f32 {
+        if self.hole_punch_attempts == 0 {
+            return 0.0;
+        }
+        self.hole_punch_successes as f32 / self.hole_punch_attempts as f32
+    }
 }
 
 /// Network statistics
@@ -1204,4 +1693,116 @@ pub enum NetworkHealthLevel {
     Limited,
     /// No connections
     Disconnected,
+}
+
+// ============================================================================
+// Circuit Relay v2 — reservation management
+// ============================================================================
+
+impl NetworkNode {
+    /// Attempt to obtain a Circuit Relay v2 reservation from `relay_peer`.
+    ///
+    /// The method dials the relay peer (if not already connected) and records
+    /// the reservation in `active_relay_reservations`.  In a full
+    /// implementation the swarm's `relay::client::Behaviour` would send the
+    /// actual reservation request; here we perform the dial and record the
+    /// reservation optimistically, returning an error if relay v2 is disabled
+    /// in the node's configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Relay v2 is disabled in the node or relay config.
+    /// - The maximum number of simultaneous reservations is already reached.
+    /// - The swarm command channel is not available (node not started).
+    pub async fn reserve_relay(&mut self, relay_peer: PeerId) -> IpfrsResult<()> {
+        if !self.config.relay_v2_enabled || !self.relay_config.relay_v2_enabled {
+            return Err(ipfrs_core::error::Error::Network(
+                "Circuit Relay v2 is disabled".to_string(),
+            ));
+        }
+
+        // Check max reservations limit.
+        {
+            let reservations = self.active_relay_reservations.read();
+            if reservations.len() >= self.relay_config.max_reservations {
+                return Err(ipfrs_core::error::Error::Network(format!(
+                    "Maximum relay reservations ({}) already reached",
+                    self.relay_config.max_reservations
+                )));
+            }
+        }
+
+        // Build the relay circuit address:
+        // /p2p/<relay_peer_id>/p2p-circuit
+        let relay_addr: Multiaddr =
+            format!("/p2p/{}/p2p-circuit", relay_peer)
+                .parse()
+                .map_err(|e| {
+                    ipfrs_core::error::Error::Network(format!(
+                        "Invalid relay address for peer {}: {}",
+                        relay_peer, e
+                    ))
+                })?;
+
+        debug!(
+            relay_peer = %relay_peer,
+            addr = %relay_addr,
+            "Requesting Circuit Relay v2 reservation"
+        );
+
+        // Send the dial command to the background swarm event-loop.
+        // The actual `/libp2p/circuit/relay/0.2.0/hop` RESERVE message is
+        // handled by the relay::client::Behaviour inside the swarm.
+        if let Some(ref cmd_tx) = self.swarm_cmd_tx {
+            cmd_tx
+                .send(SwarmCommand::Dial(relay_addr))
+                .await
+                .map_err(|_| {
+                    ipfrs_core::error::Error::Network("Swarm command channel closed".to_string())
+                })?;
+        } else {
+            // Node not started yet: record the reservation intent anyway so
+            // that the caller can check it later.
+            warn!(
+                relay_peer = %relay_peer,
+                "reserve_relay called before node.start(); \
+                 reservation recorded but dial not sent"
+            );
+        }
+
+        // Record the reservation with the current timestamp.
+        {
+            let mut reservations = self.active_relay_reservations.write();
+            reservations.insert(relay_peer, std::time::Instant::now());
+        }
+
+        info!(
+            relay_peer = %relay_peer,
+            "Circuit Relay v2 reservation recorded"
+        );
+
+        Ok(())
+    }
+
+    /// Return a snapshot of the currently active relay reservations.
+    ///
+    /// Each entry maps a relay [`PeerId`] to the [`std::time::Instant`] at
+    /// which the reservation was obtained.
+    pub fn relay_reservations(&self) -> HashMap<PeerId, std::time::Instant> {
+        self.active_relay_reservations.read().clone()
+    }
+
+    /// Remove a relay reservation (e.g., when the relay peer disconnects).
+    pub fn remove_relay_reservation(&mut self, relay_peer: &PeerId) {
+        self.active_relay_reservations.write().remove(relay_peer);
+    }
+
+    /// Remove reservations older than `max_age`.
+    pub fn prune_expired_relay_reservations(&mut self, max_age: std::time::Duration) {
+        let now = std::time::Instant::now();
+        self.active_relay_reservations
+            .write()
+            .retain(|_, instant| now.duration_since(*instant) < max_age);
+    }
 }

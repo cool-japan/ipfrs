@@ -10,6 +10,7 @@ use crate::dht::{
     ReplicationStrategy, SemanticDHTConfig, SemanticDHTStats, SemanticPeer, SemanticRoutingTable,
 };
 use crate::hnsw::{SearchResult, VectorIndex};
+use futures::future;
 use ipfrs_core::{Cid, Result};
 use ipfrs_network::libp2p::PeerId;
 use parking_lot::RwLock;
@@ -77,9 +78,12 @@ impl SemanticDHTNode {
         // Determine replica peers based on strategy
         let replica_peers = self.select_replica_peers(embedding).await?;
 
-        // TODO: Send replication requests to peers
-        // For now, just log the intended replicas
-        tracing::debug!("Would replicate {:?} to {} peers", cid, replica_peers.len());
+        // Send replication requests to up to replication_factor nearest peers.
+        for peer in replica_peers {
+            if let Err(e) = self.replicate_to_peer(&peer, cid, embedding).await {
+                tracing::warn!("Replication to {:?} failed: {}", peer, e);
+            }
+        }
 
         Ok(())
     }
@@ -148,18 +152,25 @@ impl SemanticDHTNode {
 
         let nearest_peers = self.routing_table.find_nearest_peers_balanced(embedding, 3); // Top 3 peers
 
-        let all_results = Vec::new();
+        let mut all_results = Vec::new();
 
-        for (peer_id, _distance) in nearest_peers {
-            // TODO: Send query to remote peer
-            // For now, simulate with local search
-            if peer_id != self.local_peer_id {
-                tracing::debug!("Would query peer {:?} at hop {}", peer_id, hop);
+        // Query nearest peers in parallel and collect results.
+        let peer_futures: Vec<_> = nearest_peers
+            .iter()
+            .filter(|(peer_id, _)| *peer_id != self.local_peer_id)
+            .map(|(peer_id, _)| {
+                let peer_id = *peer_id;
+                async move {
+                    tracing::debug!("Querying peer {:?} at hop {}", peer_id, hop);
+                    self.query_peer(&peer_id, embedding).await
+                }
+            })
+            .collect();
 
-                // In real implementation:
-                // let response = self.send_query_to_peer(peer_id, query).await?;
-                // all_results.extend(response.results);
-            }
+        let results = future::join_all(peer_futures).await;
+        // Flatten non-empty result sets from peers that responded.
+        for peer_results in results.into_iter().flatten() {
+            all_results.extend(peer_results);
         }
 
         Ok(all_results)
@@ -191,7 +202,11 @@ impl SemanticDHTNode {
         }
 
         // Sort by score and take top k
-        deduplicated.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
+        deduplicated.sort_by(|a, b| {
+            a.score
+                .partial_cmp(&b.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         deduplicated.into_iter().take(k).collect()
     }
 
@@ -386,6 +401,46 @@ impl SemanticDHTNode {
         Ok(synced_count)
     }
 
+    /// Replicate a (key, value) pair to a remote peer.
+    ///
+    /// When no active transport is wired up (current state) this is a no-op
+    /// that logs the intent and returns `Ok(())`.  A real implementation would
+    /// serialise the key/value pair and push it over the peer-to-peer channel.
+    async fn replicate_to_peer(
+        &self,
+        peer: &PeerId,
+        key: &Cid,
+        value: &[f32],
+    ) -> ipfrs_core::Result<()> {
+        // No active transport — log and return Ok so that callers continue.
+        tracing::debug!(
+            "replicate_to_peer: peer={:?} key={} value_len={} (no transport)",
+            peer,
+            key,
+            value.len()
+        );
+        Ok(())
+    }
+
+    /// Query a remote peer for nearest neighbours to `embedding`.
+    ///
+    /// Returns `None` when no active transport is available.  A real
+    /// implementation would serialise the query vector, send it over the
+    /// network, and deserialise the returned [`SearchResult`] list.
+    async fn query_peer(
+        &self,
+        peer: &PeerId,
+        embedding: &[f32],
+    ) -> Option<Vec<crate::hnsw::SearchResult>> {
+        // No active transport — return None so the caller falls back gracefully.
+        tracing::debug!(
+            "query_peer: peer={:?} embedding_len={} (no transport)",
+            peer,
+            embedding.len()
+        );
+        None
+    }
+
     /// Get synchronization statistics
     pub fn sync_stats(&self) -> SyncStats {
         SyncStats {
@@ -416,7 +471,8 @@ mod tests {
     async fn test_dht_node_creation() {
         let config = SemanticDHTConfig::default();
         let peer_id = PeerId::random();
-        let index = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200).unwrap();
+        let index = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200)
+            .expect("test: VectorIndex creation should succeed");
 
         let node = SemanticDHTNode::new(config, peer_id, index);
         let stats = node.stats();
@@ -429,7 +485,8 @@ mod tests {
     async fn test_local_insert_and_search() {
         let config = SemanticDHTConfig::default();
         let peer_id = PeerId::random();
-        let index = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200).unwrap();
+        let index = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200)
+            .expect("test: VectorIndex creation should succeed");
 
         let node = SemanticDHTNode::new(config, peer_id, index);
 
@@ -440,12 +497,16 @@ mod tests {
             let hash = Code::Sha2_256.digest(data.as_bytes());
             let cid = Cid::new_v1(0x55, hash);
             let embedding = vec![i as f32 * 0.1; 768];
-            node.insert(&cid, &embedding).await.unwrap();
+            node.insert(&cid, &embedding)
+                .await
+                .expect("test: node insert should succeed");
         }
 
         // Search
         let query = vec![0.5; 768];
-        let results = node.search_local(&query, 5).unwrap();
+        let results = node
+            .search_local(&query, 5)
+            .expect("test: local search should succeed");
 
         assert!(!results.is_empty());
         assert!(results.len() <= 5);
@@ -455,7 +516,8 @@ mod tests {
     async fn test_add_peers() {
         let config = SemanticDHTConfig::default();
         let peer_id = PeerId::random();
-        let index = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200).unwrap();
+        let index = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200)
+            .expect("test: VectorIndex creation should succeed");
 
         let node = SemanticDHTNode::new(config, peer_id, index);
 
@@ -464,7 +526,7 @@ mod tests {
             let peer_id = PeerId::random();
             let embedding = vec![i as f32 * 0.2; 768];
             let peer = SemanticPeer::new(peer_id, embedding);
-            node.add_peer(peer).unwrap();
+            node.add_peer(peer).expect("test: add_peer should succeed");
         }
 
         let stats = node.stats();
@@ -475,7 +537,8 @@ mod tests {
     async fn test_clustering() {
         let config = SemanticDHTConfig::default();
         let peer_id = PeerId::random();
-        let index = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200).unwrap();
+        let index = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200)
+            .expect("test: VectorIndex creation should succeed");
 
         let node = SemanticDHTNode::new(config, peer_id, index);
 
@@ -485,11 +548,12 @@ mod tests {
             let mut embedding = vec![0.0; 768];
             embedding[0] = if i < 10 { 1.0 } else { -1.0 };
             let peer = SemanticPeer::new(peer_id, embedding);
-            node.add_peer(peer).unwrap();
+            node.add_peer(peer).expect("test: add_peer should succeed");
         }
 
         // Update clusters
-        node.update_clusters(2).unwrap();
+        node.update_clusters(2)
+            .expect("test: update_clusters should succeed");
 
         let stats = node.stats();
         assert!(stats.num_clusters > 0);
@@ -503,8 +567,10 @@ mod tests {
         let peer_id1 = PeerId::random();
         let peer_id2 = PeerId::random();
 
-        let index1 = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200).unwrap();
-        let index2 = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200).unwrap();
+        let index1 = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200)
+            .expect("test: VectorIndex creation should succeed");
+        let index2 = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200)
+            .expect("test: VectorIndex creation should succeed");
 
         let node1 = SemanticDHTNode::new(config.clone(), peer_id1, index1);
         let node2 = SemanticDHTNode::new(config, peer_id2, index2);
@@ -516,7 +582,10 @@ mod tests {
             let hash = Code::Sha2_256.digest(data.as_bytes());
             let cid = Cid::new_v1(0x55, hash);
             let embedding = vec![i as f32 * 0.1; 768];
-            node1.insert(&cid, &embedding).await.unwrap();
+            node1
+                .insert(&cid, &embedding)
+                .await
+                .expect("test: node insert should succeed");
             cids1.push(cid);
         }
 
@@ -527,7 +596,10 @@ mod tests {
             let hash = Code::Sha2_256.digest(data.as_bytes());
             let cid = Cid::new_v1(0x55, hash);
             let embedding = vec![i as f32 * 0.1; 768];
-            node2.insert(&cid, &embedding).await.unwrap();
+            node2
+                .insert(&cid, &embedding)
+                .await
+                .expect("test: node insert should succeed");
             cids2.push(cid);
         }
 
@@ -548,7 +620,10 @@ mod tests {
         assert_eq!(delta.len(), 5); // All of node1's entries are missing from node2
 
         // Apply delta (in real implementation, this would fetch and insert)
-        let synced_count = node2.apply_sync_delta(delta).await.unwrap();
+        let synced_count = node2
+            .apply_sync_delta(delta)
+            .await
+            .expect("test: apply_sync_delta should succeed");
         assert_eq!(synced_count, 5);
 
         // Check sync stats
@@ -564,8 +639,10 @@ mod tests {
         let peer_id1 = PeerId::random();
         let peer_id2 = PeerId::random();
 
-        let index1 = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200).unwrap();
-        let index2 = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200).unwrap();
+        let index1 = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200)
+            .expect("test: VectorIndex creation should succeed");
+        let index2 = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200)
+            .expect("test: VectorIndex creation should succeed");
 
         let node1 = SemanticDHTNode::new(config.clone(), peer_id1, index1);
         let node2 = SemanticDHTNode::new(config, peer_id2, index2);
@@ -577,7 +654,10 @@ mod tests {
             let hash = Code::Sha2_256.digest(data.as_bytes());
             let cid = Cid::new_v1(0x55, hash);
             let embedding = vec![i as f32 * 0.1; 768];
-            node1.insert(&cid, &embedding).await.unwrap();
+            node1
+                .insert(&cid, &embedding)
+                .await
+                .expect("test: node insert should succeed");
             entries_to_sync.push((cid, embedding));
         }
 
@@ -591,7 +671,7 @@ mod tests {
         let synced_count = node2
             .apply_sync_delta_with_embeddings(entries_to_sync.clone())
             .await
-            .unwrap();
+            .expect("test: apply_sync_delta_with_embeddings should succeed");
         assert_eq!(synced_count, 5);
 
         // Check that node2 now has the entries
@@ -607,7 +687,51 @@ mod tests {
 
         // Search should work on node2 now
         let query = vec![0.15; 768];
-        let results = node2.search_local(&query, 3).unwrap();
+        let results = node2
+            .search_local(&query, 3)
+            .expect("test: local search after sync should succeed");
         assert!(!results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_dht_replication_stub() {
+        use multihash_codetable::{Code, MultihashDigest};
+
+        let config = SemanticDHTConfig::default();
+        let peer_id = PeerId::random();
+        let index = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200)
+            .expect("test: VectorIndex creation should succeed");
+        let node = SemanticDHTNode::new(config, peer_id, index);
+
+        let hash = Code::Sha2_256.digest(b"replication_stub_test");
+        let cid = Cid::new_v1(0x55, hash);
+        let embedding = vec![0.1_f32; 768];
+
+        // replicate_to_peer should succeed (no-op stub) without any transport wired up.
+        let target_peer = PeerId::random();
+        let result = node.replicate_to_peer(&target_peer, &cid, &embedding).await;
+        assert!(
+            result.is_ok(),
+            "replicate_to_peer stub should return Ok(())"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_dht_remote_query_stub() {
+        let config = SemanticDHTConfig::default();
+        let peer_id = PeerId::random();
+        let index = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200)
+            .expect("test: VectorIndex creation should succeed");
+        let node = SemanticDHTNode::new(config, peer_id, index);
+
+        let embedding = vec![0.5_f32; 768];
+        let remote_peer = PeerId::random();
+
+        // query_peer should return None when no transport is available.
+        let result = node.query_peer(&remote_peer, &embedding).await;
+        assert!(
+            result.is_none(),
+            "query_peer stub should return None without a transport"
+        );
     }
 }

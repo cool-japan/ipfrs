@@ -186,7 +186,7 @@ impl DhtProvider for SimpleDhtProvider {
     }
 
     fn version(&self) -> &str {
-        "0.1.0"
+        "0.2.0"
     }
 
     fn capabilities(&self) -> DhtCapabilities {

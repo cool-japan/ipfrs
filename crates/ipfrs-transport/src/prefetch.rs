@@ -204,9 +204,9 @@ impl PrefetchPredictor {
 
         // Check if this was prefetched (hit)
         {
-            let mut prefetched = self.prefetched.write().unwrap();
+            let mut prefetched = self.prefetched.write().unwrap_or_else(|e| e.into_inner());
             if let Some(prefetch_time) = prefetched.remove(cid) {
-                let mut stats = self.stats.write().unwrap();
+                let mut stats = self.stats.write().unwrap_or_else(|e| e.into_inner());
                 stats.hits += 1;
                 let saved_ms = now.duration_since(prefetch_time).as_millis() as u64;
                 stats.saved_latency_ms += saved_ms;
@@ -216,7 +216,10 @@ impl PrefetchPredictor {
 
         // Update access history
         {
-            let mut history = self.access_history.write().unwrap();
+            let mut history = self
+                .access_history
+                .write()
+                .unwrap_or_else(|e| e.into_inner());
             history.push_back((*cid, now));
 
             // Limit history size
@@ -231,8 +234,11 @@ impl PrefetchPredictor {
 
     /// Update access patterns based on recent history
     fn update_patterns(&self, current: &Cid, now: Instant) {
-        let history = self.access_history.read().unwrap();
-        let mut patterns = self.patterns.write().unwrap();
+        let history = self
+            .access_history
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut patterns = self.patterns.write().unwrap_or_else(|e| e.into_inner());
 
         // Look for patterns in recent history (within 1 second)
         let recent_window = Duration::from_secs(1);
@@ -265,7 +271,7 @@ impl PrefetchPredictor {
 
     /// Record DAG structure
     pub fn record_dag_links(&self, parent: &Cid, children: Vec<Cid>, depth: usize) {
-        let mut dag_links = self.dag_links.write().unwrap();
+        let mut dag_links = self.dag_links.write().unwrap_or_else(|e| e.into_inner());
         dag_links.insert(
             *parent,
             DagLink {
@@ -289,7 +295,7 @@ impl PrefetchPredictor {
 
     /// Predict based on DAG children
     fn predict_dag_children(&self, current: &Cid) -> Vec<Prediction> {
-        let dag_links = self.dag_links.read().unwrap();
+        let dag_links = self.dag_links.read().unwrap_or_else(|e| e.into_inner());
 
         if let Some(link) = dag_links.get(current) {
             link.children
@@ -308,7 +314,7 @@ impl PrefetchPredictor {
 
     /// Predict based on access patterns
     fn predict_from_patterns(&self, current: &Cid) -> Vec<Prediction> {
-        let patterns = self.patterns.read().unwrap();
+        let patterns = self.patterns.read().unwrap_or_else(|e| e.into_inner());
 
         if let Some(pattern_list) = patterns.get(current) {
             let total_count: usize = pattern_list.iter().map(|p| p.count).sum();
@@ -344,7 +350,7 @@ impl PrefetchPredictor {
         queue.push_back((*current, 0));
         visited.insert(*current);
 
-        let dag_links = self.dag_links.read().unwrap();
+        let dag_links = self.dag_links.read().unwrap_or_else(|e| e.into_inner());
 
         while let Some((cid, depth)) = queue.pop_front() {
             if depth >= self.config.max_depth {
@@ -371,7 +377,7 @@ impl PrefetchPredictor {
 
     /// Adaptive prediction combining multiple strategies
     fn predict_adaptive(&self, current: &Cid) -> Vec<Prediction> {
-        let stats = self.stats.read().unwrap();
+        let stats = self.stats.read().unwrap_or_else(|e| e.into_inner());
         let hit_rate = stats.hit_rate;
         drop(stats);
 
@@ -385,19 +391,19 @@ impl PrefetchPredictor {
 
     /// Record prefetch
     pub fn record_prefetch(&self, cid: &Cid) {
-        let mut prefetched = self.prefetched.write().unwrap();
+        let mut prefetched = self.prefetched.write().unwrap_or_else(|e| e.into_inner());
         prefetched.insert(*cid, Instant::now());
 
-        let mut stats = self.stats.write().unwrap();
+        let mut stats = self.stats.write().unwrap_or_else(|e| e.into_inner());
         stats.prefetch_requests += 1;
     }
 
     /// Record prefetch miss (prefetched but not used)
     pub fn record_miss(&self, cid: &Cid, bytes: u64) {
-        let mut prefetched = self.prefetched.write().unwrap();
+        let mut prefetched = self.prefetched.write().unwrap_or_else(|e| e.into_inner());
         prefetched.remove(cid);
 
-        let mut stats = self.stats.write().unwrap();
+        let mut stats = self.stats.write().unwrap_or_else(|e| e.into_inner());
         stats.misses += 1;
         stats.wasted_bytes += bytes;
         stats.update_hit_rate();
@@ -409,7 +415,7 @@ impl PrefetchPredictor {
 
         // Clean up old prefetched records
         {
-            let mut prefetched = self.prefetched.write().unwrap();
+            let mut prefetched = self.prefetched.write().unwrap_or_else(|e| e.into_inner());
             let mut to_remove = Vec::new();
             let mut total_missed = 0u64;
 
@@ -425,7 +431,7 @@ impl PrefetchPredictor {
             }
 
             if total_missed > 0 {
-                let mut stats = self.stats.write().unwrap();
+                let mut stats = self.stats.write().unwrap_or_else(|e| e.into_inner());
                 stats.misses += total_missed;
                 stats.update_hit_rate();
             }
@@ -433,7 +439,7 @@ impl PrefetchPredictor {
 
         // Clean up old patterns
         {
-            let mut patterns = self.patterns.write().unwrap();
+            let mut patterns = self.patterns.write().unwrap_or_else(|e| e.into_inner());
             let max_pattern_age = Duration::from_secs(300); // 5 minutes
 
             for pattern_list in patterns.values_mut() {
@@ -446,7 +452,7 @@ impl PrefetchPredictor {
 
     /// Get statistics
     pub fn stats(&self) -> PrefetchStats {
-        self.stats.read().unwrap().clone()
+        self.stats.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Update configuration
@@ -471,7 +477,10 @@ mod tests {
         let cid = Cid::default();
         predictor.record_access(&cid);
 
-        let history = predictor.access_history.read().unwrap();
+        let history = predictor
+            .access_history
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
         assert_eq!(history.len(), 1);
     }
 
@@ -725,7 +734,10 @@ mod tests {
             predictor.record_access(&cid);
         }
 
-        let history = predictor.access_history.read().unwrap();
+        let history = predictor
+            .access_history
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
         assert!(history.len() <= 5);
     }
 

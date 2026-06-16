@@ -388,7 +388,9 @@ mod tests {
         };
         let manager = BackgroundModeManager::new(config);
 
-        manager.pause().unwrap();
+        manager
+            .pause()
+            .expect("test: pause should succeed from Active state");
         assert!(!manager.should_allow_dht_query());
     }
 
@@ -400,7 +402,9 @@ mod tests {
         };
         let manager = BackgroundModeManager::new(config);
 
-        manager.pause().unwrap();
+        manager
+            .pause()
+            .expect("test: pause should succeed from Active state");
         assert!(manager.should_allow_dht_query());
     }
 
@@ -413,7 +417,9 @@ mod tests {
     #[test]
     fn test_provider_announcements_in_paused_state() {
         let manager = BackgroundModeManager::new(BackgroundModeConfig::default());
-        manager.pause().unwrap();
+        manager
+            .pause()
+            .expect("test: pause should succeed from Active state");
         // Default config pauses announcements
         assert!(!manager.should_allow_provider_announcements());
     }
@@ -422,9 +428,15 @@ mod tests {
     fn test_statistics_tracking() {
         let manager = BackgroundModeManager::new(BackgroundModeConfig::default());
 
-        manager.pause().unwrap();
-        manager.resume().unwrap();
-        manager.pause().unwrap();
+        manager
+            .pause()
+            .expect("test: first pause should succeed from Active state");
+        manager
+            .resume()
+            .expect("test: resume should succeed from Paused state");
+        manager
+            .pause()
+            .expect("test: second pause should succeed from Active state");
 
         let stats = manager.stats();
         assert_eq!(stats.pause_count, 2);
@@ -471,8 +483,12 @@ mod tests {
     fn test_reset_stats() {
         let manager = BackgroundModeManager::new(BackgroundModeConfig::default());
 
-        manager.pause().unwrap();
-        manager.resume().unwrap();
+        manager
+            .pause()
+            .expect("test: pause should succeed from Active state");
+        manager
+            .resume()
+            .expect("test: resume should succeed from Paused state");
         manager.record_dht_query_skipped();
 
         manager.reset_stats();

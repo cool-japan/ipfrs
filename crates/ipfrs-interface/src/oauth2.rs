@@ -100,7 +100,7 @@ impl OAuth2Client {
             name,
             created_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("system time is after UNIX epoch")
                 .as_secs(),
         }
     }
@@ -153,7 +153,7 @@ impl AuthorizationCode {
     ) -> Self {
         let expires_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system time is after UNIX epoch")
             .as_secs()
             + ttl.as_secs();
 
@@ -172,7 +172,7 @@ impl AuthorizationCode {
     pub fn is_expired(&self) -> bool {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system time is after UNIX epoch")
             .as_secs();
         now > self.expires_at
     }
@@ -234,7 +234,7 @@ impl AccessToken {
             user_id,
             created_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("system time is after UNIX epoch")
                 .as_secs(),
         }
     }
@@ -242,7 +242,7 @@ impl AccessToken {
     pub fn is_expired(&self) -> bool {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system time is after UNIX epoch")
             .as_secs();
         now > self.created_at + self.expires_in
     }
@@ -267,7 +267,7 @@ impl RefreshToken {
             scopes,
             created_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("system time is after UNIX epoch")
                 .as_secs(),
         }
     }
@@ -762,7 +762,7 @@ mod tests {
             user_id: "user-id".to_string(),
             expires_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("system time is after UNIX epoch")
                 .as_secs()
                 - 1, // Expired 1 second ago
             code_challenge: None,
@@ -784,7 +784,12 @@ mod tests {
 
         let retrieved = server.get_client(&client.client_id);
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().name, "test-client");
+        assert_eq!(
+            retrieved
+                .expect("test: registered client should be retrievable by ID")
+                .name,
+            "test-client"
+        );
     }
 
     #[test]
@@ -807,7 +812,7 @@ mod tests {
                 None,
                 None,
             )
-            .unwrap();
+            .expect("test: authorization code grant should succeed");
 
         assert!(!auth_code.code.is_empty());
         assert_eq!(auth_code.user_id, "user-123");
@@ -829,7 +834,7 @@ mod tests {
                 &client.client_secret,
                 vec![Scope::new("read")],
             )
-            .unwrap();
+            .expect("test: client credentials grant should succeed");
 
         assert!(!token.token.is_empty());
         assert_eq!(token.token_type, TokenType::Bearer);
@@ -879,7 +884,7 @@ mod tests {
                 &client.client_secret,
                 vec![Scope::new("read")],
             )
-            .unwrap();
+            .expect("test: client credentials grant should succeed for token validation");
 
         // Token should be valid
         let validated = server.validate_token(&token.token);

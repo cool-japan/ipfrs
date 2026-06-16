@@ -1,8 +1,9 @@
 //! Benchmarks for semantic search operations
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use ipfrs::{Node, NodeConfig, QueryFilter};
 use ipfrs_semantic::{DistanceMetric, RouterConfig};
+use std::hint::black_box;
 use tokio::runtime::Runtime;
 
 /// Generate a random embedding vector
@@ -35,6 +36,7 @@ fn bench_semantic_index(c: &mut Criterion) {
                     ef_construction: 200,
                     ef_search: 50,
                     cache_size: 1000,
+                    ..RouterConfig::default()
                 });
 
                 let mut node = Node::new(config).unwrap();
@@ -73,6 +75,7 @@ fn bench_semantic_search(c: &mut Criterion) {
             ef_construction: 200,
             ef_search: 50,
             cache_size: 1000,
+            ..RouterConfig::default()
         });
 
         let mut node = Node::new(config).unwrap();
@@ -124,6 +127,7 @@ fn bench_filtered_search(c: &mut Criterion) {
         ef_construction: 200,
         ef_search: 50,
         cache_size: 1000,
+        ..RouterConfig::default()
     });
 
     let mut node = rt.block_on(async {
@@ -178,6 +182,7 @@ fn bench_semantic_stats(c: &mut Criterion) {
             ef_construction: 200,
             ef_search: 50,
             cache_size: 1000,
+            ..RouterConfig::default()
         });
 
         let mut node = rt.block_on(async {
@@ -195,10 +200,8 @@ fn bench_semantic_stats(c: &mut Criterion) {
         });
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _size| {
-            b.to_async(&rt).iter(|| async {
-                let stats = black_box(node.semantic_stats().unwrap());
-                stats
-            });
+            b.to_async(&rt)
+                .iter(|| async { black_box(node.semantic_stats().unwrap()) });
         });
 
         rt.block_on(async {

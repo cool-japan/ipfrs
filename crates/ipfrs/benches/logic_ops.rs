@@ -1,8 +1,9 @@
 //! Benchmarks for logic programming operations
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use ipfrs::{Node, NodeConfig};
 use ipfrs_tensorlogic::{Constant, Predicate, Rule, Term};
+use std::hint::black_box;
 use tokio::runtime::Runtime;
 
 /// Setup a knowledge base with facts and rules
@@ -163,8 +164,7 @@ fn bench_simple_inference(c: &mut Criterion) {
                         ],
                     );
 
-                    let results = black_box(node.infer(&goal).unwrap());
-                    results
+                    black_box(node.infer(&goal).unwrap())
                 });
             },
         );
@@ -201,8 +201,7 @@ fn bench_complex_inference(c: &mut Criterion) {
                         vec![Term::Var("X".to_string()), Term::Var("Y".to_string())],
                     );
 
-                    let results = black_box(node.infer(&goal).unwrap());
-                    results
+                    black_box(node.infer(&goal).unwrap())
                 });
             },
         );

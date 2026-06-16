@@ -381,8 +381,8 @@ mod tests {
     #[tokio::test]
     async fn test_start_migration() {
         let migration = ConnectionMigration::new(MigrationConfig::default());
-        let old_addr: SocketAddr = "127.0.0.1:8000".parse().unwrap();
-        let new_addr: SocketAddr = "127.0.0.1:8001".parse().unwrap();
+        let old_addr: SocketAddr = "127.0.0.1:8000".parse().expect("test: valid socket addr");
+        let new_addr: SocketAddr = "127.0.0.1:8001".parse().expect("test: valid socket addr");
 
         let result = migration
             .start_migration("conn1".to_string(), old_addr, new_addr)
@@ -397,13 +397,13 @@ mod tests {
     #[tokio::test]
     async fn test_complete_migration() {
         let migration = ConnectionMigration::new(MigrationConfig::default());
-        let old_addr: SocketAddr = "127.0.0.1:8000".parse().unwrap();
-        let new_addr: SocketAddr = "127.0.0.1:8001".parse().unwrap();
+        let old_addr: SocketAddr = "127.0.0.1:8000".parse().expect("test: valid socket addr");
+        let new_addr: SocketAddr = "127.0.0.1:8001".parse().expect("test: valid socket addr");
 
         migration
             .start_migration("conn1".to_string(), old_addr, new_addr)
             .await
-            .unwrap();
+            .expect("test: start migration should succeed");
 
         let result = migration.complete_migration("conn1").await;
         assert!(result.is_ok());
@@ -420,13 +420,13 @@ mod tests {
             ..Default::default()
         };
         let migration = ConnectionMigration::new(config);
-        let old_addr: SocketAddr = "127.0.0.1:8000".parse().unwrap();
-        let new_addr: SocketAddr = "127.0.0.1:8001".parse().unwrap();
+        let old_addr: SocketAddr = "127.0.0.1:8000".parse().expect("test: valid socket addr");
+        let new_addr: SocketAddr = "127.0.0.1:8001".parse().expect("test: valid socket addr");
 
         migration
             .start_migration("conn1".to_string(), old_addr, new_addr)
             .await
-            .unwrap();
+            .expect("test: start migration should succeed");
 
         // First failure should allow retry
         let result = migration
@@ -446,19 +446,19 @@ mod tests {
             ..Default::default()
         };
         let migration = ConnectionMigration::new(config);
-        let old_addr: SocketAddr = "127.0.0.1:8000".parse().unwrap();
-        let new_addr: SocketAddr = "127.0.0.1:8001".parse().unwrap();
+        let old_addr: SocketAddr = "127.0.0.1:8000".parse().expect("test: valid socket addr");
+        let new_addr: SocketAddr = "127.0.0.1:8001".parse().expect("test: valid socket addr");
 
         migration
             .start_migration("conn1".to_string(), old_addr, new_addr)
             .await
-            .unwrap();
+            .expect("test: start migration should succeed");
 
         // Fail twice (max retries = 2)
         migration
             .fail_migration("conn1", "Error 1".to_string())
             .await
-            .unwrap();
+            .expect("test: fail migration should succeed");
         let result = migration
             .fail_migration("conn1", "Error 2".to_string())
             .await;
@@ -472,19 +472,22 @@ mod tests {
     #[tokio::test]
     async fn test_is_migrating() {
         let migration = ConnectionMigration::new(MigrationConfig::default());
-        let old_addr: SocketAddr = "127.0.0.1:8000".parse().unwrap();
-        let new_addr: SocketAddr = "127.0.0.1:8001".parse().unwrap();
+        let old_addr: SocketAddr = "127.0.0.1:8000".parse().expect("test: valid socket addr");
+        let new_addr: SocketAddr = "127.0.0.1:8001".parse().expect("test: valid socket addr");
 
         assert!(!migration.is_migrating("conn1"));
 
         migration
             .start_migration("conn1".to_string(), old_addr, new_addr)
             .await
-            .unwrap();
+            .expect("test: start migration should succeed");
 
         assert!(migration.is_migrating("conn1"));
 
-        migration.complete_migration("conn1").await.unwrap();
+        migration
+            .complete_migration("conn1")
+            .await
+            .expect("test: complete migration should succeed");
 
         // After grace period, it should be removed, but state is Completed
         let state = migration.get_state("conn1");
@@ -496,13 +499,13 @@ mod tests {
     #[tokio::test]
     async fn test_duplicate_migration_rejected() {
         let migration = ConnectionMigration::new(MigrationConfig::default());
-        let old_addr: SocketAddr = "127.0.0.1:8000".parse().unwrap();
-        let new_addr: SocketAddr = "127.0.0.1:8001".parse().unwrap();
+        let old_addr: SocketAddr = "127.0.0.1:8000".parse().expect("test: valid socket addr");
+        let new_addr: SocketAddr = "127.0.0.1:8001".parse().expect("test: valid socket addr");
 
         migration
             .start_migration("conn1".to_string(), old_addr, new_addr)
             .await
-            .unwrap();
+            .expect("test: start migration should succeed");
 
         // Try to start another migration for the same connection
         let result = migration
@@ -519,21 +522,24 @@ mod tests {
             ..Default::default()
         };
         let migration = ConnectionMigration::new(config);
-        let old_addr: SocketAddr = "127.0.0.1:8000".parse().unwrap();
-        let new_addr: SocketAddr = "127.0.0.1:8001".parse().unwrap();
+        let old_addr: SocketAddr = "127.0.0.1:8000".parse().expect("test: valid socket addr");
+        let new_addr: SocketAddr = "127.0.0.1:8001".parse().expect("test: valid socket addr");
 
         // Successful migration
         migration
             .start_migration("conn1".to_string(), old_addr, new_addr)
             .await
-            .unwrap();
-        migration.complete_migration("conn1").await.unwrap();
+            .expect("test: start migration should succeed");
+        migration
+            .complete_migration("conn1")
+            .await
+            .expect("test: complete migration should succeed");
 
         // Failed migration (max_retries = 2, so need to fail 2 times)
         migration
             .start_migration("conn2".to_string(), old_addr, new_addr)
             .await
-            .unwrap();
+            .expect("test: start migration should succeed");
         migration
             .fail_migration("conn2", "Error".to_string())
             .await
@@ -553,13 +559,13 @@ mod tests {
     #[tokio::test]
     async fn test_reset_stats() {
         let migration = ConnectionMigration::new(MigrationConfig::default());
-        let old_addr: SocketAddr = "127.0.0.1:8000".parse().unwrap();
-        let new_addr: SocketAddr = "127.0.0.1:8001".parse().unwrap();
+        let old_addr: SocketAddr = "127.0.0.1:8000".parse().expect("test: valid socket addr");
+        let new_addr: SocketAddr = "127.0.0.1:8001".parse().expect("test: valid socket addr");
 
         migration
             .start_migration("conn1".to_string(), old_addr, new_addr)
             .await
-            .unwrap();
+            .expect("test: start migration should succeed");
 
         let stats = migration.stats().await;
         assert!(stats.total_migrations > 0);
@@ -583,14 +589,17 @@ mod tests {
             })
             .await;
 
-        let old_addr: SocketAddr = "127.0.0.1:8000".parse().unwrap();
-        let new_addr: SocketAddr = "127.0.0.1:8001".parse().unwrap();
+        let old_addr: SocketAddr = "127.0.0.1:8000".parse().expect("test: valid socket addr");
+        let new_addr: SocketAddr = "127.0.0.1:8001".parse().expect("test: valid socket addr");
 
         migration
             .start_migration("conn1".to_string(), old_addr, new_addr)
             .await
-            .unwrap();
-        migration.complete_migration("conn1").await.unwrap();
+            .expect("test: start migration should succeed");
+        migration
+            .complete_migration("conn1")
+            .await
+            .expect("test: complete migration should succeed");
 
         // Should have received 2 events: MigrationStarted and MigrationCompleted
         assert_eq!(event_count.load(Ordering::SeqCst), 2);

@@ -273,19 +273,27 @@ impl BenchmarkSuite {
             .iter()
             .min_by_key(|r| r.avg_latency)
             .map(|r| r.config_name.clone())
-            .unwrap();
+            .expect("results is non-empty");
 
         let best_recall = results
             .iter()
-            .max_by(|a, b| a.recall_at_10.partial_cmp(&b.recall_at_10).unwrap())
+            .max_by(|a, b| {
+                a.recall_at_10
+                    .partial_cmp(&b.recall_at_10)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .map(|r| r.config_name.clone())
-            .unwrap();
+            .expect("results is non-empty");
 
         let best_memory = results
             .iter()
-            .min_by(|a, b| a.memory_mb.partial_cmp(&b.memory_mb).unwrap())
+            .min_by(|a, b| {
+                a.memory_mb
+                    .partial_cmp(&b.memory_mb)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .map(|r| r.config_name.clone())
-            .unwrap();
+            .expect("results is non-empty");
 
         // Generate recommendations
         let mut recommendations = Vec::new();
@@ -295,7 +303,7 @@ impl BenchmarkSuite {
             results
                 .iter()
                 .find(|r| r.config_name == best_latency)
-                .unwrap()
+                .expect("best_latency comes from results iterator")
                 .avg_latency
                 .as_micros() as f64
                 / 1000.0
@@ -307,7 +315,7 @@ impl BenchmarkSuite {
             results
                 .iter()
                 .find(|r| r.config_name == best_recall)
-                .unwrap()
+                .expect("best_recall comes from results iterator")
                 .recall_at_10
                 * 100.0
         ));
@@ -318,7 +326,7 @@ impl BenchmarkSuite {
             results
                 .iter()
                 .find(|r| r.config_name == best_memory)
-                .unwrap()
+                .expect("best_memory comes from results iterator")
                 .memory_mb
         ));
 
@@ -441,7 +449,9 @@ mod tests {
         let mut suite = BenchmarkSuite::new();
         let config = IndexConfig::low_latency();
 
-        suite.add_config("test", config).unwrap();
+        suite
+            .add_config("test", config)
+            .expect("test: add_config should succeed");
         assert_eq!(suite.configs.len(), 1);
     }
 

@@ -21,7 +21,7 @@
 //! // Per-tensor INT8 symmetric quantization
 //! let weights = vec![0.5, -0.3, 0.8, -0.1];
 //! let config = QuantizationConfig::int8_symmetric();
-//! let quantized = QuantizedTensor::quantize_per_tensor(&weights, vec![4], config).unwrap();
+//! let quantized = QuantizedTensor::quantize_per_tensor(&weights, vec![4], config).expect("example: should succeed in docs");
 //!
 //! // Dequantize back to f32
 //! let dequantized = quantized.dequantize();
@@ -30,7 +30,7 @@
 //! // Per-channel quantization for Conv2D weights
 //! let weights = vec![0.5, 0.3, -0.2, -0.4, 0.1, 0.6, -0.5, 0.2]; // 2 channels, 4 elements each
 //! let config = QuantizationConfig::int8_per_channel(2);
-//! let quantized = QuantizedTensor::quantize_per_channel(&weights, vec![2, 4], config).unwrap();
+//! let quantized = QuantizedTensor::quantize_per_channel(&weights, vec![2, 4], config).expect("example: should succeed in docs");
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -590,7 +590,8 @@ mod tests {
     fn test_per_tensor_quantization() {
         let data = vec![0.5, -0.3, 0.8, -0.1];
         let config = QuantizationConfig::int8_symmetric();
-        let quantized = QuantizedTensor::quantize_per_tensor(&data, vec![4], config).unwrap();
+        let quantized = QuantizedTensor::quantize_per_tensor(&data, vec![4], config)
+            .expect("test: should succeed");
 
         assert_eq!(quantized.data.len(), 4);
         assert_eq!(quantized.params.len(), 1);
@@ -610,7 +611,8 @@ mod tests {
         // 2 channels, 4 elements each
         let data = vec![0.5, 0.3, -0.2, -0.4, 0.1, 0.6, -0.5, 0.2];
         let config = QuantizationConfig::int8_per_channel(2);
-        let quantized = QuantizedTensor::quantize_per_channel(&data, vec![2, 4], config).unwrap();
+        let quantized = QuantizedTensor::quantize_per_channel(&data, vec![2, 4], config)
+            .expect("test: should succeed");
 
         assert_eq!(quantized.data.len(), 8);
         assert_eq!(quantized.params.len(), 2);
@@ -623,15 +625,16 @@ mod tests {
     fn test_int4_quantization() {
         let data = vec![0.1, 0.2, 0.3, 0.4];
         let config = QuantizationConfig::int4_symmetric();
-        let quantized = QuantizedTensor::quantize_per_tensor(&data, vec![4], config).unwrap();
+        let quantized = QuantizedTensor::quantize_per_tensor(&data, vec![4], config)
+            .expect("test: should succeed");
 
         // INT4 range is -8 to 7
         for &q in &quantized.data {
-            assert!(q >= -8 && q <= 7);
+            assert!((-8..=7).contains(&q));
         }
 
         // Test packing
-        let packed = quantized.pack_int4().unwrap();
+        let packed = quantized.pack_int4().expect("test: should succeed");
         assert_eq!(packed.len(), 2); // 4 values packed into 2 bytes
 
         // Test unpacking
@@ -643,7 +646,8 @@ mod tests {
     fn test_compression_ratio() {
         let data = vec![1.0; 100];
         let config = QuantizationConfig::int8_symmetric();
-        let quantized = QuantizedTensor::quantize_per_tensor(&data, vec![100], config).unwrap();
+        let quantized = QuantizedTensor::quantize_per_tensor(&data, vec![100], config)
+            .expect("test: should succeed");
 
         let ratio = quantized.compression_ratio();
         assert!(ratio > 1.0); // Should be compressed
@@ -653,7 +657,8 @@ mod tests {
     fn test_quantization_error() {
         let data = vec![0.1, 0.5, 0.9, 0.3];
         let config = QuantizationConfig::int8_symmetric();
-        let quantized = QuantizedTensor::quantize_per_tensor(&data, vec![4], config).unwrap();
+        let quantized = QuantizedTensor::quantize_per_tensor(&data, vec![4], config)
+            .expect("test: should succeed");
 
         let error = quantized.quantization_error(&data);
         assert!(error < 0.001); // Error should be small for INT8
@@ -664,7 +669,9 @@ mod tests {
         let quantizer = DynamicQuantizer::new(QuantizationScheme::Int8, true);
         let data = vec![1.0, 2.0, 3.0, 4.0];
 
-        let quantized = quantizer.quantize_activation(&data, vec![4]).unwrap();
+        let quantized = quantizer
+            .quantize_activation(&data, vec![4])
+            .expect("test: should succeed");
         assert_eq!(quantized.data.len(), 4);
 
         let dequantized = quantized.dequantize();
@@ -680,8 +687,8 @@ mod tests {
         data[0] = -100.0;
         data[99] = 100.0;
         // Normal data
-        for i in 1..99 {
-            data[i] = (i as f32 - 50.0) / 50.0; // Range roughly -1 to 1
+        for (i, val) in data.iter_mut().enumerate().take(99).skip(1) {
+            *val = (i as f32 - 50.0) / 50.0; // Range roughly -1 to 1
         }
 
         let config = QuantizationConfig {
@@ -694,7 +701,8 @@ mod tests {
             },
         };
 
-        let quantized = QuantizedTensor::quantize_per_tensor(&data, vec![100], config).unwrap();
+        let quantized = QuantizedTensor::quantize_per_tensor(&data, vec![100], config)
+            .expect("test: should succeed");
 
         // The outliers should be clipped in the calibration
         let params = &quantized.params[0];

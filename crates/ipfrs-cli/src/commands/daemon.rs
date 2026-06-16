@@ -58,7 +58,7 @@ pub async fn daemon_start(data_dir: String, pid_file: String, log_file: String) 
                     .arg("-0")
                     .arg(pid.to_string())
                     .output();
-                if check.is_ok() && check.unwrap().status.success() {
+                if check.is_ok_and(|c| c.status.success()) {
                     error("Daemon is already running");
                     print_kv("PID", &pid.to_string());
                     print_kv("PID file", &pid_file);
@@ -157,7 +157,7 @@ pub async fn daemon_stop(pid_file: String) -> Result<()> {
 
             let check = Command::new("kill").arg("-0").arg(pid.to_string()).output();
 
-            if check.is_err() || !check.unwrap().status.success() {
+            if !check.is_ok_and(|c| c.status.success()) {
                 // Process has terminated
                 break;
             }
@@ -167,7 +167,7 @@ pub async fn daemon_stop(pid_file: String) -> Result<()> {
         // Check if process is still running
         let check = Command::new("kill").arg("-0").arg(pid.to_string()).output();
 
-        if check.is_ok() && check.unwrap().status.success() {
+        if check.is_ok_and(|c| c.status.success()) {
             progress::finish_spinner_error(&pb, "Daemon did not stop gracefully");
             output::warning(&format!(
                 "Process {} is still running after {} seconds",
@@ -322,7 +322,7 @@ pub async fn daemon_health(pid_file: String, data_dir: String, format: String) -
                 {
                     use std::process::Command;
                     let check = Command::new("kill").arg("-0").arg(pid.to_string()).output();
-                    check.is_ok() && check.unwrap().status.success()
+                    check.is_ok_and(|c| c.status.success())
                 }
                 #[cfg(not(unix))]
                 {

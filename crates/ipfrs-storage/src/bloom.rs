@@ -317,6 +317,184 @@ fn fnv1a_hash_with_seed(data: &[u8], seed: u64) -> u64 {
     hash
 }
 
+/// Convenience constructor: create a `BloomFilter` backed by a fixed bit-count.
+///
+/// Rounds `bits` up to the next multiple of 64 and uses a two-hash (FNV-1a +
+/// multiplicative) scheme with 7 probes — chosen for ~1 % FPR at 100 k elements
+/// in a 1 M-bit filter.
+impl BloomFilter {
+    /// Create a filter with exactly `bits` capacity (rounded up to 64-bit boundary).
+    ///
+    /// Uses a fixed 7-probe two-hash scheme suitable for general-purpose deduplication.
+    pub fn new_with_bits(bits: usize) -> Self {
+        // Round up to next multiple of 64
+        let rounded = bits.div_ceil(64) * 64;
+        let config = BloomConfig {
+            expected_items: 100_000,
+            false_positive_rate: 0.01,
+            num_hashes: 7,
+            num_bits: rounded,
+        };
+        Self::with_config(config)
+    }
+
+    /// Number of elements inserted so far (alias for `count()`).
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.count()
+    }
+
+    /// Whether no elements have been inserted.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.count() == 0
+    }
+
+    /// Whether no elements have been inserted (semantic alias, kept for test clarity).
+    #[inline]
+    pub fn is_bloom_empty(&self) -> bool {
+        self.is_empty()
+    }
+
+    /// Total number of bits in the filter.
+    #[inline]
+    pub fn bit_count(&self) -> usize {
+        self.config.num_bits
+    }
+
+    /// Probabilistic check: returns `false` iff the key is *definitely* absent.
+    #[inline]
+    pub fn may_contain(&self, key: &[u8]) -> bool {
+        self.contains(key)
+    }
+
+    /// Fraction of bits currently set (0.0 – 1.0).
+    #[inline]
+    pub fn estimated_fill_ratio(&self) -> f64 {
+        self.fill_ratio()
+    }
+}
+
+// ─── BloomFilterConfig ────────────────────────────────────────────────────────
+
+/// High-level configuration for the CID-oriented bloom filter layer.
+#[derive(Debug, Clone)]
+pub struct BloomFilterConfig {
+    /// Total number of bits in the underlying bit array (default: 1 048 576 = 1 M bits).
+    pub bits: usize,
+    /// Expected number of elements to be inserted (used for documentation / stats only).
+    pub expected_elements: usize,
+}
+
+impl Default for BloomFilterConfig {
+    fn default() -> Self {
+        Self {
+            bits: 1_048_576,
+            expected_elements: 100_000,
+        }
+    }
+}
+
+// ─── BloomSnapshot ────────────────────────────────────────────────────────────
+
+/// Point-in-time snapshot of `CidBloomFilter` state.
+#[derive(Debug, Clone)]
+pub struct BloomSnapshot {
+    /// Fraction of bits that are set (0.0 – 1.0).
+    pub fill_ratio: f64,
+    /// Estimated number of distinct elements inserted (via fill-ratio formula).
+    pub estimated_elements: usize,
+    /// Total capacity in bits.
+    pub bit_count: usize,
+}
+
+// ─── CidBloomFilter ───────────────────────────────────────────────────────────
+
+/// CID-specific wrapper around [`BloomFilter`] for write-time deduplication.
+///
+/// Converts CID strings to bytes and delegates to the inner filter.  All
+/// operations are thread-safe via the `parking_lot::RwLock` inside `BloomFilter`.
+pub struct CidBloomFilter {
+    inner: BloomFilter,
+    config: BloomFilterConfig,
+}
+
+impl CidBloomFilter {
+    /// Create a new `CidBloomFilter` with the given configuration.
+    pub fn new(config: BloomFilterConfig) -> Self {
+        let filter = BloomFilter::new_with_bits(config.bits);
+        Self {
+            inner: filter,
+            config,
+        }
+    }
+
+    /// Create a `CidBloomFilter` with default configuration (1 M-bit filter).
+    pub fn default_config() -> Self {
+        Self::new(BloomFilterConfig::default())
+    }
+
+    /// Insert a CID (as a UTF-8 string) into the filter.
+    #[inline]
+    pub fn insert_cid(&self, cid: &str) {
+        self.inner.insert(cid.as_bytes());
+    }
+
+    /// Returns `false` iff the CID is *definitely* not in the filter.
+    #[inline]
+    pub fn may_contain_cid(&self, cid: &str) -> bool {
+        self.inner.may_contain(cid.as_bytes())
+    }
+
+    /// Take a snapshot of the current filter state.
+    pub fn snapshot(&self) -> BloomSnapshot {
+        let fill = self.inner.estimated_fill_ratio();
+        let bit_count = self.inner.bit_count();
+
+        // Estimate elements from fill ratio:
+        //   fill ≈ 1 - exp(-k * n / m)  ⟹  n ≈ -m/k * ln(1 - fill)
+        // k = num_hashes, m = bit_count
+        let k = self.inner.config.num_hashes as f64;
+        let m = bit_count as f64;
+        let estimated_elements = if fill >= 1.0 {
+            usize::MAX
+        } else {
+            let est = -(m / k) * (1.0 - fill).ln();
+            est.round() as usize
+        };
+
+        BloomSnapshot {
+            fill_ratio: fill,
+            estimated_elements,
+            bit_count,
+        }
+    }
+
+    /// Clear the filter (all bits zeroed, count reset to zero).
+    #[inline]
+    pub fn reset(&self) {
+        self.inner.clear();
+    }
+
+    /// Access the underlying `BloomFilter` directly.
+    #[inline]
+    pub fn inner(&self) -> &BloomFilter {
+        &self.inner
+    }
+
+    /// Return the configuration this filter was created with.
+    #[inline]
+    pub fn config(&self) -> &BloomFilterConfig {
+        &self.config
+    }
+}
+
+impl Default for CidBloomFilter {
+    fn default() -> Self {
+        Self::default_config()
+    }
+}
+
 /// Block store wrapper that uses a bloom filter for fast negative lookups
 use crate::traits::BlockStore;
 use async_trait::async_trait;
@@ -515,5 +693,245 @@ mod tests {
         assert_eq!(stats.count, 100);
         assert!(stats.fill_ratio > 0.0);
         assert!(stats.fill_ratio < 1.0);
+    }
+
+    // ── Tests for the new deduplication layer ────────────────────────────────
+
+    /// 1. new_with_bits rounds bits up to 64-bit boundary correctly.
+    #[test]
+    fn test_new_with_bits_rounding() {
+        let f = BloomFilter::new_with_bits(1);
+        assert_eq!(f.bit_count(), 64, "1 bit should round up to 64");
+
+        let f2 = BloomFilter::new_with_bits(65);
+        assert_eq!(f2.bit_count(), 128, "65 bits should round up to 128");
+
+        let f3 = BloomFilter::new_with_bits(1_048_576);
+        assert_eq!(
+            f3.bit_count(),
+            1_048_576,
+            "exact multiple must stay unchanged"
+        );
+    }
+
+    /// 2. Zero false negatives: every inserted item is found.
+    #[test]
+    fn test_zero_false_negatives() {
+        let filter = BloomFilter::new_with_bits(1_048_576);
+        let items: Vec<String> = (0..500).map(|i| format!("item-{}", i)).collect();
+
+        for item in &items {
+            filter.insert(item.as_bytes());
+        }
+        for item in &items {
+            assert!(
+                filter.may_contain(item.as_bytes()),
+                "False negative detected for '{}'",
+                item
+            );
+        }
+    }
+
+    /// 3. may_contain returns false for items that were never inserted
+    ///    (for clearly distinct keys this is deterministic).
+    #[test]
+    fn test_absent_keys_not_found() {
+        let filter = BloomFilter::new_with_bits(1_048_576);
+        // Nothing inserted — no key should be found.
+        assert!(!filter.may_contain(b"never-inserted-key-abc"));
+        assert!(!filter.may_contain(b"another-absent-key-xyz"));
+    }
+
+    /// 4. False-positive rate is < 1 % for 1 000 elements in a 1 M-bit filter.
+    #[test]
+    fn test_false_positive_rate_under_one_percent() {
+        let filter = BloomFilter::new_with_bits(1_048_576);
+
+        // Insert 1 000 items using a prefix that won't overlap with the probe set.
+        for i in 0u32..1_000 {
+            filter.insert(format!("inserted-{}", i).as_bytes());
+        }
+
+        // Probe 5 000 distinct keys that were NOT inserted.
+        let mut false_positives = 0usize;
+        let total = 5_000usize;
+        for i in 0u32..total as u32 {
+            if filter.may_contain(format!("probe-{}", i).as_bytes()) {
+                false_positives += 1;
+            }
+        }
+        let fpr = false_positives as f64 / total as f64;
+        assert!(
+            fpr < 0.01,
+            "FPR {:.4} ≥ 1 % for 1 000 elements in 1 M-bit filter",
+            fpr
+        );
+    }
+
+    /// 5. clear() zeroes all bits and resets the element counter.
+    #[test]
+    fn test_clear_resets_filter() {
+        let filter = BloomFilter::new_with_bits(1_048_576);
+        filter.insert(b"key-a");
+        filter.insert(b"key-b");
+        assert!(filter.may_contain(b"key-a"));
+        assert_eq!(filter.len(), 2);
+
+        filter.clear();
+
+        assert_eq!(filter.len(), 0);
+        assert_eq!(filter.estimated_fill_ratio(), 0.0);
+        assert!(
+            !filter.may_contain(b"key-a"),
+            "key-a should be absent after clear"
+        );
+        assert!(
+            !filter.may_contain(b"key-b"),
+            "key-b should be absent after clear"
+        );
+    }
+
+    /// 6. estimated_fill_ratio grows monotonically with insertions.
+    #[test]
+    fn test_fill_ratio_grows_with_insertions() {
+        let filter = BloomFilter::new_with_bits(1_048_576);
+        let mut prev = filter.estimated_fill_ratio();
+
+        for i in 0u32..200 {
+            filter.insert(format!("grow-{}", i).as_bytes());
+            let current = filter.estimated_fill_ratio();
+            assert!(
+                current >= prev,
+                "fill_ratio decreased after insertion {} ({} < {})",
+                i,
+                current,
+                prev
+            );
+            prev = current;
+        }
+        assert!(prev > 0.0, "fill_ratio must be positive after insertions");
+    }
+
+    /// 7. bit_count() and len() accessors return consistent values.
+    #[test]
+    fn test_accessors_consistency() {
+        let filter = BloomFilter::new_with_bits(1_048_576);
+        assert_eq!(filter.bit_count(), 1_048_576);
+        assert_eq!(filter.len(), 0);
+
+        filter.insert(b"x");
+        assert_eq!(filter.len(), 1);
+    }
+
+    /// 8. CidBloomFilter – inserted CIDs are always found (zero false negatives).
+    #[test]
+    fn test_cid_bloom_zero_false_negatives() {
+        let cbf = CidBloomFilter::default_config();
+        let cids: Vec<String> = (0..300).map(|i| format!("Qm{:044}", i)).collect();
+
+        for cid in &cids {
+            cbf.insert_cid(cid);
+        }
+        for cid in &cids {
+            assert!(
+                cbf.may_contain_cid(cid),
+                "CidBloomFilter false negative for '{}'",
+                cid
+            );
+        }
+    }
+
+    /// 9. CidBloomFilter – absent CIDs are not found by default.
+    #[test]
+    fn test_cid_bloom_absent_cids() {
+        let cbf = CidBloomFilter::default_config();
+        assert!(!cbf.may_contain_cid("QmNeverInserted000000000000000000000000000000000"));
+    }
+
+    /// 10. CidBloomFilter::reset() clears the filter completely.
+    #[test]
+    fn test_cid_bloom_reset() {
+        let cbf = CidBloomFilter::default_config();
+        cbf.insert_cid("QmSomeTestCid0000000000000000000000000000000000");
+        assert!(cbf.may_contain_cid("QmSomeTestCid0000000000000000000000000000000000"));
+
+        cbf.reset();
+
+        assert!(
+            !cbf.may_contain_cid("QmSomeTestCid0000000000000000000000000000000000"),
+            "CID should be absent after reset"
+        );
+        let snap = cbf.snapshot();
+        assert_eq!(snap.fill_ratio, 0.0, "fill_ratio must be 0 after reset");
+    }
+
+    /// 11. BloomSnapshot reflects correct bit_count and fill_ratio direction.
+    #[test]
+    fn test_bloom_snapshot_fields() {
+        let cbf = CidBloomFilter::new(BloomFilterConfig {
+            bits: 1_048_576,
+            expected_elements: 100_000,
+        });
+
+        let snap_before = cbf.snapshot();
+        assert_eq!(snap_before.bit_count, 1_048_576);
+        assert_eq!(snap_before.fill_ratio, 0.0);
+
+        for i in 0u32..100 {
+            cbf.insert_cid(&format!("Qm{:044}", i));
+        }
+
+        let snap_after = cbf.snapshot();
+        assert!(
+            snap_after.fill_ratio > 0.0,
+            "fill_ratio must increase after insertions"
+        );
+        assert_eq!(snap_after.bit_count, 1_048_576);
+        assert!(
+            snap_after.estimated_elements > 0,
+            "estimated_elements must be positive after insertions"
+        );
+    }
+
+    /// 12. BloomFilterConfig default values are as specified.
+    #[test]
+    fn test_bloom_filter_config_defaults() {
+        let cfg = BloomFilterConfig::default();
+        assert_eq!(cfg.bits, 1_048_576, "default bits should be 1 048 576");
+        assert_eq!(
+            cfg.expected_elements, 100_000,
+            "default expected_elements should be 100 000"
+        );
+    }
+
+    /// 13. CidBloomFilter::snapshot() estimated_elements grows with insertions.
+    #[test]
+    fn test_snapshot_estimated_elements_grows() {
+        let cbf = CidBloomFilter::default_config();
+        let snap0 = cbf.snapshot();
+        assert_eq!(snap0.estimated_elements, 0);
+
+        for i in 0u32..500 {
+            cbf.insert_cid(&format!("Qm{:044}", i));
+        }
+        let snap1 = cbf.snapshot();
+        assert!(
+            snap1.estimated_elements > 0,
+            "estimated_elements should be > 0 after 500 insertions"
+        );
+    }
+
+    /// 14. BloomFilter::is_bloom_empty() reflects insertion state.
+    #[test]
+    fn test_is_bloom_empty() {
+        let f = BloomFilter::new_with_bits(1_048_576);
+        assert!(f.is_bloom_empty(), "freshly created filter must be empty");
+        f.insert(b"one");
+        assert!(
+            !f.is_bloom_empty(),
+            "filter must not be empty after one insertion"
+        );
+        f.clear();
+        assert!(f.is_bloom_empty(), "filter must be empty after clear");
     }
 }

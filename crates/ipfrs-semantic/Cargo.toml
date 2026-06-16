@@ -68,6 +68,7 @@ rayon = { workspace = true }
 criterion = { workspace = true }
 rand = { workspace = true }
 multihash-codetable = { workspace = true }
+libp2p = { workspace = true }
 
 [[bench]]
 name = "simd_bench"
@@ -91,4 +92,12 @@ harness = false
 
 [[bench]]
 name = "advanced_features_bench"
+harness = false
+
+[[bench]]
+name = "semantic_bench"
+harness = false
+
+[[bench]]
+name = "hnsw_bench"
 harness = false

@@ -202,13 +202,13 @@ mod tests {
     fn test_cid() -> Cid {
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap()
+            .expect("test: valid CID string")
     }
 
     fn test_cid2() -> Cid {
         "bafybeihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku"
             .parse::<Cid>()
-            .unwrap()
+            .expect("test: valid CID string")
     }
 
     // Basic WantEntry Tests
@@ -263,8 +263,8 @@ mod tests {
         ];
 
         let msg = Message::want_list(entries.clone(), true);
-        let bytes = msg.to_bytes().unwrap();
-        let decoded = Message::from_bytes(&bytes).unwrap();
+        let bytes = msg.to_bytes().expect("test: message serialization");
+        let decoded = Message::from_bytes(&bytes).expect("test: message deserialization");
 
         match decoded {
             Message::WantList(want_list) => {
@@ -285,8 +285,8 @@ mod tests {
         let data = vec![1, 2, 3, 4, 5];
 
         let msg = Message::block(cid, data.clone());
-        let bytes = msg.to_bytes().unwrap();
-        let decoded = Message::from_bytes(&bytes).unwrap();
+        let bytes = msg.to_bytes().expect("test: message serialization");
+        let decoded = Message::from_bytes(&bytes).expect("test: message deserialization");
 
         match decoded {
             Message::Block(block) => {
@@ -302,8 +302,8 @@ mod tests {
         let cid = test_cid();
 
         let msg = Message::have(cid);
-        let bytes = msg.to_bytes().unwrap();
-        let decoded = Message::from_bytes(&bytes).unwrap();
+        let bytes = msg.to_bytes().expect("test: message serialization");
+        let decoded = Message::from_bytes(&bytes).expect("test: message deserialization");
 
         match decoded {
             Message::Have(have) => assert_eq!(have.cid, cid),
@@ -316,8 +316,8 @@ mod tests {
         let cid = test_cid();
 
         let msg = Message::dont_have(cid);
-        let bytes = msg.to_bytes().unwrap();
-        let decoded = Message::from_bytes(&bytes).unwrap();
+        let bytes = msg.to_bytes().expect("test: message serialization");
+        let decoded = Message::from_bytes(&bytes).expect("test: message deserialization");
 
         match decoded {
             Message::DontHave(dont_have) => assert_eq!(dont_have.cid, cid),
@@ -330,8 +330,8 @@ mod tests {
         let cid = test_cid();
 
         let msg = Message::cancel(cid);
-        let bytes = msg.to_bytes().unwrap();
-        let decoded = Message::from_bytes(&bytes).unwrap();
+        let bytes = msg.to_bytes().expect("test: message serialization");
+        let decoded = Message::from_bytes(&bytes).expect("test: message deserialization");
 
         match decoded {
             Message::Cancel(cancel) => assert_eq!(cancel.cid, cid),
@@ -343,8 +343,8 @@ mod tests {
     #[test]
     fn test_empty_want_list() {
         let msg = Message::want_list(vec![], false);
-        let bytes = msg.to_bytes().unwrap();
-        let decoded = Message::from_bytes(&bytes).unwrap();
+        let bytes = msg.to_bytes().expect("test: message serialization");
+        let decoded = Message::from_bytes(&bytes).expect("test: message deserialization");
 
         match decoded {
             Message::WantList(want_list) => {
@@ -359,8 +359,8 @@ mod tests {
     fn test_block_with_empty_data() {
         let cid = test_cid();
         let msg = Message::block(cid, vec![]);
-        let bytes = msg.to_bytes().unwrap();
-        let decoded = Message::from_bytes(&bytes).unwrap();
+        let bytes = msg.to_bytes().expect("test: message serialization");
+        let decoded = Message::from_bytes(&bytes).expect("test: message deserialization");
 
         match decoded {
             Message::Block(block) => {
@@ -376,8 +376,8 @@ mod tests {
         let cid = test_cid();
         let large_data = vec![42u8; 1_000_000]; // 1 MB
         let msg = Message::block(cid, large_data.clone());
-        let bytes = msg.to_bytes().unwrap();
-        let decoded = Message::from_bytes(&bytes).unwrap();
+        let bytes = msg.to_bytes().expect("test: message serialization");
+        let decoded = Message::from_bytes(&bytes).expect("test: message deserialization");
 
         match decoded {
             Message::Block(block) => {
@@ -397,8 +397,8 @@ mod tests {
             .collect();
 
         let msg = Message::want_list(entries, true);
-        let bytes = msg.to_bytes().unwrap();
-        let decoded = Message::from_bytes(&bytes).unwrap();
+        let bytes = msg.to_bytes().expect("test: message serialization");
+        let decoded = Message::from_bytes(&bytes).expect("test: message deserialization");
 
         match decoded {
             Message::WantList(want_list) => {
@@ -417,8 +417,8 @@ mod tests {
         entry.cancel = true;
 
         let msg = Message::want_list(vec![entry], false);
-        let bytes = msg.to_bytes().unwrap();
-        let decoded = Message::from_bytes(&bytes).unwrap();
+        let bytes = msg.to_bytes().expect("test: message serialization");
+        let decoded = Message::from_bytes(&bytes).expect("test: message deserialization");
 
         match decoded {
             Message::WantList(want_list) => {
@@ -449,7 +449,7 @@ mod tests {
     fn test_truncated_message() {
         let cid = test_cid();
         let msg = Message::have(cid);
-        let bytes = msg.to_bytes().unwrap();
+        let bytes = msg.to_bytes().expect("test: message serialization");
 
         // Take only first half of bytes
         let truncated = &bytes[..bytes.len() / 2];
@@ -461,7 +461,7 @@ mod tests {
     fn test_corrupted_message() {
         let cid = test_cid();
         let msg = Message::have(cid);
-        let mut bytes = msg.to_bytes().unwrap();
+        let mut bytes = msg.to_bytes().expect("test: message serialization");
 
         // Corrupt some bytes
         if bytes.len() > 10 {
@@ -480,8 +480,8 @@ mod tests {
         let entries = vec![WantEntry::with_priority(cid, 10)];
         let msg = Message::want_list(entries, true);
 
-        let json = serde_json::to_string(&msg).unwrap();
-        let decoded: Message = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&msg).expect("test: JSON serialization");
+        let decoded: Message = serde_json::from_str(&json).expect("test: JSON deserialization");
 
         match decoded {
             Message::WantList(want_list) => {
@@ -499,8 +499,8 @@ mod tests {
         let data = vec![1, 2, 3];
         let msg = Message::block(cid, data.clone());
 
-        let json = serde_json::to_string(&msg).unwrap();
-        let decoded: Message = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&msg).expect("test: JSON serialization");
+        let decoded: Message = serde_json::from_str(&json).expect("test: JSON deserialization");
 
         match decoded {
             Message::Block(block) => {
@@ -516,8 +516,8 @@ mod tests {
         let cid = test_cid();
         let msg = Message::have(cid);
 
-        let json = serde_json::to_string(&msg).unwrap();
-        let decoded: Message = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&msg).expect("test: JSON serialization");
+        let decoded: Message = serde_json::from_str(&json).expect("test: JSON deserialization");
 
         match decoded {
             Message::Have(have) => assert_eq!(have.cid, cid),
@@ -530,8 +530,8 @@ mod tests {
         let cid = test_cid();
         let msg = Message::dont_have(cid);
 
-        let json = serde_json::to_string(&msg).unwrap();
-        let decoded: Message = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&msg).expect("test: JSON serialization");
+        let decoded: Message = serde_json::from_str(&json).expect("test: JSON deserialization");
 
         match decoded {
             Message::DontHave(dont_have) => assert_eq!(dont_have.cid, cid),
@@ -544,8 +544,8 @@ mod tests {
         let cid = test_cid();
         let msg = Message::cancel(cid);
 
-        let json = serde_json::to_string(&msg).unwrap();
-        let decoded: Message = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&msg).expect("test: JSON serialization");
+        let decoded: Message = serde_json::from_str(&json).expect("test: JSON deserialization");
 
         match decoded {
             Message::Cancel(cancel) => assert_eq!(cancel.cid, cid),

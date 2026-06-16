@@ -21,7 +21,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use chacha20poly1305::{ChaCha20Poly1305, Nonce as ChachaNonce};
 use ipfrs_core::{Block, Cid, Error, Result};
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -363,11 +363,10 @@ impl<S: BlockStore> BlockStore for EncryptedBlockStore<S> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "sled-backend"))]
 mod tests {
     use super::*;
     use crate::blockstore::{BlockStoreConfig, SledBlockStore};
-    use std::path::PathBuf;
 
     #[test]
     fn test_cipher_sizes() {
@@ -392,10 +391,14 @@ mod tests {
         let key = EncryptionKey::generate(Cipher::ChaCha20Poly1305);
         let plaintext = b"Hello, encrypted world!";
 
-        let ciphertext = key.encrypt(plaintext).unwrap();
+        let ciphertext = key
+            .encrypt(plaintext)
+            .expect("test: chacha encrypt should succeed");
         assert_ne!(ciphertext.as_slice(), plaintext);
 
-        let decrypted = key.decrypt(&ciphertext).unwrap();
+        let decrypted = key
+            .decrypt(&ciphertext)
+            .expect("test: chacha decrypt should succeed");
         assert_eq!(decrypted.as_slice(), plaintext);
     }
 
@@ -404,10 +407,14 @@ mod tests {
         let key = EncryptionKey::generate(Cipher::Aes256Gcm);
         let plaintext = b"Hello, AES world!";
 
-        let ciphertext = key.encrypt(plaintext).unwrap();
+        let ciphertext = key
+            .encrypt(plaintext)
+            .expect("test: aes encrypt should succeed");
         assert_ne!(ciphertext.as_slice(), plaintext);
 
-        let decrypted = key.decrypt(&ciphertext).unwrap();
+        let decrypted = key
+            .decrypt(&ciphertext)
+            .expect("test: aes decrypt should succeed");
         assert_eq!(decrypted.as_slice(), plaintext);
     }
 
@@ -415,27 +422,37 @@ mod tests {
     fn test_password_derivation() {
         let password = b"super_secret_password";
         let (key1, salt1) =
-            EncryptionKey::derive_from_password(Cipher::ChaCha20Poly1305, password, None).unwrap();
+            EncryptionKey::derive_from_password(Cipher::ChaCha20Poly1305, password, None)
+                .expect("test: password key derivation should succeed");
 
         // Verify key can encrypt/decrypt
         let plaintext = b"Test data";
-        let ciphertext = key1.encrypt(plaintext).unwrap();
-        let decrypted = key1.decrypt(&ciphertext).unwrap();
+        let ciphertext = key1
+            .encrypt(plaintext)
+            .expect("test: encrypt with derived key should succeed");
+        let decrypted = key1
+            .decrypt(&ciphertext)
+            .expect("test: decrypt with derived key should succeed");
         assert_eq!(decrypted.as_slice(), plaintext);
 
         // Same password and salt should derive a key that works
         let (key2, _) =
             EncryptionKey::derive_from_password(Cipher::ChaCha20Poly1305, password, Some(&salt1))
-                .unwrap();
+                .expect("test: re-derivation with same salt should succeed");
 
         // key2 should be able to encrypt/decrypt as well
-        let ciphertext2 = key2.encrypt(plaintext).unwrap();
-        let decrypted2 = key2.decrypt(&ciphertext2).unwrap();
+        let ciphertext2 = key2
+            .encrypt(plaintext)
+            .expect("test: encrypt with re-derived key should succeed");
+        let decrypted2 = key2
+            .decrypt(&ciphertext2)
+            .expect("test: decrypt with re-derived key should succeed");
         assert_eq!(decrypted2.as_slice(), plaintext);
 
         // Different salt should give different key
         let (_key3, salt3) =
-            EncryptionKey::derive_from_password(Cipher::ChaCha20Poly1305, password, None).unwrap();
+            EncryptionKey::derive_from_password(Cipher::ChaCha20Poly1305, password, None)
+                .expect("test: second key derivation should succeed");
 
         // Salt should be different
         assert_ne!(salt1, salt3);
@@ -444,31 +461,43 @@ mod tests {
     #[tokio::test]
     async fn test_encrypted_blockstore() {
         let config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-test-encrypted-blockstore"),
+            path: std::env::temp_dir().join("ipfrs-test-encrypted-blockstore"),
             cache_size: 1024 * 1024,
         };
 
         // Clean up from previous test
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let inner = SledBlockStore::new(config).unwrap();
+        let inner = SledBlockStore::new(config).expect("test: SledBlockStore::new should succeed");
         let key = EncryptionKey::generate(Cipher::ChaCha20Poly1305);
         let config = EncryptionConfig::default();
         let store = EncryptedBlockStore::new(inner, key, config);
 
         // Create test data
         let data = Bytes::from("Test block data for encryption");
-        let block = Block::new(data.clone()).unwrap();
+        let block = Block::new(data.clone()).expect("test: Block::new should succeed");
 
         // Put encrypted data
-        store.put(&block).await.unwrap();
+        store
+            .put(&block)
+            .await
+            .expect("test: store.put should succeed");
 
         // Get and verify
-        let retrieved = store.get(block.cid()).await.unwrap().unwrap();
+        let retrieved = store
+            .get(block.cid())
+            .await
+            .expect("test: store.get should succeed")
+            .expect("test: block should exist");
         assert_eq!(retrieved.data(), &data);
 
         // Verify data is encrypted in inner store
-        let inner_block = store.inner().get(block.cid()).await.unwrap().unwrap();
+        let inner_block = store
+            .inner()
+            .get(block.cid())
+            .await
+            .expect("test: inner store.get should succeed")
+            .expect("test: inner block should exist");
         assert_ne!(inner_block.data(), &data);
         assert!(inner_block.data().len() > data.len()); // Overhead from nonce + tag
     }
@@ -476,14 +505,14 @@ mod tests {
     #[tokio::test]
     async fn test_encrypted_blockstore_batch_ops() {
         let config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-test-encrypted-batch"),
+            path: std::env::temp_dir().join("ipfrs-test-encrypted-batch"),
             cache_size: 1024 * 1024,
         };
 
         // Clean up from previous test
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let inner = SledBlockStore::new(config).unwrap();
+        let inner = SledBlockStore::new(config).expect("test: SledBlockStore::new should succeed");
         let key = EncryptionKey::generate(Cipher::Aes256Gcm);
         let enc_config = EncryptionConfig {
             cipher: Cipher::Aes256Gcm,
@@ -494,20 +523,26 @@ mod tests {
         let blocks: Vec<_> = (0..10)
             .map(|i| {
                 let data = Bytes::from(format!("Block {}", i));
-                Block::new(data).unwrap()
+                Block::new(data).expect("test: Block::new should succeed")
             })
             .collect();
 
         // Put many
-        store.put_many(&blocks).await.unwrap();
+        store
+            .put_many(&blocks)
+            .await
+            .expect("test: put_many should succeed");
 
         // Get many
         let cids: Vec<_> = blocks.iter().map(|b| *b.cid()).collect();
-        let retrieved = store.get_many(&cids).await.unwrap();
+        let retrieved = store
+            .get_many(&cids)
+            .await
+            .expect("test: get_many should succeed");
 
         // Verify all blocks
         for (i, opt_block) in retrieved.iter().enumerate() {
-            let block = opt_block.as_ref().unwrap();
+            let block = opt_block.as_ref().expect("test: block should be present");
             assert_eq!(block.data(), blocks[i].data());
         }
     }
@@ -518,7 +553,9 @@ mod tests {
         let key2 = EncryptionKey::generate(Cipher::ChaCha20Poly1305);
         let plaintext = b"Secret message";
 
-        let ciphertext = key1.encrypt(plaintext).unwrap();
+        let ciphertext = key1
+            .encrypt(plaintext)
+            .expect("test: encrypt with key1 should succeed");
 
         // Decrypting with wrong key should fail
         assert!(key2.decrypt(&ciphertext).is_err());

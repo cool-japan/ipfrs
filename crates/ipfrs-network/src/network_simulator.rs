@@ -522,10 +522,16 @@ mod tests {
 
         assert!(!simulator.is_running());
 
-        simulator.start().await.unwrap();
+        simulator
+            .start()
+            .await
+            .expect("test: simulator should start successfully");
         assert!(simulator.is_running());
 
-        simulator.stop().await.unwrap();
+        simulator
+            .stop()
+            .await
+            .expect("test: simulator should stop successfully");
         assert!(!simulator.is_running());
     }
 
@@ -538,16 +544,25 @@ mod tests {
         };
 
         let simulator = NetworkSimulator::new(config);
-        simulator.start().await.unwrap();
+        simulator
+            .start()
+            .await
+            .expect("test: simulator should start in test_packet_delay");
 
         let start = Instant::now();
-        let delivered = simulator.delay_packet(1024).await.unwrap();
+        let delivered = simulator
+            .delay_packet(1024)
+            .await
+            .expect("test: delay_packet should return Ok in test_packet_delay");
         let elapsed = start.elapsed();
 
         assert!(delivered);
         assert!(elapsed >= Duration::from_millis(10));
 
-        simulator.stop().await.unwrap();
+        simulator
+            .stop()
+            .await
+            .expect("test: simulator should stop in test_packet_delay");
     }
 
     #[tokio::test]
@@ -558,15 +573,24 @@ mod tests {
         };
 
         let simulator = NetworkSimulator::new(config);
-        simulator.start().await.unwrap();
+        simulator
+            .start()
+            .await
+            .expect("test: simulator should start in test_packet_loss");
 
-        let delivered = simulator.delay_packet(1024).await.unwrap();
+        let delivered = simulator
+            .delay_packet(1024)
+            .await
+            .expect("test: delay_packet should return Ok even when packet is dropped");
         assert!(!delivered); // Should be dropped
 
         let stats = simulator.stats();
         assert_eq!(stats.packets_dropped, 1);
 
-        simulator.stop().await.unwrap();
+        simulator
+            .stop()
+            .await
+            .expect("test: simulator should stop in test_packet_loss");
     }
 
     #[test]
@@ -595,10 +619,16 @@ mod tests {
         };
 
         let simulator = NetworkSimulator::new(config);
-        simulator.start().await.unwrap();
+        simulator
+            .start()
+            .await
+            .expect("test: simulator should start in test_statistics");
 
         for _ in 0..10 {
-            simulator.delay_packet(1024).await.unwrap();
+            simulator
+                .delay_packet(1024)
+                .await
+                .expect("test: delay_packet should succeed in test_statistics loop");
         }
 
         let stats = simulator.stats();
@@ -606,7 +636,10 @@ mod tests {
         assert_eq!(stats.bytes_processed, 10240);
         assert!(stats.avg_latency_ms > 0.0);
 
-        simulator.stop().await.unwrap();
+        simulator
+            .stop()
+            .await
+            .expect("test: simulator should stop in test_statistics");
     }
 
     #[test]
@@ -640,7 +673,10 @@ mod tests {
         let new_config = SimulatorConfig::from_condition(NetworkCondition::Poor);
         assert!(simulator.update_config(new_config).is_ok());
 
-        simulator.start().await.unwrap();
+        simulator
+            .start()
+            .await
+            .expect("test: simulator should start after config update");
 
         let invalid_config = SimulatorConfig {
             packet_loss_rate: -0.5,
@@ -652,14 +688,23 @@ mod tests {
     #[tokio::test]
     async fn test_reset_stats() {
         let simulator = NetworkSimulator::from_condition(NetworkCondition::Good);
-        simulator.start().await.unwrap();
+        simulator
+            .start()
+            .await
+            .expect("test: simulator should start in test_reset_stats");
 
-        simulator.delay_packet(1024).await.unwrap();
+        simulator
+            .delay_packet(1024)
+            .await
+            .expect("test: delay_packet should succeed in test_reset_stats");
         assert_eq!(simulator.stats().packets_processed, 1);
 
         simulator.reset_stats();
         assert_eq!(simulator.stats().packets_processed, 0);
 
-        simulator.stop().await.unwrap();
+        simulator
+            .stop()
+            .await
+            .expect("test: simulator should stop in test_reset_stats");
     }
 }

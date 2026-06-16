@@ -1,1026 +1,16 @@
-//! # IPFRS Semantic - Vector Search and Semantic Routing
-//!
-//! This crate provides high-performance semantic search and routing capabilities for IPFRS,
-//! enabling content discovery based on vector embeddings and semantic similarity.
-//!
-//! ## Features
-//!
-//! - **HNSW-based Vector Search** - Fast approximate nearest neighbor search
-//! - **Semantic Routing** - Content discovery based on embeddings
-//! - **Hybrid Search** - Combine vector search with metadata filtering
-//! - **Vector Quantization** - Memory-efficient index compression (PQ, OPQ, Scalar)
-//! - **Learned Indices** - ML-based indexing with Recursive Model Index (RMI)
-//! - **Logic Integration** - TensorLogic reasoning with embeddings
-//! - **DiskANN** - Disk-based indexing for 100M+ vectors
-//! - **SIMD Optimization** - ARM NEON and x86 SSE/AVX acceleration
-//! - **Caching** - Hot embedding cache with LRU eviction
-//! - **Batch Query Processing** - Parallel batch queries for high throughput
-//! - **Query Re-ranking** - Multi-criteria result re-ranking with weighted scoring
-//! - **Query Analytics** - Performance tracking and query pattern analysis
-//! - **Multi-Modal Search** - Unified search across text, image, audio, video, and code
-//! - **Differential Privacy** - Privacy-preserving embeddings with configurable privacy budgets
-//! - **Dynamic Updates** - Online embedding updates and version migration
-//! - **Vector Quality Analysis** - Data validation, anomaly detection, and quality metrics (NEW!)
-//! - **Index Diagnostics** - Health monitoring, performance profiling, and issue detection (NEW!)
-//! - **Index Optimization** - Automatic parameter tuning and resource management (NEW!)
-//! - **Auto-Scaling Advisor** - Intelligent scaling recommendations for production deployments (NEW!)
-//!
-//! ## Quick Start
-//!
-//! ### Basic Semantic Search
-//!
-//! ```rust
-//! use ipfrs_semantic::{SemanticRouter, RouterConfig};
-//! use ipfrs_core::Cid;
-//!
-//! # #[tokio::main]
-//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Create a semantic router with default configuration
-//! let router = SemanticRouter::with_defaults()?;
-//!
-//! // Index content with embeddings (typically from a model like BERT, CLIP, etc.)
-//! let cid1: Cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi".parse()?;
-//! let embedding1 = vec![0.1, 0.2, 0.3]; // 768-dim embedding in real use
-//!
-//! // Add to index
-//! router.add(&cid1, &vec![0.5; 768])?;
-//!
-//! // Query for similar content
-//! let query_embedding = vec![0.5; 768];
-//! let results = router.query(&query_embedding, 10).await?;
-//!
-//! for result in results {
-//!     println!("CID: {}, Score: {}", result.cid, result.score);
-//! }
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ### Batch Query for High Throughput
-//!
-//! ```rust
-//! use ipfrs_semantic::{SemanticRouter, RouterConfig};
-//! use ipfrs_core::Cid;
-//!
-//! # #[tokio::main]
-//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Create a semantic router
-//! let router = SemanticRouter::with_defaults()?;
-//!
-//! // Index multiple items
-//! let items = vec![
-//!     ("bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi".parse::<Cid>()?, vec![0.1; 768]),
-//!     ("bafybeihpjhkeuiq3k6nqa3fkgeigeri7iebtrsuyuey5y6vy36n345xmbi".parse::<Cid>()?, vec![0.2; 768]),
-//!     ("bafybeif2pall7dybz7vecqka3zo24irdwabwdi4wc55jznaq75q7eaavvu".parse::<Cid>()?, vec![0.3; 768]),
-//! ];
-//!
-//! router.add_batch(&items)?;
-//!
-//! // Batch query - process multiple queries in parallel
-//! let query_embeddings = vec![
-//!     vec![0.15; 768],
-//!     vec![0.25; 768],
-//!     vec![0.35; 768],
-//! ];
-//!
-//! // More efficient than querying one by one
-//! let batch_results = router.query_batch(&query_embeddings, 10).await?;
-//!
-//! for (i, results) in batch_results.iter().enumerate() {
-//!     println!("Query {} found {} results", i, results.len());
-//! }
-//!
-//! // Get batch statistics
-//! let stats = router.batch_stats(&batch_results);
-//! println!("Total queries: {}", stats.total_queries);
-//! println!("Avg results per query: {:.2}", stats.avg_results_per_query);
-//! println!("Avg score: {:.4}", stats.avg_score);
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ### Hybrid Search with Metadata Filtering
-//!
-//! ```rust
-//! use ipfrs_semantic::{HybridIndex, HybridConfig, HybridQuery, Metadata, MetadataValue, MetadataFilter};
-//! use ipfrs_core::Cid;
-//!
-//! # #[tokio::main]
-//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Create hybrid index
-//! let config = HybridConfig::default();
-//! let index = HybridIndex::new(config)?;
-//!
-//! // Index content with metadata
-//! let cid: Cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi".parse()?;
-//! let embedding = vec![0.5; 768];
-//!
-//! let mut metadata = Metadata::new();
-//! metadata.set("type", MetadataValue::String("image".to_string()));
-//! metadata.set("size", MetadataValue::Integer(1024));
-//!
-//! index.insert(&cid, &embedding, Some(metadata))?;
-//!
-//! // Query with filters using builder pattern
-//! let filter = MetadataFilter::eq("type", MetadataValue::String("image".to_string()));
-//! let query = HybridQuery::knn(vec![0.5; 768], 10)
-//!     .with_filter(filter);
-//!
-//! let response = index.search(query).await?;
-//! println!("Found {} results", response.results.len());
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ### Vector Quantization for Memory Efficiency
-//!
-//! ```rust
-//! use ipfrs_semantic::{ProductQuantizer, ScalarQuantizer};
-//!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Create Product Quantizer (8-32x compression)
-//! let dimension = 768;
-//! let num_subspaces = 8;
-//! let bits_per_subspace = 8;
-//!
-//! let mut pq = ProductQuantizer::new(dimension, num_subspaces, bits_per_subspace)?;
-//!
-//! // Train on representative data (1000 training samples, max 10 iterations)
-//! let training_data: Vec<Vec<f32>> = vec![vec![0.5; 768]; 1000];
-//! pq.train(&training_data, 10)?;
-//!
-//! // Quantize embeddings
-//! let embedding = vec![0.5; 768];
-//! let quantized = pq.quantize(&embedding)?;
-//!
-//! println!("Original size: {} bytes", dimension * 4);
-//! println!("Quantized size: {} bytes", quantized.codes.len());
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ### DiskANN for Large-Scale Indexing
-//!
-//! ```rust,no_run
-//! use ipfrs_semantic::{DiskANNIndex, DiskANNConfig};
-//! use ipfrs_core::Cid;
-//!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Create DiskANN index for 100M+ vectors
-//! let config = DiskANNConfig {
-//!     dimension: 768,
-//!     max_degree: 32,
-//!     ..Default::default()
-//! };
-//!
-//! let mut index = DiskANNIndex::new(config);
-//! index.create("/tmp/diskann_index")?;
-//!
-//! // Insert vectors (stored on disk, not in RAM)
-//! let cid: Cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi".parse()?;
-//! let embedding = vec![0.5; 768];
-//! index.insert(&cid, &embedding)?;
-//!
-//! // Search with constant memory usage
-//! let results = index.search(&embedding, 10)?;
-//! println!("Found {} results from disk", results.len());
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ### Learned Index Structures
-//!
-//! ```rust
-//! use ipfrs_semantic::{LearnedIndex, RMIConfig, ModelType};
-//! use ipfrs_core::Cid;
-//!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Create a learned index with Recursive Model Index (RMI)
-//! let config = RMIConfig {
-//!     num_models: 10,              // Number of second-stage models
-//!     model_type: ModelType::Linear, // Linear, Polynomial, or NeuralNetwork
-//!     training_iterations: 100,
-//!     learning_rate: 0.01,
-//!     error_threshold: 0.05,
-//! };
-//!
-//! let mut index = LearnedIndex::new(config);
-//!
-//! // Add embeddings - the index learns data distribution
-//! for i in 0..1000 {
-//!     let cid = Cid::default();
-//!     let embedding = vec![i as f32 / 1000.0; 768];
-//!     index.add(cid, embedding)?;
-//! }
-//!
-//! // The index automatically rebuilds and trains models
-//! let query = vec![0.5; 768];
-//! let results = index.search(&query, 10)?;
-//!
-//! // Check statistics
-//! let stats = index.stats();
-//! println!("Indexed {} points using {} models",
-//!          stats.data_points, stats.num_models);
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ### TensorLogic Integration
-//!
-//! ```rust,no_run
-//! use ipfrs_semantic::{LogicSolver, SolverConfig};
-//! use ipfrs_tensorlogic::{Predicate, Term, Constant};
-//! use ipfrs_core::Cid;
-//!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Create a logic solver with semantic similarity
-//! let config = SolverConfig {
-//!     max_depth: 100,
-//!     similarity_threshold: 0.8,
-//!     top_k_similar: 10,
-//!     embedding_dim: 384,
-//!     detect_cycles: true,
-//! };
-//!
-//! let mut solver = LogicSolver::new(config)?;
-//!
-//! // Add facts to the knowledge base
-//! let cid1: Cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi".parse()?;
-//! let fact1 = Predicate::new("likes".to_string(), vec![
-//!     Term::Const(Constant::String("alice".to_string())),
-//!     Term::Const(Constant::String("rust".to_string())),
-//! ]);
-//! solver.add_fact(fact1, cid1)?;
-//!
-//! let cid2: Cid = "bafybeihpjhkeuiq3k6nqa3fkgeigeri7iebtrsuyuey5y6vy36n345xmbi".parse()?;
-//! let fact2 = Predicate::new("likes".to_string(), vec![
-//!     Term::Const(Constant::String("bob".to_string())),
-//!     Term::Const(Constant::String("python".to_string())),
-//! ]);
-//! solver.add_fact(fact2, cid2)?;
-//!
-//! // Add a rule for similarity-based matching
-//! // Rule: similar(X, Y) :- likes(X, Lang), likes(Y, Lang)
-//! let head = Predicate::new("similar".to_string(), vec![
-//!     Term::Var("X".to_string()),
-//!     Term::Var("Y".to_string())
-//! ]);
-//! let body = vec![
-//!     Predicate::new("likes".to_string(), vec![
-//!         Term::Var("X".to_string()),
-//!         Term::Var("Lang".to_string())
-//!     ]),
-//!     Predicate::new("likes".to_string(), vec![
-//!         Term::Var("Y".to_string()),
-//!         Term::Var("Lang".to_string())
-//!     ]),
-//! ];
-//! solver.add_rule(head, body)?;
-//!
-//! // Query using semantic similarity
-//! let query = Predicate::new("likes".to_string(), vec![
-//!     Term::Var("Who".to_string()),
-//!     Term::Const(Constant::String("rust".to_string())),
-//! ]);
-//!
-//! let results = solver.query(&query)?;
-//! for substitution in results {
-//!     println!("Found substitution: {:?}", substitution);
-//! }
-//!
-//! // Get solver statistics
-//! let stats = solver.stats();
-//! println!("Total facts: {}", stats.num_facts);
-//! println!("Total rules: {}", stats.num_rules);
-//! println!("Indexed predicates: {}", stats.num_indexed_predicates);
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ### Custom Embedding Model Integration
-//!
-//! ```rust,no_run
-//! use ipfrs_semantic::{SemanticRouter, RouterConfig, DistanceMetric};
-//! use ipfrs_core::Cid;
-//!
-//! # #[tokio::main]
-//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Configure router for your embedding model
-//! let config = RouterConfig {
-//!     dimension: 768,  // BERT-base dimension
-//!     metric: DistanceMetric::Cosine,
-//!     max_connections: 16,
-//!     ef_construction: 200,
-//!     ef_search: 50,
-//!     cache_size: 1000,
-//! };
-//!
-//! let router = SemanticRouter::new(config)?;
-//!
-//! // Function to generate embeddings from your model
-//! // This is a placeholder - replace with your actual model
-//! fn generate_embedding(text: &str) -> Vec<f32> {
-//!     // Example: Use sentence-transformers, Hugging Face transformers, etc.
-//!     // let model = SentenceTransformer::new("all-MiniLM-L6-v2");
-//!     // model.encode(text)
-//!
-//!     // For this example, just return a dummy embedding
-//!     vec![0.5; 768]
-//! }
-//!
-//! // Index documents with embeddings
-//! let documents = vec![
-//!     ("Rust programming language", "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"),
-//!     ("Python machine learning", "bafybeihpjhkeuiq3k6nqa3fkgeigeri7iebtrsuyuey5y6vy36n345xmbi"),
-//!     ("Distributed systems", "bafybeif2pall7dybz7vecqka3zo24irdwabwdi4wc55jznaq75q7eaavvu"),
-//! ];
-//!
-//! for (text, cid_str) in documents {
-//!     let cid: Cid = cid_str.parse()?;
-//!     let embedding = generate_embedding(text);
-//!     router.add(&cid, &embedding)?;
-//! }
-//!
-//! // Query with natural language
-//! let query_text = "rust systems programming";
-//! let query_embedding = generate_embedding(query_text);
-//! let results = router.query(&query_embedding, 5).await?;
-//!
-//! println!("Top results for '{}':", query_text);
-//! for result in results {
-//!     println!("  CID: {}, Score: {:.3}", result.cid, result.score);
-//! }
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ### Distributed Semantic Search
-//!
-//! For large-scale deployments across multiple nodes:
-//!
-//! ```rust,no_run
-//! use ipfrs_semantic::{SemanticDHTNode, SemanticDHTConfig, VectorIndex, DistanceMetric};
-//! use ipfrs_network::libp2p::PeerId;
-//! use ipfrs_core::Cid;
-//!
-//! # #[tokio::main]
-//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Configure distributed semantic DHT
-//! let config = SemanticDHTConfig {
-//!     embedding_dim: 768,
-//!     replication_factor: 3,     // Replicate to 3 peers
-//!     routing_table_size: 20,    // Top 20 nearest peers
-//!     distance_metric: DistanceMetric::Cosine,
-//!     max_hops: 5,               // Maximum query propagation hops
-//!     query_timeout_ms: 5000,    // 5 second timeout
-//! };
-//!
-//! // Create local vector index
-//! let local_index = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200)?;
-//!
-//! // Create DHT node
-//! let local_peer_id = PeerId::random();
-//! let dht_node = SemanticDHTNode::new(config, local_peer_id, local_index);
-//!
-//! // Add peer to routing table
-//! use ipfrs_semantic::SemanticPeer;
-//! let peer_id = PeerId::random();
-//! let peer_embedding = vec![0.5; 768];  // Aggregate embedding of peer's data
-//! let peer = SemanticPeer::new(peer_id, peer_embedding);
-//! dht_node.routing_table().add_peer(peer)?;
-//!
-//! // Insert data (automatically replicated to nearest peers)
-//! let cid: Cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi".parse()?;
-//! let embedding = vec![0.7; 768];
-//! dht_node.insert(&cid, &embedding).await?;
-//!
-//! // Distributed k-NN search across the network
-//! let query_embedding = vec![0.6; 768];
-//! let results = dht_node.search_distributed(&query_embedding, 10).await?;
-//!
-//! println!("Found {} results from distributed search", results.len());
-//! for result in results {
-//!     println!("  CID: {}, Score: {:.3}", result.cid, result.score);
-//! }
-//!
-//! // Update peer clusters for locality optimization
-//! dht_node.routing_table().update_clusters(3)?;
-//!
-//! // Get DHT statistics
-//! let stats = dht_node.get_stats();
-//! println!("DHT Stats:");
-//! println!("  Peers: {}", stats.num_peers);
-//! println!("  Clusters: {}", stats.num_clusters);
-//! println!("  Local entries: {}", stats.num_local_entries);
-//! println!("  Queries processed: {}", stats.queries_processed);
-//! println!("  Avg latency: {:.2}ms", stats.avg_query_latency_ms);
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ### Federated Multi-Index Search
-//!
-//! Query multiple indices simultaneously with heterogeneous distance metrics:
-//!
-//! ```rust
-//! use ipfrs_semantic::{
-//!     FederatedQueryExecutor, FederatedConfig, AggregationStrategy,
-//!     LocalIndexAdapter, VectorIndex, DistanceMetric
-//! };
-//! use ipfrs_core::Cid;
-//! use parking_lot::RwLock;
-//! use std::sync::Arc;
-//!
-//! # #[tokio::main]
-//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Configure federated queries
-//! let mut config = FederatedConfig::default();
-//! config.aggregation_strategy = AggregationStrategy::RankFusion; // Best for heterogeneous metrics
-//! config.privacy_preserving = true;  // Enable differential privacy
-//! config.privacy_noise_level = 0.01; // Small noise for privacy
-//!
-//! let executor = FederatedQueryExecutor::new(config);
-//!
-//! // Create multiple indices with different metrics
-//! let index1 = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200)?;
-//! let index2 = VectorIndex::new(768, DistanceMetric::L2, 16, 200)?;
-//! let index3 = VectorIndex::new(768, DistanceMetric::DotProduct, 16, 200)?;
-//!
-//! // Populate indices with data
-//! // (In practice, these might be from different organizations or data sources)
-//! let cid1: Cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi".parse()?;
-//! let embedding1 = vec![0.5; 768];
-//! Arc::new(RwLock::new(index1)).write().insert(&cid1, &embedding1)?;
-//!
-//! // Register indices for federated queries
-//! let adapter1 = LocalIndexAdapter::new(
-//!     Arc::new(RwLock::new(VectorIndex::new(768, DistanceMetric::Cosine, 16, 200)?)),
-//!     "org1_index".to_string()
-//! );
-//! let adapter2 = LocalIndexAdapter::new(
-//!     Arc::new(RwLock::new(VectorIndex::new(768, DistanceMetric::L2, 16, 200)?)),
-//!     "org2_index".to_string()
-//! );
-//!
-//! executor.register_index(Arc::new(adapter1))?;
-//! executor.register_index(Arc::new(adapter2))?;
-//!
-//! // Query all registered indices simultaneously
-//! let query_embedding = vec![0.6; 768];
-//! let results = executor.query(&query_embedding, 10).await?;
-//!
-//! println!("Federated search found {} results", results.len());
-//! for result in results {
-//!     println!(
-//!         "  CID: {}, Score: {:.3}, Source: {}, Metric: {:?}",
-//!         result.cid, result.score, result.source_index_id, result.source_metric
-//!     );
-//! }
-//!
-//! // Query specific indices only
-//! let specific_results = executor.query_indices(
-//!     &query_embedding,
-//!     10,
-//!     &["org1_index".to_string()]
-//! ).await?;
-//!
-//! // Get federated query statistics
-//! let stats = executor.stats();
-//! println!("Federated Query Stats:");
-//! println!("  Total queries: {}", stats.total_queries);
-//! println!("  Indices queried: {}", stats.total_indices_queried);
-//! println!("  Avg latency: {:.2}ms", stats.avg_latency_ms);
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ### Multi-Modal Semantic Search
-//!
-//! Search across different data types (text, images, audio, etc.) in a unified embedding space:
-//!
-//! ```rust
-//! use ipfrs_semantic::{MultiModalIndex, MultiModalConfig, MultiModalEmbedding, Modality};
-//! use ipfrs_core::Cid;
-//!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Create multi-modal index
-//! let mut config = MultiModalConfig::default();
-//! config.project_to_unified = true;  // Enable unified embedding space
-//! config.unified_dim = 512;
-//!
-//! let mut index = MultiModalIndex::new(config);
-//!
-//! // Register different modalities with their native dimensions
-//! index.register_modality(Modality::Text, 768)?;  // BERT embeddings
-//! index.register_modality(Modality::Image, 512)?;  // ResNet embeddings
-//! index.register_modality(Modality::Audio, 768)?;  // Wav2Vec embeddings
-//!
-//! // Add text content
-//! let text_cid: Cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi".parse()?;
-//! let text_embedding = MultiModalEmbedding::new(
-//!     vec![0.1; 768],  // Text embedding from BERT
-//!     Modality::Text
-//! );
-//! index.add(text_cid, text_embedding)?;
-//!
-//! // Add image content
-//! let image_cid: Cid = "bafybeigvgzoolh3cxsculpsjkz3hxfpg37pszqx3j7i5fwzgjmrmtv5wmi".parse()?;
-//! let image_embedding = MultiModalEmbedding::new(
-//!     vec![0.2; 512],  // Image embedding from ResNet
-//!     Modality::Image
-//! );
-//! index.add(image_cid, image_embedding)?;
-//!
-//! // Search within a specific modality
-//! let text_query = MultiModalEmbedding::new(vec![0.15; 768], Modality::Text);
-//! let text_results = index.search_modality(&text_query, 5, None)?;
-//!
-//! // Cross-modal search: find similar content across all modalities
-//! let cross_modal_results = index.search_cross_modal(&text_query, 10, None)?;
-//! for (cid, score, modality) in cross_modal_results {
-//!     println!("Found {:?} content: {} (score: {:.3})", modality, cid, score);
-//! }
-//!
-//! // Get statistics
-//! let stats = index.stats();
-//! for (modality, stat) in stats {
-//!     println!("{:?}: {} embeddings, {} dims", modality, stat.num_embeddings, stat.dimension);
-//! }
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ### Privacy-Preserving Search with Differential Privacy
-//!
-//! Protect embedding privacy while maintaining search utility:
-//!
-//! ```rust
-//! use ipfrs_semantic::{PrivacyMechanism, PrivacyBudget, PrivateEmbedding, TradeoffAnalyzer};
-//!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Create a privacy mechanism (epsilon-differential privacy)
-//! let epsilon = 1.0;  // Privacy budget
-//! let sensitivity = 1.0;  // L2 sensitivity of embeddings
-//! let mechanism = PrivacyMechanism::laplacian(epsilon, sensitivity)?;
-//!
-//! // Create a private embedding
-//! let original_embedding = vec![0.5; 768];
-//! let private_emb = PrivateEmbedding::new(original_embedding, mechanism);
-//!
-//! // Use the noisy embedding for public release
-//! let public_embedding = private_emb.public_embedding();
-//! let (epsilon, delta) = private_emb.privacy_params();
-//! println!("Privacy: ε={}, δ={}", epsilon, delta);
-//! println!("Expected utility loss: {:.3}", private_emb.utility_loss());
-//!
-//! // Track privacy budget across multiple queries
-//! let budget = PrivacyBudget::new(10.0, 0.001)?;  // Total budget
-//!
-//! // Consume budget for each query
-//! budget.consume(0.5, 0.0001)?;
-//! budget.consume(0.5, 0.0001)?;
-//!
-//! println!("Remaining budget: {:.2}", budget.remaining());
-//!
-//! // Analyze privacy-utility trade-offs
-//! let analyzer = TradeoffAnalyzer::new(sensitivity);
-//! let tradeoffs = analyzer.analyze(768);
-//! for point in tradeoffs {
-//!     println!("ε={:.1}: utility loss={:.2}", point.epsilon, point.utility_loss);
-//! }
-//!
-//! // Find best epsilon for target utility
-//! if let Some(best_epsilon) = analyzer.find_epsilon_for_utility(768, 15.0) {
-//!     println!("Best ε for utility loss <15.0: {:.2}", best_epsilon);
-//! }
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ### Dynamic Embedding Updates and Version Migration
-//!
-//! Manage evolving embeddings with version control and online updates:
-//!
-//! ```rust
-//! use ipfrs_semantic::{DynamicIndex, ModelVersion, OnlineUpdater, EmbeddingTransform};
-//! use ipfrs_core::Cid;
-//!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Create a dynamic index with version tracking
-//! let v1 = ModelVersion::new(1, 0, 0);
-//! let index = DynamicIndex::new(v1.clone(), 768)?;
-//!
-//! // Add embeddings to version 1.0.0
-//! let cid: Cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi".parse()?;
-//! let embedding_v1 = vec![0.5; 768];
-//! index.insert(&cid, &embedding_v1, None)?;
-//!
-//! // Add a new model version with transformation
-//! let v2 = ModelVersion::new(1, 1, 0);
-//! let transform = EmbeddingTransform::identity(v1.clone());
-//! index.add_version(v2.clone(), Some(transform))?;
-//!
-//! // Set the new version as active
-//! index.set_active_version(v2.clone())?;
-//!
-//! // Add new embeddings to v2
-//! let cid2: Cid = "bafybeigvgzoolh3cxsculpsjkz3hxfpg37pszqx3j7i5fwzgjmrmtv5wmi".parse()?;
-//! let embedding_v2 = vec![0.6; 768];
-//! index.insert(&cid2, &embedding_v2, Some(v2))?;
-//!
-//! // Online fine-tuning with momentum
-//! let updater = OnlineUpdater::new(0.01, 0.9);  // learning_rate, momentum
-//!
-//! // Apply gradient updates
-//! let gradient = vec![0.001; 768];
-//! let updated_embedding = updater.update(&cid, &embedding_v2, &gradient);
-//!
-//! // Track versions
-//! let stats = index.version_stats();
-//! for (version, stat) in stats {
-//!     println!("Version {}: {} embeddings (active: {})",
-//!         version, stat.num_embeddings, stat.is_active);
-//! }
-//!
-//! // Online updater statistics
-//! let updater_stats = updater.stats();
-//! println!("Online updater: lr={}, momentum={}, tracking {} embeddings",
-//!     updater_stats.learning_rate, updater_stats.momentum, updater_stats.num_tracked);
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ## Performance
-//!
-//! ### SIMD Acceleration
-//!
-//! The crate includes SIMD-optimized distance computations:
-//!
-//! ```rust
-//! use ipfrs_semantic::{l2_distance, cosine_distance, dot_product};
-//!
-//! let vec1 = vec![1.0, 2.0, 3.0, 4.0];
-//! let vec2 = vec![0.5, 1.5, 2.5, 3.5];
-//!
-//! // Uses ARM NEON or x86 SSE/AVX when available
-//! let l2_dist = l2_distance(&vec1, &vec2);
-//! let cos_dist = cosine_distance(&vec1, &vec2);
-//! let dot_prod = dot_product(&vec1, &vec2);
-//! ```
-//!
-//! ### Performance Targets
-//!
-//! - **Query latency**: < 1ms for 1M vectors (cached)
-//! - **Query latency**: < 5ms for 1M vectors (uncached)
-//! - **Index build time**: < 10min for 1M vectors
-//! - **Memory usage**: < 2GB for 1M × 768-dim vectors
-//! - **Recall@10**: > 95% for k-NN search
-//!
-//! ## Architecture
-//!
-//! ### Core Components
-//!
-//! - **[`VectorIndex`]** - HNSW-based vector search index
-//! - **[`SemanticRouter`]** - High-level routing with caching
-//! - **[`HybridIndex`]** - Hybrid search with metadata filtering
-//! - **[`DiskANNIndex`]** - Disk-based indexing for massive scale
-//!
-//! ### Optimization Layers
-//!
-//! - **Quantization** - [`ProductQuantizer`], [`OptimizedProductQuantizer`], [`ScalarQuantizer`]
-//! - **Caching** - [`HotEmbeddingCache`], [`AlignedVector`]
-//! - **SIMD** - [`l2_distance`], [`cosine_distance`], [`dot_product`]
-//!
-//! ### Logic Integration
-//!
-//! - **[`LogicSolver`]** - TensorLogic reasoning with embeddings
-//! - **[`QueryExecutor`]** - SPARQL-like query language
-//! - **[`ProvenanceTracker`]** - Audit trails and provenance
-//!
-//! ## Use Cases
-//!
-//! ### Semantic Content Discovery
-//!
-//! Find similar content based on embeddings from models like:
-//! - Text: BERT, RoBERTa, Sentence Transformers
-//! - Images: CLIP, ResNet, ViT
-//! - Multi-modal: CLIP, ALIGN
-//!
-//! ### Recommendation Systems
-//!
-//! Build recommendation engines that find similar:
-//! - Documents based on text embeddings
-//! - Images based on visual features
-//! - Users based on behavior embeddings
-//!
-//! ### Distributed AI Model Routing
-//!
-//! Route AI inference requests to:
-//! - Find similar cached results
-//! - Locate relevant model weights
-//! - Discover related training data
-//!
-//! ## Configuration
-//!
-//! ### Index Tuning
-//!
-//! ```rust
-//! use ipfrs_semantic::{VectorIndex, DistanceMetric, ParameterTuner, UseCase};
-//!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Get recommended parameters for your use case
-//! let rec = ParameterTuner::recommend(
-//!     100_000,              // number of vectors
-//!     768,                  // dimension
-//!     UseCase::HighRecall   // optimize for recall
-//! );
-//!
-//! // Create index with recommended parameters
-//! let index = VectorIndex::new(
-//!     768,
-//!     DistanceMetric::Cosine,
-//!     rec.m,
-//!     rec.ef_construction
-//! )?;
-//!
-//! println!("M: {}, efConstruction: {}", rec.m, rec.ef_construction);
-//! println!("Estimated recall@10: {:.2}%", rec.estimated_recall * 100.0);
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ## Query Language
-//!
-//! The crate provides a SPARQL-like query language for complex knowledge base queries:
-//!
-//! ```rust,no_run
-//! use ipfrs_semantic::{Query, QueryPattern, QueryExecutor, FilterExpr, TermPattern};
-//! use ipfrs_tensorlogic::{KnowledgeBase, Predicate, Term, Constant};
-//!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Create knowledge base
-//! let mut kb = KnowledgeBase::new();
-//!
-//! // Add some facts
-//! let fact1 = Predicate::new("person".to_string(), vec![
-//!     Term::Const(Constant::String("alice".to_string())),
-//! ]);
-//! kb.add_fact(fact1);
-//!
-//! let fact2 = Predicate::new("age".to_string(), vec![
-//!     Term::Const(Constant::String("alice".to_string())),
-//!     Term::Const(Constant::Int(30)),
-//! ]);
-//! kb.add_fact(fact2);
-//!
-//! // Create query executor
-//! let executor = QueryExecutor::new(kb);
-//!
-//! // Build a query using the builder pattern
-//! let query = Query::new()
-//!     .select("name")
-//!     .select("age_val")
-//!     .where_pattern(QueryPattern::Pattern {
-//!         name: Some("person".to_string()),
-//!         args: vec![TermPattern::Variable("name".to_string())],
-//!     })
-//!     .where_pattern(QueryPattern::Pattern {
-//!         name: Some("age".to_string()),
-//!         args: vec![
-//!             TermPattern::Variable("name".to_string()),
-//!             TermPattern::Variable("age_val".to_string()),
-//!         ],
-//!     })
-//!     .limit(10);
-//!
-//! // Execute the query
-//! let result = executor.execute(query)?;
-//!
-//! println!("Found {} results", result.bindings.len());
-//! for binding in result.bindings {
-//!     println!("  Name: {:?}, Age: {:?}", binding.get("name"), binding.get("age_val"));
-//! }
-//!
-//! // Query statistics
-//! println!("Patterns evaluated: {}", result.stats.patterns_evaluated);
-//! println!("Execution time: {} ms", result.stats.execution_time_ms);
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ### Query Features
-//!
-//! - **SELECT clause**: Specify variables to return
-//! - **WHERE patterns**: Pattern matching with wildcards and variables
-//! - **FILTER expressions**: Filter results with boolean logic
-//! - **LIMIT/OFFSET**: Pagination support
-//! - **Query optimization**: Automatic join order optimization and filter pushdown
-//!
-//! ### Boolean Queries
-//!
-//! ```rust,no_run
-//! use ipfrs_semantic::{BooleanQuery, Query, FilterExpr};
-//!
-//! # fn main() {
-//! // AND query: match both conditions
-//! let and_query = BooleanQuery::And(vec![
-//!     Query::new().select("x"),
-//!     Query::new().select("y"),
-//! ]);
-//!
-//! // OR query: match either condition
-//! let or_query = BooleanQuery::Or(vec![
-//!     Query::new().select("x"),
-//!     Query::new().select("y"),
-//! ]);
-//!
-//! // NOT query: negate a query
-//! let not_query = BooleanQuery::Not(Box::new(
-//!     Query::new().select("x")
-//! ));
-//! # }
-//! ```
-//!
-//! ## Error Handling
-//!
-//! All operations return `Result<T, ipfrs_core::Error>`:
-//!
-//! ```rust
-//! use ipfrs_semantic::SemanticRouter;
-//! use ipfrs_core::Error;
-//!
-//! # #[tokio::main]
-//! # async fn main() {
-//! match SemanticRouter::with_defaults() {
-//!     Ok(router) => println!("Router created successfully"),
-//!     Err(Error::InvalidInput(msg)) => eprintln!("Invalid input: {}", msg),
-//!     Err(e) => eprintln!("Error: {}", e),
-//! }
-//! # }
-//! ```
-//!
-//! ## Advanced Features
-//!
-//! ### Vector Quality Analysis
-//!
-//! Validate embeddings and detect anomalies:
-//!
-//! ```rust
-//! use ipfrs_semantic::{analyze_quality, detect_anomaly, compute_batch_stats};
-//!
-//! # fn main() {
-//! // Analyze a single vector
-//! let embedding = vec![0.1, 0.2, 0.3, 0.4, 0.5];
-//! let quality = analyze_quality(&embedding);
-//!
-//! println!("Quality score: {:.2}", quality.quality_score);
-//! println!("Is valid: {}", quality.is_valid);
-//! println!("Is normalized: {}", quality.is_normalized);
-//! println!("Sparsity: {:.1}%", quality.sparsity * 100.0);
-//!
-//! // Detect anomalies
-//! let report = detect_anomaly(
-//!     &embedding,
-//!     0.3,   // expected mean
-//!     0.15,  // expected std dev
-//!     1.0,   // expected L2 norm
-//!     0.1,   // mean tolerance
-//!     0.1,   // std dev tolerance
-//!     0.2,   // norm tolerance
-//! );
-//!
-//! if report.is_anomaly {
-//!     println!("Anomaly detected: {}", report.description);
-//!     println!("Confidence: {:.1}%", report.confidence * 100.0);
-//! }
-//!
-//! // Analyze batch of vectors
-//! let vectors = vec![
-//!     vec![0.1, 0.2, 0.3],
-//!     vec![0.4, 0.5, 0.6],
-//!     vec![0.7, 0.8, 0.9],
-//! ];
-//! let batch_stats = compute_batch_stats(&vectors);
-//!
-//! println!("Average quality: {:.2}", batch_stats.avg_quality);
-//! println!("Valid vectors: {}/{}", batch_stats.valid_count, batch_stats.count);
-//! # }
-//! ```
-//!
-//! ### Index Diagnostics and Health Monitoring
-//!
-//! Monitor index health and performance:
-//!
-//! ```rust
-//! use ipfrs_semantic::{VectorIndex, diagnose_index, HealthMonitor, SearchProfiler};
-//! use std::time::Duration;
-//!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let mut index = VectorIndex::with_defaults(128)?;
-//!
-//! // Run diagnostics
-//! let report = diagnose_index(&index);
-//!
-//! println!("Health status: {:?}", report.status);
-//! println!("Index size: {} vectors", report.size);
-//! println!("Memory usage: ~{:.2} MB", report.memory_usage as f64 / 1e6);
-//!
-//! for issue in &report.issues {
-//!     println!("Issue ({:?}): {}", issue.severity, issue.description);
-//!     if let Some(fix) = &issue.suggested_fix {
-//!         println!("  Suggested fix: {}", fix);
-//!     }
-//! }
-//!
-//! for rec in &report.recommendations {
-//!     println!("Recommendation: {}", rec);
-//! }
-//!
-//! // Set up periodic health monitoring
-//! let mut monitor = HealthMonitor::new(Duration::from_secs(60));
-//!
-//! if monitor.should_check() {
-//!     let report = monitor.check(&index);
-//!     println!("Health check: {:?}", report.status);
-//! }
-//!
-//! // Profile search performance
-//! let mut profiler = SearchProfiler::new();
-//!
-//! // Simulate queries
-//! profiler.record_query(Duration::from_millis(5));
-//! profiler.record_query(Duration::from_millis(3));
-//! profiler.record_query(Duration::from_millis(4));
-//!
-//! let stats = profiler.stats();
-//! println!("Total queries: {}", stats.total_queries);
-//! println!("Average latency: {:?}", stats.avg_latency);
-//! println!("QPS: {:.2}", stats.qps);
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ### Index Optimization
-//!
-//! Automatically tune index parameters:
-//!
-//! ```rust
-//! use ipfrs_semantic::{analyze_optimization, OptimizationGoal, QueryOptimizer, MemoryOptimizer};
-//! use std::time::Duration;
-//!
-//! # fn main() {
-//! // Analyze and get optimization recommendations
-//! let result = analyze_optimization(
-//!     50_000,  // index size
-//!     768,     // dimension
-//!     16,      // current M
-//!     200,     // current ef_construction
-//!     OptimizationGoal::Balanced,
-//! );
-//!
-//! println!("Current quality score: {:.2}", result.current_score);
-//! println!("Recommended M: {}", result.recommended_m);
-//! println!("Recommended ef_construction: {}", result.recommended_ef_construction);
-//! println!("Recommended ef_search: {}", result.recommended_ef_search);
-//! println!("Estimated improvement: {:.1}%", result.estimated_improvement * 100.0);
-//!
-//! for reason in &result.reasoning {
-//!     println!("  - {}", reason);
-//! }
-//!
-//! // Adaptive query optimization
-//! let mut query_optimizer = QueryOptimizer::new(
-//!     50,                            // initial ef_search
-//!     Duration::from_millis(10),     // target latency
-//! );
-//!
-//! // The optimizer adjusts ef_search based on observed latency
-//! for _ in 0..20 {
-//!     query_optimizer.record_query(Duration::from_millis(15));
-//! }
-//!
-//! println!("Optimized ef_search: {}", query_optimizer.get_ef_search());
-//!
-//! // Memory budget optimization
-//! let mut memory_optimizer = MemoryOptimizer::new(1024 * 1024 * 1024); // 1GB
-//!
-//! let (m, ef_c, max_vectors) = memory_optimizer.recommend_config(768);
-//! println!("For 1GB budget:");
-//! println!("  Recommended M: {}", m);
-//! println!("  Recommended ef_construction: {}", ef_c);
-//! println!("  Max vectors: {}", max_vectors);
-//! # }
-//! ```
+#![doc = include_str!("CRATE_DOCS.md")]
 
 pub mod adapters;
 pub mod analytics;
 pub mod auto_scaling;
 pub mod benchmark_comparison;
 pub mod cache;
+pub mod cross_encoder;
 pub mod dht;
 pub mod dht_node;
 pub mod diagnostics;
 pub mod diskann;
+pub mod drift_detector;
 pub mod dynamic;
 pub mod federated;
 pub mod hnsw;
@@ -1031,13 +21,31 @@ pub mod metadata;
 pub mod migration;
 pub mod multimodal;
 pub mod optimization;
+pub mod persistence;
 pub mod privacy;
 pub mod prod_tests;
 pub mod provenance;
+pub mod query_cache;
+pub use query_cache::{CachedQueryResult, QueryCacheConfig, QueryCacheStats, SemanticQueryCache};
+pub mod query_planner;
+pub mod query_rewriter;
+pub use query_rewriter::{
+    QueryRewriter, QueryRewriterConfig, QueryRewriterStats, RewriteResult, RewriteRule,
+    RewriteRuleType, RewrittenTerm,
+};
+pub mod federated_search;
+pub mod index_compactor;
+pub mod index_merger;
+pub mod index_partitioner;
+pub mod index_rebalancer;
+pub mod partial_sync;
 pub mod quantization;
 pub mod regression;
 pub mod reranking;
+pub mod result_aggregator;
 pub mod router;
+pub mod shard_balancer;
+pub mod shard_coordinator;
 pub mod simd;
 pub mod solver;
 pub mod stats;
@@ -1051,7 +59,9 @@ pub use hnsw::{
 };
 
 // Router exports
-pub use router::{BatchStats, CacheStats, QueryFilter, RouterConfig, RouterStats, SemanticRouter};
+pub use router::{
+    BatchStats, CacheStats, IndexBackend, QueryFilter, RouterConfig, RouterStats, SemanticRouter,
+};
 
 // Hybrid search exports
 pub use hybrid::{
@@ -1064,12 +74,19 @@ pub use metadata::{Metadata, MetadataFilter, MetadataStore, MetadataValue, Tempo
 
 // Quantization exports
 pub use quantization::{
-    OptimizedProductQuantizer, PQCode, ProductQuantizer, QuantizationBenchmark,
-    QuantizationBenchmarker, QuantizationComparison, QuantizedVector, ScalarQuantizer,
+    dequantize_i8_to_f32, quantize_f32_to_i8, BinaryVectorStore, OptimizedProductQuantizer, PQCode,
+    ProductQuantizer, QuantizationBenchmark, QuantizationBenchmarker, QuantizationComparison,
+    QuantizedVector, QuantizedVectorStore, ScalarQuantizer,
 };
 
 // Statistics exports
 pub use stats::{IndexHealth, IndexStats, MemoryUsage, PerfTimer, StatsSnapshot};
+
+// Result aggregator exports
+pub use result_aggregator::{
+    AggregatedResult, AggregationStrategy as AggAggregationStrategy, AggregatorConfig,
+    AggregatorStats, ResultAggregator, SearchResult as AggSearchResult,
+};
 
 // DiskANN exports
 pub use diskann::SearchResult as DiskANNSearchResult;
@@ -1198,4 +215,717 @@ pub use benchmark_comparison::{
 pub use migration::{
     BatchMigration, ConfigMigration, DimensionMigration, IndexMigration, MetricMigration,
     MigrationConfig, MigrationProgress,
+};
+
+// Shard balancer exports (HNSW-on-DHT shard balancing)
+pub use shard_balancer::{DhtShardRouter, ShardAssignment, ShardBalancer, ShardConfig};
+
+// Shard coordinator exports (consistent-hash vector distribution for 1M+ vectors)
+pub use shard_coordinator::{
+    ConsistentHashRing, ShardCoordinator, ShardError, ShardId, ShardStats, ShardStatsSnapshot,
+    VectorShard,
+};
+
+// Index Persistence exports (HNSW Snapshot Serialization + incremental snapshots)
+pub use persistence::{
+    IncrementalSnapshot, IncrementalTracker, IndexEntry, IndexPersistence, IndexSnapshot,
+};
+
+// Partial sync / dirty region tracking
+pub use partial_sync::{DirtyRegionTracker, EmbeddingDelta, EmbeddingRegion, PartialSyncManager};
+
+// Index Compactor exports (HNSW fragmentation detection and rebuild coordination)
+pub use index_compactor::{
+    CompactionPlan, CompactionPolicy, CompactionPriority, CompactionReason, CompactorStats,
+    CompactorStatsSnapshot, IndexCompactor, IndexFragmentStats,
+};
+
+// Federated Search Coordinator — cross-node vector similarity search
+pub use federated_search::{
+    CachedSearchResult, FederatedSearchCoordinator, FederatedSearchStats,
+    FederatedSearchStatsSnapshot, QueryKey, SearchPeer, SearchResult as PeerSearchResult,
+};
+
+pub mod embedding_normalizer;
+pub use embedding_normalizer::{
+    EmbeddingNormalizer, NormStats, NormalizationType, NormalizerConfig, NormalizerStats,
+};
+
+// Embedding Pipeline — preprocess raw content into normalised vectors
+pub mod embedding_pipeline;
+pub use embedding_pipeline::{
+    fnv1a_hash_f32, EmbeddingInput, EmbeddingPipeline, EmbeddingPipelineConfig,
+    NormalizationStrategy, PipelineError, PipelineResult, PipelineStage, PipelineStats,
+    PipelineStatsSnapshot, SemanticEmbeddingPipeline, SemanticPipelineStats,
+};
+
+pub mod quantization_error;
+pub use quantization_error::{QErrorError, QuantizationError, QuantizationErrorTracker};
+
+// Search Quality Evaluation — Recall@K, Precision@K, NDCG@K, AP, RR
+pub mod search_quality;
+pub use search_quality::{
+    EvalError, EvaluatorStats, EvaluatorStatsSnapshot, GroundTruth, QualityMetrics,
+    SearchQualityEvaluator, SearchResultSet,
+};
+
+pub mod search_explainer;
+pub use search_explainer::{
+    ExplainerConfig, ExplainerStats, ExplanationNode, QueryContext, ScoreContribution,
+    SearchExplainer,
+};
+
+// Vector Search Re-Ranker — multi-signal scoring (similarity, recency, tag overlap, peer reliability)
+pub mod search_ranker;
+pub use search_ranker::{
+    // SemanticSearchRanker and associated types
+    RankSignal,
+    RankedResult,
+    RankerConfig,
+    RankerStats,
+    RankingSignal,
+    RawCandidate,
+    SearchCandidate,
+    SemanticRankedResult,
+    SemanticRankerConfig,
+    SemanticSearchRanker,
+    VectorSearchRanker,
+};
+
+// Two-level LFU/TTL similarity score cache for k-NN searches
+pub mod similarity_cache;
+
+// Pairwise cosine-similarity cache with LFU eviction and tick-based TTL
+pub mod similarity_cache_v2;
+
+// Vector Anomaly Detector — z-score and isolation-score detection
+pub mod anomaly_detector;
+pub use anomaly_detector::{
+    AnomalyConfig, AnomalyDetectorStats, AnomalyMethod, AnomalyResult, DetectorConfig,
+    DetectorStats, SemanticAnomalyDetector, SemanticAnomalyMethod, SemanticAnomalyResult,
+    VectorAnomalyDetector,
+};
+
+// Embedding Drift Monitor — concept drift detection via normalised deviation
+pub mod drift_monitor;
+pub use drift_monitor::{
+    BaselineStats, DriftMonitorConfig, DriftMonitorStats, DriftSignal, EmbeddingDriftMonitor,
+};
+
+// Semantic Cluster Analyzer — k-means++ style cluster analysis over embedding vectors
+pub mod cluster_analyzer;
+pub use cluster_analyzer::{
+    AnalyzerConfig, Cluster, ClusterPoint, ClusterStats, SemanticClusterAnalyzer,
+};
+
+// Product Quantization for compressing high-dimensional vectors into compact codes
+pub mod vector_quantizer;
+
+// HNSW index structure analysis and parameter tuning recommendations
+pub mod index_optimizer;
+
+// Relevance feedback loop: signal collection and score boosting
+pub mod feedback_loop;
+
+// Multi-Modal Search Coordinator — cross-modality result fusion and deduplication
+pub mod multimodal_search;
+pub use multimodal_search::{
+    CoordinatorStats, FusedResult, FusionStrategy, Modality as SearchModality, ModalityResult,
+    MultiModalSearchCoordinator, SearchQuery,
+};
+pub use vector_quantizer::{
+    Codebook, QuantizationConfig, QuantizationStats, QuantizerCode, VectorQuantizer, VqError,
+};
+
+// Semantic Personalizer — per-user interest profile management and search result biasing
+pub mod personalizer;
+
+// Embedding Composer — late-fusion of multiple embeddings into a single representation
+pub mod embedding_composer;
+pub use personalizer::{
+    InteractionRecord, InteractionType, PersonalizationBias, SemanticPersonalizer, UserProfile,
+};
+
+// Semantic Tag Extractor — similarity-based tag assignment with TF-IDF-like scoring
+pub mod tag_extractor;
+pub use tag_extractor::{
+    ExtractionConfig, ExtractorStats, SemanticTagExtractor, Tag, TagAssignment,
+};
+
+// Semantic Graph Linker — builds a similarity graph over embeddings
+pub mod graph_linker;
+pub use graph_linker::{
+    EdgeType, GraphLinkerStats, GraphNode, LinkerConfig, SemanticEdge, SemanticGraphLinker,
+};
+
+// Semantic Content Router — routes queries to most relevant nodes/shards
+pub mod content_router;
+pub use content_router::{
+    RouteScore, RouterConfig as ContentRouterConfig, RouterStats as ContentRouterStats,
+    RoutingDecision, SemanticContentRouter, TopicEmbedding,
+};
+
+// Semantic Hotspot Detector — detects frequently queried regions in embedding space
+pub mod hotspot_detector;
+pub use hotspot_detector::{
+    cosine_sim as hotspot_cosine_sim, HotspotConfig, HotspotRegion, HotspotStats, QueryHit,
+    SemanticHotspotDetector,
+};
+
+// Semantic Query Expander — generates synonyms, paraphrases, and sub-queries to improve recall
+pub mod query_expander;
+pub use query_expander::{
+    ExpandedQuery, ExpanderStats, ExpansionStrategy, SemanticQueryExpander, TermEntry,
+    TermRelation, VectorExpandedQuery, VectorExpanderConfig, VectorExpanderStats,
+    VectorQueryExpander, VectorQueryExpansion,
+};
+
+// Semantic Near-Duplicate Detector — LSH-based sub-linear near-dup detection
+pub mod near_dup_detector;
+pub use near_dup_detector::{
+    cosine_sim as near_dup_cosine_sim, DupCandidate, DupDetectorStats, DuplicatePair, LshBand,
+    MinHashConfig, MinHashNearDupDetector, MinHashSignature, NearDupConfig, NearDupDetectorStats,
+    SemanticNearDupDetector,
+};
+
+// Semantic Concept Hierarchy — DAG-based concept ontology with IsA / RelatedTo / OppositeOf edges
+pub mod concept_hierarchy;
+pub use concept_hierarchy::{
+    ConceptEdge, ConceptNode, ConceptRelation, HierarchyStats, SemanticConceptHierarchy,
+};
+
+// Concept and Keyword Extraction — TF-IDF and frequency-based concept extraction
+pub mod concept_extractor;
+pub use concept_extractor::{
+    Concept, ConceptExtractor, ConceptType, ExtractorConfig as ConceptExtractorConfig,
+    ExtractorStats as ConceptExtractorStats,
+};
+
+// Semantic Topic Modeller — online clustering for latent topic modelling
+pub mod topic_modeler;
+pub use topic_modeler::{
+    cosine_sim as topic_cosine_sim,
+    // LDA-based TopicModeler
+    DocumentTopics,
+    LdaTopic,
+    ModelDocument,
+    ModellerConfig,
+    SemanticTopicModeller,
+    TopicAssignment,
+    TopicModel,
+    TopicModelConfig,
+    TopicModelError,
+    TopicModelResult,
+    TopicModeler,
+    TopicModelerStats,
+    TopicModellerStats,
+    TopicWord,
+};
+
+// Semantic Query Pipeline — composable multi-stage query processing
+pub mod query_pipeline;
+pub use query_pipeline::{
+    PipelineConfig, PipelineRun, PipelineStageKind, PipelineStats as QueryPipelineStats,
+    QueryResult as PipelineQueryResult, SemanticQueryPipeline, StageMetrics,
+};
+
+// Semantic Knowledge Graph — multi-hop semantic reasoning over entity/concept graphs
+pub mod knowledge_graph;
+pub use knowledge_graph::{
+    cosine_sim as knowledge_graph_cosine_sim, EntityKind, GraphEdge, GraphEntity, GraphQuery,
+    KnowledgeGraphStats, SemanticKnowledgeGraph,
+};
+
+pub mod entity_linker;
+pub use entity_linker::{
+    cosine_sim, KbEntity, LinkedMention, LinkerConfig as EntityLinkerConfig, LinkerStats,
+    MentionKind, SemanticEntityLinker,
+};
+
+pub mod entity_resolution;
+pub use entity_resolution::{
+    CanonicalEntity, EntityMention, EntityResolver, EntityType, ResolutionMethod, ResolutionResult,
+    ResolverConfig, ResolverStats,
+};
+
+pub mod relevance_feedback;
+pub use relevance_feedback::{
+    cosine_similarity as relevance_cosine_similarity, FeedbackItem, FeedbackLabel, FeedbackSession,
+    FeedbackStats, RocchioConfig, SemanticRelevanceFeedback,
+};
+
+// Semantic Diversifier — Maximal Marginal Relevance (MMR) result diversification
+pub mod diversifier;
+pub use diversifier::{
+    cosine_similarity as diversifier_cosine_similarity, DiversificationCandidate,
+    DiversifiedResult, DiversifierConfig, DiversifierStats, SemanticDiversifier,
+};
+
+// Semantic Synonym Expander — weighted synonym graph for vocabulary expansion in semantic search
+pub mod synonym_expander;
+pub use synonym_expander::{
+    ExpandedTerm, ExpanderConfig as SynonymExpanderConfig, SemanticSynonymExpander, SynonymEdge,
+    SynonymExpanderStats, SynonymRelation,
+};
+
+// Semantic Cluster Manager — online k-means-style document clustering with drift detection
+pub mod cluster_manager;
+pub use cluster_manager::{
+    euclidean_distance as cluster_euclidean_distance,
+    vec_mean as cluster_vec_mean,
+    BatchCluster,
+    // Batch k-means clustering
+    BatchClusterConfig,
+    BatchClusterManagerStats,
+    BatchSemanticClusterManager,
+    ClusterAssignment,
+    ClusterManagerConfig,
+    ClusterManagerStats,
+    SemanticCluster,
+    SemanticClusterManager,
+};
+
+pub mod document_summarizer;
+pub use document_summarizer::{
+    cosine_similarity as ds_cosine_similarity,
+    split_sentences as ds_split_sentences,
+    tf_idf as ds_tf_idf,
+    tokenize as ds_tokenize,
+    xorshift64 as ds_xorshift64,
+    DocumentChunk,
+    DocumentSummarizer,
+    // Renamed to avoid collision with text_summarizer::{SentenceScore, SummarizerConfig, SummarizerError}
+    SentenceScore as DsSentenceScore,
+    SummarizerConfig as DsSummarizerConfig,
+    SummarizerError as DsSummarizerError,
+    SummarizerStats,
+    SummaryResult,
+    SummaryStyle,
+};
+
+pub mod intent_classifier;
+pub use intent_classifier::{
+    ClassifierConfig as IntentClassifierConfig, ClassifierStats as IntentClassifierStats,
+    IntentClassification, IntentKind, IntentPrototype, SemanticIntentClassifier,
+};
+
+// Semantic Context Window — sliding window of recent interactions for session-aware personalization
+pub mod context_window;
+pub use context_window::{ContextEntry, ContextStats, SemanticContextWindow, WindowConfig};
+
+// Semantic Multilingual Index — language-organised embedding index for cross-lingual search
+pub mod multilingual_index;
+pub use multilingual_index::{
+    CrossLingualQuery, Language, MultilingualDoc, MultilingualIndexStats, MultilingualResult,
+    SemanticMultilingualIndex,
+};
+
+// Semantic Attribution Tracker — attribution chains for explainability and audit
+pub mod attribution_tracker;
+pub use attribution_tracker::{
+    AttributionRecord, AttributionSource, AttributionStats, SemanticAttributionTracker,
+};
+
+pub mod embedding_pool;
+pub use embedding_pool::{EmbeddingBuffer, PoolConfig, PoolStats, SemanticEmbeddingPool};
+
+// Semantic Document Graph — graph structure for document relationships based on semantic similarity
+pub mod document_graph;
+pub use document_graph::{
+    cosine_sim as doc_graph_cosine_sim, DocGraphEdge, DocGraphNode, DocumentGraphStats,
+    EdgeKind as DocEdgeKind, SemanticDocumentGraph,
+};
+
+// Multi-factor document ranking combining BM25 lexical scoring with semantic similarity
+pub mod document_ranker;
+pub use document_ranker::{
+    DocumentIndex,
+    DocumentRanker,
+    RankedDocument,
+    // RankerStats collides with search_ranker::RankerStats — alias for disambiguation
+    RankerStats as DrRankerStats,
+    RankingConfig,
+};
+
+// Semantic Vocabulary Index — token-to-ID mapping with frequency / TF-IDF tracking
+pub mod vocab_index;
+pub use vocab_index::{SemanticVocabIndex, VocabConfig, VocabEntry, VocabIndexStats};
+
+// Semantic Summary Extractor — extractive summarization via embedding similarity
+pub mod summary_extractor;
+pub use summary_extractor::{
+    ExtractionResult, ExtractorScoredSentence, ExtractorSummaryConfig, SemanticSummaryExtractor,
+    SummaryExtractorStats,
+};
+
+// Semantic Term Weighter — TF-IDF and BM25 term weighting for semantic search
+pub mod term_weighter;
+pub use term_weighter::{
+    DocumentProfile, SemanticTermWeighter, TermWeight, TermWeighterStats, WeighterConfig,
+    WeightingScheme,
+};
+
+// Semantic Dimension Reducer — dimensionality reduction for embeddings
+pub mod dimension_reducer;
+pub use dimension_reducer::{
+    ReducerConfig, ReducerStats, ReductionMethod, ReductionResult, SemanticDimensionReducer,
+};
+
+// Semantic Tokenizer — text tokenization for semantic search indexing
+pub mod tokenizer;
+pub use tokenizer::{
+    SemanticTokenizer, Token as SemanticToken, TokenizerConfig, TokenizerMode, TokenizerStats,
+};
+
+pub use feedback_loop::{FeedbackEntry, FeedbackLoopStats, FeedbackType, QueryFeedbackSummary};
+
+pub mod embedding_cache;
+pub use embedding_cache::{
+    CachedEmbedding, EmbeddingCacheConfig, EmbeddingCacheStats, SemanticEmbeddingCache,
+};
+
+pub use cross_encoder::{
+    CandidateDoc, CrossEncoder, CrossEncoderConfig, CrossEncoderStats, RerankedDoc, ScoringModel,
+};
+
+// Multi-algorithm semantic vector clustering engine
+pub mod semantic_clusterer;
+pub use semantic_clusterer::{
+    ClusterAlgorithm, ClusterError, Linkage, ScCluster, ScClusterPoint, ScClustererStats,
+    ScClusteringResult, SemanticClusterer,
+};
+
+// Lexicon-based sentiment analysis engine with aspect-level detection
+pub mod sentiment_analyzer;
+pub use sentiment_analyzer::{
+    AspectSentiment, LexiconEntry, SentimentAnalyzer, SentimentAnalyzerStats, SentimentConfig,
+    SentimentPolarity, SentimentResult, SentimentScore,
+};
+
+// TF-IDF + TextRank extractive text summarization engine
+pub mod text_summarizer;
+pub use text_summarizer::{
+    SentenceScore,
+    SummarizationMethod,
+    SummarizerConfig,
+    SummarizerError,
+    TextSummarizer,
+    TextSummarizerStats as TsSummarizerStats,
+    // Renamed to avoid collision with document_summarizer::{SummaryResult, SummarizerStats}
+    TextSummaryResult as TsSummaryResult,
+};
+
+// End-to-end semantic search pipeline (vector + BM25 + fusion + re-ranking)
+pub mod search_pipeline;
+pub use search_pipeline::{
+    FusionMethod,
+    SearchDocument,
+    SearchHit,
+    SearchPipelineResult,
+    SemanticSearchPipeline,
+    // Renamed to avoid collision with query_pipeline::PipelineConfig
+    SpPipelineConfig,
+    // Renamed to avoid collision with embedding_pipeline::PipelineStats
+    SpPipelineStats,
+    // Renamed to avoid collision with multimodal_search::SearchQuery
+    SpSearchQuery,
+};
+
+// Knowledge Base Builder — incremental semantic knowledge base with entities, relations, and concept graphs
+pub mod knowledge_base_builder;
+pub use knowledge_base_builder::{
+    // KbBuilderEntity instead of KbEntity to avoid collision with entity_linker::KbEntity
+    KbBuilderEntity,
+    // KbConceptNode instead of ConceptNode to avoid collision with concept_hierarchy::ConceptNode
+    KbConceptNode,
+    KbDocument,
+    KbError,
+    KbRelation as KbBuilderRelation,
+    KbStats as KbBuilderStats,
+    KbTriple,
+    KnowledgeBaseBuilder,
+};
+
+// Multilingual Normalizer — Unicode normalization, script detection, and script-aware tokenization
+pub mod multilingual_normalizer;
+pub use multilingual_normalizer::{
+    LanguageHint, MultilingualNormalizer, NormalizationOptions, NormalizedText,
+    NormalizerStats as MlnNormalizerStats, Script, TokenizationStrategy,
+};
+
+// Inverted index corpus indexer with BM25 scoring and faceted filtering
+pub mod corpus_indexer;
+pub use corpus_indexer::{
+    CorpusIndexer,
+    FacetFilter,
+    IndexError,
+    IndexQuery,
+    // IndexStats aliased to avoid collision with stats::IndexStats
+    IndexStats as CiIndexStats,
+    IndexedDocument,
+    InvertedIndex,
+    PostingEntry,
+    // SearchResult aliased to avoid collision with hnsw::SearchResult
+    SearchResult as CiSearchResult,
+};
+
+// Embedding Pipeline Manager — multi-stage text-to-vector transformation engine
+pub mod embedding_pipeline_manager;
+pub use embedding_pipeline_manager::{
+    l2_normalize as epm_l2_normalize, mean_pool as epm_mean_pool,
+    random_projection as epm_random_projection, EmbeddingBatch, EmbeddingPipelineManager,
+    EpmPipelineConfig, EpmPipelineError, EpmPipelineStage, EpmPipelineStats, EpmReductionMethod,
+    StageTiming,
+};
+
+pub mod semantic_versioning;
+pub use semantic_versioning::{
+    BumpType, ChangeRecord, ChangeType, CompatibilityLevel, CompatibilityMatrix, SemVer,
+    SemVerError, SemanticVersioningEngine, VersionedArtifact, VersioningStats,
+};
+
+pub mod similarity_graph;
+pub use similarity_graph::{
+    GraphConfig, SemanticSimilarityGraph, SgCommunity, SgEdge, SgNode, SgStats,
+};
+
+pub mod embedding_aggregator;
+pub use embedding_aggregator::{
+    AggregationInput, AggregationMethod, AggregationResult as EaAggregationResult, AggregatorError,
+    EaAggregatorStats, EmbeddingAggregator, EmbeddingAggregatorConfig,
+};
+
+// Semantic reranker (cross-encoder-style query-document pair scoring)
+pub mod semantic_reranker;
+pub use semantic_reranker::{
+    RerankCandidate, RerankConfig, RerankFeature, RerankQuery, RerankResult, RerankStats,
+    SemanticReranker,
+};
+
+// Multimodal index (cross-modal unified index with fusion strategies)
+// Document Chunker — splits text into semantically coherent chunks for embedding and retrieval
+pub mod document_chunker;
+pub use document_chunker::{
+    ChunkStats, ChunkStrategy, DocumentChunker, DocumentChunkerConfig, TextChunk,
+};
+
+pub mod multimodal_index;
+pub use multimodal_index::{
+    CrossModalQuery, CrossModalResult, FusionStrategy as MmiFusionStrategy, MmiError, MmiStats,
+    Modality as MmiModality, ModalityEmbedding, MultiModalDocument,
+    MultiModalIndex as MmiMultiModalIndex, MultiModalIndexConfig,
+};
+
+// Vector-similarity-based semantic cache (avoids redundant computation for close queries)
+pub mod semantic_cache;
+pub use semantic_cache::{
+    CacheConfig, CacheEntry, CacheEvictionPolicy, CacheKey, CacheLookupResult, ScCacheStats,
+    SemanticCacheLayer,
+};
+
+// Query expansion engine — enriches queries with synonyms, hypernyms, hyponyms,
+// and contextual terms to improve search recall.
+pub mod query_expansion;
+pub use query_expansion::{
+    ExpansionConfig, ExpansionSource, ExpansionStats, QeExpandedQuery, QeExpansionTerm,
+    QueryExpansionEngine, SynonymEntry,
+};
+
+pub mod embedding_finetuner;
+pub use embedding_finetuner::{
+    cosine_similarity as ef_cosine_similarity, l2_distance_sq as ef_l2_distance_sq,
+    EmbeddingFinetuner, FinetunerConfig, FinetunerError, ProjectionLayer, TrainingPair,
+    TrainingStats, TripletLoss,
+};
+
+// Dense retriever — hybrid exact cosine + BM25 sparse retrieval with min-max score fusion
+pub mod dense_retriever;
+pub use dense_retriever::{
+    BM25Index, DenseRetriever, Document as RetrieverDocument, RetrievalQuery, RetrievalResult,
+    RetrieverConfig, RetrieverError, RetrieverStats,
+};
+
+// Concept Graph Builder — semantic concept graph with weighted edges, BFS path finding,
+// co-occurrence mining, and embedding-based similarity search.
+pub mod concept_graph;
+pub use concept_graph::{
+    canonize_key_test as cg_canonize_key_test,
+    cosine_similarity as cg_cosine_similarity,
+    tokenize as cg_tokenize,
+    // Aliased to avoid collision with concept_extractor::Concept
+    CgConcept,
+    // Aliased to avoid collision with concept_hierarchy::ConceptEdge
+    CgConceptEdge,
+    // Aliased to avoid collision with concept_hierarchy::ConceptRelation
+    CgConceptRelation,
+    // Aliased to avoid collision with similarity_graph::GraphConfig
+    CgGraphConfig,
+    ConceptGraphBuilder,
+    ConceptGraphStats,
+    ConceptId,
+};
+
+// SemanticRouterV2 — advanced semantic routing with fallback chains and analytics
+pub mod semantic_router_v2;
+pub use semantic_router_v2::{
+    FallbackStrategy, RouteDefinition, RouteHandlerId, RouteStats as Srv2RouteStats,
+    RouterV2Config, RouterV2Error, RouterV2Stats, SemanticRouterV2, V2RoutingDecision,
+};
+
+pub mod text_similarity_scorer;
+pub use text_similarity_scorer::{
+    ScorerConfig, SimilarityMetric, SimilarityScore, TextPair, TextSimilarityResult,
+    TextSimilarityScorer,
+};
+
+// Embedding Cluster Analyzer — comprehensive cluster analysis for embedding spaces
+pub mod embedding_cluster_analyzer;
+pub use embedding_cluster_analyzer::{
+    ClusterDescriptor, ClusterId, ClusterQuality, EcaAnalyzerConfig, EcaAnalyzerStats,
+    EcaClusterPoint, EmbeddingClusterAnalyzer, OutlierReason, OutlierScore,
+};
+
+// Semantic Federated Search Coordinator — cross-node result merging with quorum and re-ranking
+pub mod semantic_federated_search;
+pub use semantic_federated_search::{
+    FederatedQuery, FederatedResult, FederatedStats, MergeStrategy, NodeResponse, RemoteNode,
+    RemoteResult, SemanticFederatedSearch,
+};
+
+// Topic Model Extractor — collapsed Gibbs sampling LDA
+pub mod topic_model_extractor;
+pub use topic_model_extractor::{
+    ExtractorConfig, ExtractorDocumentTopics, ExtractorError, ExtractorTopic, ExtractorTopicWord,
+    ModelStats as TopicModelStats, TmeDocumentTopics, TmeError, TmeTopic, TmeTopicWord,
+    TopicModelExtractor,
+};
+
+// Cross-Modal Reranker — fuses BM25 text and dense vector signals for unified reranking
+pub mod cross_modal_reranker;
+pub use cross_modal_reranker::{
+    CmrFusionStrategy, CrossModalReranker, ModalityScore, RerankerCandidate, RerankerConfig,
+    RerankerError, RerankerStats, TextFeatures, VectorFeatures,
+};
+
+pub mod semantic_graph_builder;
+pub use semantic_graph_builder::{
+    BuilderConfig, BuilderError, EdgeRelation, GraphStats, NodeType, SemanticGraphBuilder,
+    SgbGraphEdge, SgbGraphNode, SgbGraphQuery,
+};
+
+// Embedding Drift Detector — statistical concept drift detection in embedding spaces
+pub mod embedding_drift_detector;
+pub use embedding_drift_detector::{
+    DetectionMethod,
+    // DetectorConfig aliases to avoid collision with anomaly_detector::DetectorConfig
+    DetectorConfig as EddDetectorConfig,
+    DetectorError,
+    // DriftSignal aliases to avoid collision with drift_monitor::DriftSignal
+    DriftSignal as EddDriftSignal,
+    DriftSnapshot,
+    DriftStats as EddDriftStats,
+    DriftType,
+    EmbeddingDriftDetector as EddEmbeddingDriftDetector,
+};
+/// Type alias: `EddDriftSignal` is the production drift signal from [`embedding_drift_detector`].
+pub type EddDriftSignalAlias = EddDriftSignal;
+/// Type alias: `EddDetectorConfig` is the config for [`EddEmbeddingDriftDetector`].
+pub type EddDetectorConfigAlias = EddDetectorConfig;
+
+// Multi-Modal Indexer — unified index for text, vector, and structured data
+pub mod multi_modal_indexer;
+pub use multi_modal_indexer::{
+    cosine_similarity as mmi_cosine_similarity, IndexedDocument as MmiIndexedDocument,
+    MmiIndexConfig, MmiIndexConfigAlias, MmiIndexError, MmiIndexErrorAlias, MmiIndexStats,
+    MmiIndexStatsAlias, MmiSearchQuery, MmiSearchQueryAlias, MmiSearchResult, MmiSearchResultAlias,
+    ModalityData, MultiModalIndexer,
+};
+
+// Contextual Embedding Search — context-aware vector search with query expansion,
+// negative suppression, and diversity-aware re-ranking.
+pub mod contextual_embedding_search;
+pub use contextual_embedding_search::{
+    cosine_similarity as ces_cosine_similarity, weighted_sum as ces_weighted_sum, CesExpandedQuery,
+    ContextualEmbeddingSearch, ContextualResult, DiversityStrategy,
+    SearchConfig as CesSearchConfig, SearchContext, SearchDoc, SearchError as CesSearchError,
+    SearchStats as CesSearchStats,
+};
+
+// Semantic Cache Manager — similarity-aware cache with multiple eviction strategies.
+pub mod semantic_cache_manager;
+pub use semantic_cache_manager::{
+    ScmCacheConfig, ScmCacheEntry, ScmCacheError, ScmCacheHit, ScmCacheKey, ScmCacheStats,
+    ScmEntryAlias, ScmErrorAlias, ScmEvictionStrategy, ScmHitAlias, ScmKeyAlias, ScmStatsAlias,
+    SemanticCacheManager,
+};
+
+pub mod semantic_query_optimizer;
+pub use semantic_query_optimizer::{
+    ExecutionStep, FilterOp as SqoFilterOp, IndexHints, JoinType, OptimizationRule,
+    OptimizerConfig, OptimizerError, OptimizerStats, QueryNode as SqoQueryNode,
+    QueryPlan as SqoQueryPlan, SemanticQueryOptimizer, StepType,
+};
+
+// Vector Index Optimizer — workload-driven index structure selection and maintenance
+pub mod vector_index_optimizer;
+pub use vector_index_optimizer::{
+    IndexRecommendation, IndexStats as VioIndexStats, IndexStructure, MaintenanceAction,
+    OptimizationCriterion, OptimizerConfig as VioOptimizerConfig,
+    OptimizerError as VioOptimizerError, OptimizerStats as VioOptimizerStats, VectorIndexOptimizer,
+    WorkloadProfile,
+};
+
+// Semantic Anomaly Detector — production-grade anomaly detection for embedding corpora
+// using CentroidDistance, MahalanobisApprox, LOF, IsolationForest, and EnsembleVote
+pub mod semantic_anomaly_detector;
+pub use semantic_anomaly_detector::{
+    cosine_similarity as sad_cosine_similarity,
+    AnomalyRecord as SadAnomalyRecord,
+    ReferencePoint as SadReferencePoint,
+    SadAnomalyScore,
+    SadDetectionMethod,
+    SadDetectorConfig,
+    SadDetectorStats,
+    SadDriftReport,
+    // SemanticAnomalyDetector collides with anomaly_detector::SemanticAnomalyDetector → alias
+    SemanticAnomalyDetector as SadSemanticAnomalyDetector,
+};
+
+pub mod hierarchical_topic_model;
+pub use hierarchical_topic_model::{
+    HierarchicalTopicModel, HtmDocument, HtmModelConfig, HtmModelStats, HtmTopic, HtmTopicNode,
+};
+
+pub mod multilingual_embedding_aligner;
+pub use multilingual_embedding_aligner::{
+    MeaAlignerConfig, MeaAlignerStats, MeaAlignmentMatrix, MeaAlignmentMethod, MeaLanguageSpace,
+    MultilingualEmbeddingAligner,
+};
+
+// Embedding Compression Codec — multi-method lossy/lossless codec for dense embedding vectors
+pub mod embedding_compression_codec;
+pub use embedding_compression_codec::{
+    EccCodecConfig, EccCodecStats, EccCompressed, EccError, EccMethod, EmbeddingCompressionCodec,
+};
+
+// Semantic Cluster Labeler — automatic human-readable label assignment for embedding clusters
+pub mod semantic_cluster_labeler;
+pub use semantic_cluster_labeler::{
+    SclCluster, SclError, SclLabelCandidate, SclLabelerConfig, SclLabelerStats, SclLabelingMethod,
+    SemanticClusterLabeler,
+};
+
+// Semantic Versioning Tracker — detects semantic drift in embedding spaces across model versions
+pub mod semantic_versioning_tracker;
+pub use semantic_versioning_tracker::{
+    SemanticVersioningTracker, SvtDriftEvent, SvtDriftReport, SvtError,
+    SvtSemanticVersioningTracker, SvtTrackerConfig, SvtTrackerStats, SvtVersion, SvtVersionId,
+};
+
+// Semantic Search Pipeline — full-stack pipeline with preprocessing, retrieval, and postprocessing
+pub mod semantic_search_pipeline;
+pub use semantic_search_pipeline::{
+    SemanticSearchPipeline as SspSemanticSearchPipelineExport, SspDocId, SspDocument,
+    SspPipelineConfig, SspPipelineStats, SspQueryRecord, SspRerankMethod, SspSearchResult,
+    SspSemanticSearchPipeline, SspStage,
 };

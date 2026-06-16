@@ -98,7 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("5. Handling incoming messages...");
 
     // Simulate receiving messages
-    let messages = vec![
+    let messages = [
         GossipSubMessage {
             id: MessageId::new(&peers[0], 1),
             source: peers[0],

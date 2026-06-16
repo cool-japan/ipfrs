@@ -396,7 +396,10 @@ mod tests {
 
     fn dummy_cid() -> Cid {
         let data = vec![1u8; 32];
-        Cid::new_v1(0x55, multihash::Multihash::wrap(0x12, &data).unwrap())
+        Cid::new_v1(
+            0x55,
+            multihash::Multihash::wrap(0x12, &data).expect("test: wrap dummy multihash"),
+        )
     }
 
     #[test]
@@ -405,7 +408,7 @@ mod tests {
 
         let primary = dummy_peer();
         let fallback = "fallback_peer_id".to_string();
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:8080".parse().expect("test: parse socket addr");
 
         manager.register_fallback(primary.clone(), fallback, addr, 1);
 
@@ -420,15 +423,15 @@ mod tests {
         let cid = dummy_cid();
 
         let providers = vec![
-            "127.0.0.1:8080".parse().unwrap(),
-            "127.0.0.1:8081".parse().unwrap(),
+            "127.0.0.1:8080".parse().expect("test: parse socket addr"),
+            "127.0.0.1:8081".parse().expect("test: parse socket addr"),
         ];
 
         manager.register_providers(cid, providers.clone());
 
         let provider = manager.get_next_provider(&cid);
         assert!(provider.is_some());
-        assert!(providers.contains(&provider.unwrap()));
+        assert!(providers.contains(&provider.expect("test: get next provider")));
     }
 
     #[test]
@@ -436,7 +439,7 @@ mod tests {
         let manager = RecoveryManager::new(RecoveryConfig::default());
         let cid = dummy_cid();
 
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:8080".parse().expect("test: parse socket addr");
         manager.register_providers(cid, vec![addr]);
 
         let provider = manager.get_next_provider(&cid);
@@ -494,7 +497,7 @@ mod tests {
 
         let primary = dummy_peer();
         let fallback = "fallback_peer_id".to_string();
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:8080".parse().expect("test: parse socket addr");
 
         manager.register_fallback(primary.clone(), fallback, addr, 1);
         manager.record_fallback_success(&primary, addr);

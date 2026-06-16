@@ -463,7 +463,7 @@ pub unsafe extern "C" fn ipfrs_data_free(data: *mut u8, len: usize) {
 #[no_mangle]
 pub extern "C" fn ipfrs_version() -> *const c_char {
     // Use a static string to avoid allocation
-    static VERSION: &[u8] = b"ipfrs-interface 0.1.0\0";
+    static VERSION: &[u8] = b"ipfrs-interface 0.2.0\0";
     VERSION.as_ptr() as *const c_char
 }
 
@@ -514,7 +514,8 @@ mod tests {
             let client = ipfrs_client_new(ptr::null());
             assert!(!client.is_null());
 
-            let cid = CString::new("bafytest123").unwrap();
+            let cid = CString::new("bafytest123")
+                .expect("test: CString creation from valid string should succeed");
             let mut exists: c_int = 0;
             let result = ipfrs_has(client, cid.as_ptr(), &mut exists);
             assert_eq!(result, IpfrsErrorCode::Success as c_int);
@@ -540,7 +541,9 @@ mod tests {
         assert!(!version.is_null());
         unsafe {
             let c_str = CStr::from_ptr(version);
-            let version_str = c_str.to_str().unwrap();
+            let version_str = c_str
+                .to_str()
+                .expect("test: version string should be valid UTF-8");
             assert!(version_str.contains("ipfrs-interface"));
         }
     }

@@ -429,13 +429,13 @@ mod tests {
     fn test_cid() -> Cid {
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse()
-            .unwrap()
+            .expect("test: parse well-known CID string")
     }
 
     fn test_cid2() -> Cid {
         "bafybeihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku"
             .parse()
-            .unwrap()
+            .expect("test: parse well-known CID string")
     }
 
     #[test]
@@ -459,7 +459,13 @@ mod tests {
 
         assert_eq!(announcement.size, 1024);
         assert_eq!(announcement.topic, Some(Topic::tensors()));
-        assert_eq!(announcement.metadata.get("dtype").unwrap(), "float32");
+        assert_eq!(
+            announcement
+                .metadata
+                .get("dtype")
+                .expect("test: get dtype metadata entry"),
+            "float32"
+        );
     }
 
     #[tokio::test]
@@ -469,12 +475,15 @@ mod tests {
         manager
             .subscribe("peer1".to_string(), SubscriptionFilter::All)
             .await
-            .unwrap();
+            .expect("test: subscribe peer1 with All filter");
 
         let stats = manager.stats().await;
         assert_eq!(stats.active_subscriptions, 1);
 
-        manager.unsubscribe("peer1").await.unwrap();
+        manager
+            .unsubscribe("peer1")
+            .await
+            .expect("test: unsubscribe peer1");
 
         let stats = manager.stats().await;
         assert_eq!(stats.active_subscriptions, 0);
@@ -490,7 +499,7 @@ mod tests {
                 SubscriptionFilter::Topic(Topic::tensors()),
             )
             .await
-            .unwrap();
+            .expect("test: subscribe peer1 with tensors topic filter");
 
         manager
             .subscribe(
@@ -498,7 +507,7 @@ mod tests {
                 SubscriptionFilter::Topic(Topic::gradients()),
             )
             .await
-            .unwrap();
+            .expect("test: subscribe peer2 with gradients topic filter");
 
         let cid = test_cid();
         let announcement = BlockAnnouncement::new(cid, 1024).with_topic(Topic::tensors());
@@ -515,7 +524,7 @@ mod tests {
         manager
             .subscribe("peer1".to_string(), SubscriptionFilter::All)
             .await
-            .unwrap();
+            .expect("test: subscribe peer1 with All filter");
 
         let cid = test_cid();
         let announcement = BlockAnnouncement::new(cid, 1024).with_topic(Topic::tensors());
@@ -535,7 +544,7 @@ mod tests {
                 SubscriptionFilter::Topics(vec![Topic::tensors(), Topic::gradients()]),
             )
             .await
-            .unwrap();
+            .expect("test: subscribe peer1 with multiple topics filter");
 
         let cid1 = test_cid();
         let announcement1 = BlockAnnouncement::new(cid1, 1024).with_topic(Topic::tensors());
@@ -555,7 +564,7 @@ mod tests {
         manager
             .subscribe("peer1".to_string(), SubscriptionFilter::All)
             .await
-            .unwrap();
+            .expect("test: subscribe peer1 with All filter");
 
         let cid = test_cid();
         let announcement = BlockAnnouncement::new(cid, 1024);
@@ -579,12 +588,12 @@ mod tests {
         manager
             .subscribe("peer1".to_string(), SubscriptionFilter::All)
             .await
-            .unwrap();
+            .expect("test: subscribe peer1 within limit");
 
         manager
             .subscribe("peer2".to_string(), SubscriptionFilter::All)
             .await
-            .unwrap();
+            .expect("test: subscribe peer2 within limit");
 
         let result = manager
             .subscribe("peer3".to_string(), SubscriptionFilter::All)
@@ -599,12 +608,12 @@ mod tests {
         manager
             .subscribe("peer1".to_string(), SubscriptionFilter::All)
             .await
-            .unwrap();
+            .expect("test: subscribe peer1 with All filter");
 
         manager
             .subscribe("peer2".to_string(), SubscriptionFilter::All)
             .await
-            .unwrap();
+            .expect("test: subscribe peer2 with All filter");
 
         let stats = manager.stats().await;
         assert_eq!(stats.active_subscriptions, 2);

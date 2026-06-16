@@ -609,7 +609,9 @@ mod tests {
             args: vec![TermPattern::Wildcard, TermPattern::Wildcard],
         });
 
-        let result = executor.execute(query).unwrap();
+        let result = executor
+            .execute(query)
+            .expect("test: executor execute query executor failed");
         assert!(!result.bindings.is_empty());
     }
 
@@ -635,7 +637,9 @@ mod tests {
                 ],
             });
 
-        let result = executor.execute(query).unwrap();
+        let result = executor
+            .execute(query)
+            .expect("test: executor execute pattern matching failed");
         assert_eq!(result.bindings.len(), 1);
         assert!(result.bindings[0].contains_key("X"));
         assert!(result.bindings[0].contains_key("Y"));
@@ -661,7 +665,9 @@ mod tests {
             })
             .filter(FilterExpr::IsType("X".to_string(), TermType::Const));
 
-        let result = executor.execute(query).unwrap();
+        let result = executor
+            .execute(query)
+            .expect("test: executor execute filter expr failed");
         assert_eq!(result.bindings.len(), 2);
     }
 }

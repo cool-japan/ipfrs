@@ -215,7 +215,7 @@ impl QueryCache {
     pub fn new(capacity: usize) -> Self {
         Self {
             cache: RwLock::new(LruCache::new(
-                NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::new(100).unwrap()),
+                NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::new(100).expect("100 > 0")),
             )),
             default_ttl: None,
             stats: Arc::new(CacheStats::new()),
@@ -226,7 +226,7 @@ impl QueryCache {
     pub fn with_ttl(capacity: usize, ttl: Duration) -> Self {
         Self {
             cache: RwLock::new(LruCache::new(
-                NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::new(100).unwrap()),
+                NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::new(100).expect("100 > 0")),
             )),
             default_ttl: Some(ttl),
             stats: Arc::new(CacheStats::new()),
@@ -643,7 +643,7 @@ mod tests {
 
         let result = cache.get(&key);
         assert!(result.is_some());
-        assert_eq!(result.unwrap().len(), 1);
+        assert_eq!(result.expect("test: should succeed").len(), 1);
     }
 
     #[test]

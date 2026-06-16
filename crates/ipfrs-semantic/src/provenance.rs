@@ -538,7 +538,7 @@ pub struct ProvenanceStats {
 fn current_timestamp_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .expect("system time is after UNIX epoch")
         .as_millis() as u64
 }
 
@@ -549,13 +549,13 @@ mod tests {
     fn test_cid() -> Cid {
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse()
-            .unwrap()
+            .expect("test: hardcoded CID string is valid")
     }
 
     fn test_cid2() -> Cid {
         "bafybeiczsscdsbs7ffqz55asqdf3smv6klcw3gofszvwlyarci47bgf354"
             .parse()
-            .unwrap()
+            .expect("test: hardcoded CID string is valid")
     }
 
     #[test]
@@ -576,7 +576,12 @@ mod tests {
 
         let retrieved = tracker.get_metadata(&test_cid());
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().dimension, 768);
+        assert_eq!(
+            retrieved
+                .expect("test: metadata was just inserted so it must exist")
+                .dimension,
+            768
+        );
     }
 
     #[test]
@@ -592,16 +597,24 @@ mod tests {
             },
         );
 
-        tracker.track_embedding(metadata).unwrap();
+        tracker
+            .track_embedding(metadata)
+            .expect("test: track_embedding should succeed");
 
         // Update embedding
         tracker
             .update_embedding(test_cid(), test_cid2(), "Updated embedding")
-            .unwrap();
+            .expect("test: update_embedding should succeed");
 
         let history = tracker.get_version_history(&test_cid());
         assert!(history.is_some());
-        assert_eq!(history.unwrap().versions.len(), 2);
+        assert_eq!(
+            history
+                .expect("test: version history was just created")
+                .versions
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -617,7 +630,9 @@ mod tests {
             },
         );
 
-        tracker.track_embedding(metadata).unwrap();
+        tracker
+            .track_embedding(metadata)
+            .expect("test: track_embedding should succeed");
 
         let audit_entries = tracker.get_audit_log(&test_cid());
         assert!(!audit_entries.is_empty());
@@ -674,8 +689,12 @@ mod tests {
             },
         );
 
-        tracker.track_embedding(metadata1).unwrap();
-        tracker.track_embedding(metadata2).unwrap();
+        tracker
+            .track_embedding(metadata1)
+            .expect("test: first track_embedding should succeed");
+        tracker
+            .track_embedding(metadata2)
+            .expect("test: second track_embedding should succeed");
 
         let stats = tracker.stats();
         assert_eq!(stats.total_embeddings, 2);

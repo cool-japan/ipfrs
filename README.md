@@ -2,9 +2,9 @@
 
 ![IPFRS](ipfrs.jpg)
 
-**Version:** 0.1.0 "Foundation Release"
+**Version:** 0.2.0 "Network Release"
 
-**Status:** Ready for Production (Local-First Focus)
+**Status:** Production Ready — P2P Networking Available
 
 A next-generation distributed file system built in Rust, combining content-addressed storage with semantic search and logic programming capabilities.
 
@@ -46,10 +46,10 @@ IPFRS revolutionizes distributed storage by adding **intelligence** to content-a
 
 ## 📦 Installation
 
-### From Source (Recommended for 0.1.0)
+### From Source (Recommended for 0.2.0)
 
 ```bash
-git clone https://github.com/yourusername/ipfrs.git
+git clone https://github.com/cool-japan/ipfrs.git
 cd ipfrs
 cargo build --release
 cargo install --path crates/ipfrs-cli
@@ -240,7 +240,7 @@ IPFRS follows a bi-layer architecture combining intelligence with infrastructure
 ### Physical Layer (The Body)
 - **Block Storage**: Sled embedded database with content addressing
 - **Zero-Copy I/O**: Apache Arrow integration (planned)
-- **Network Stack**: libp2p with QUIC transport (planned for 0.2.0)
+- **Network Stack**: libp2p with QUIC transport — DHT, Bitswap, TensorSwap
 
 ```
 ┌─────────────────────────────────────┐
@@ -279,7 +279,10 @@ ipfrs/
 │   ├── ipfrs-network/         # libp2p networking (0.2.0)
 │   ├── ipfrs-transport/       # TensorSwap, Bitswap (0.2.0)
 │   ├── ipfrs/                 # Main library (unified API)
-│   └── ipfrs-cli/             # Command-line interface
+│   ├── ipfrs-cli/             # Command-line interface
+│   ├── ipfrs-wasm/            # WebAssembly bindings
+│   ├── ipfrs-nodejs/          # Node.js bindings
+│   └── ipfrs-python/          # Python bindings
 └── README.md
 ```
 
@@ -287,35 +290,46 @@ ipfrs/
 
 ## ✨ Key Features
 
-### 1. Content-Addressed Storage ✅
+### 1. Content-Addressed Storage ✅ (Implemented)
 - Immutable blocks identified by CID (Content Identifier)
 - Sled embedded database for persistence
 - DAG operations with IPLD support
 - Directory tree handling
 
-### 2. Semantic Search ✅
+### 2. Semantic Search ✅ (Implemented)
 - HNSW (Hierarchical Navigable Small World) index
 - k-NN similarity search with configurable distance metrics
 - Query result caching (LRU)
 - Hybrid filtered search (by score, prefix, etc.)
 
-### 3. Logic Programming ✅
+### 3. Logic Programming ✅ (Implemented)
 - Content-addressed terms, predicates, and rules
 - JSON serialization for portability
-- Foundation for distributed reasoning (0.2.0)
+- Foundation for distributed reasoning
 - Compatible with TensorLogic IR
 
-### 4. Comprehensive Observability ✅
+### 4. Comprehensive Observability ✅ (Implemented)
 - Storage statistics (block count, total size)
 - Semantic index stats (vectors, dimension, cache)
 - TensorLogic statistics
 - HTTP API monitoring endpoints
 
-### 5. HTTP Gateway ✅
+### 5. HTTP Gateway ✅ (Implemented)
 - 20 REST API endpoints
 - Kubo (go-ipfs) compatibility
 - HTTP 206 range request support
 - JSON responses throughout
+
+### 6. P2P Networking ✅ (Implemented)
+- libp2p integration with QUIC transport
+- DHT bootstrap and peer discovery
+- Bitswap block exchange protocol
+- TensorSwap distributed inference protocol
+
+### 7. WASM/Node.js Bindings ✅ (Implemented)
+- WebAssembly bindings for browser environments
+- Node.js native bindings via ipfrs-nodejs
+- Python bindings via ipfrs-python
 
 ---
 
@@ -459,7 +473,10 @@ async fn main() -> ipfrs::Result<()> {
 ## 🧪 Testing
 
 ```bash
-# Run all tests
+# Run all tests (recommended)
+cargo nextest run --workspace --all-features
+
+# Run all tests (standard)
 cargo test
 
 # Run with logging
@@ -476,7 +493,7 @@ cargo test --test integration
 
 ## 📊 Performance
 
-### Benchmarks (0.1.0)
+### Benchmarks (0.2.0)
 
 | Operation | Time | Throughput |
 |-----------|------|------------|
@@ -499,7 +516,7 @@ cargo test --test integration
 
 ## 🗺️ Roadmap
 
-### ✅ Version 0.1.0 "Foundation" (Current)
+### ✅ Version 0.1.0 "Foundation" (Released)
 - Content-addressed storage with DAG support
 - Semantic search (HNSW)
 - Logic programming (TensorLogic)
@@ -507,26 +524,32 @@ cargo test --test integration
 - CLI (13 commands)
 - Comprehensive observability
 
-### 🚧 Version 0.2.0 "Network" (Next - ETA: +1 month)
-- libp2p networking integration
+### ✅ Version 0.2.0 "Network Release" (Released 2026-06-15)
+- libp2p networking with QUIC transport
 - DHT bootstrap and peer discovery
-- Distributed inference engine
-- Network CLI commands
-- Circuit relay support
+- Bitswap block exchange protocol
+- TensorSwap distributed inference protocol
+- Traffic shaping and adaptive bandwidth management
+- WASM/Node.js bindings (ipfrs-wasm, ipfrs-nodejs, ipfrs-python)
+- Temporal pattern matching in TensorLogic
+- Abductive reasoning engine
+- Probabilistic Program Engine (PPE) with sampling support
+- Reinforcement Learning Agent (RLA) types with multiple policies
+- OxiARC compression migration (Pure Rust)
 
-### 📅 Version 0.3.0 "Performance" (+2 months)
+### 🚧 Version 0.3.0 "Intelligence" (In Progress)
 - Persistent HNSW index
-- Performance optimizations
-- Advanced query features
+- Advanced distributed reasoning
+- Enhanced query features
 - Production hardening
 
-### 📅 Version 0.4.0 "Ecosystem" (+3 months)
-- Language bindings (Python, JavaScript)
+### 📅 Version 0.4.0 "Ecosystem"
 - GraphQL API
 - Enhanced tooling
 - Monitoring & metrics
+- Extended language binding support
 
-### 📅 Version 1.0.0 "Stable" (+6 months)
+### 📅 Version 1.0.0 "Stable"
 - API stability guarantees
 - Comprehensive documentation
 - Production deployments
@@ -541,7 +564,7 @@ IPFRS is part of the COOLJAPAN ecosystem. Contributions are welcome!
 ### Development Setup
 
 ```bash
-git clone https://github.com/yourusername/ipfrs.git
+git clone https://github.com/cool-japan/ipfrs.git
 cd ipfrs
 cargo build
 cargo test
@@ -556,9 +579,24 @@ cargo test
 
 ---
 
+## Sponsorship
+
+IPFRS is developed and maintained by **COOLJAPAN OU (Team Kitasan)**.
+
+If you find IPFRS useful, please consider sponsoring the project to support continued development of the Pure Rust ecosystem.
+
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-red?logo=github)](https://github.com/sponsors/cool-japan)
+
+**[https://github.com/sponsors/cool-japan](https://github.com/sponsors/cool-japan)**
+
+Your sponsorship helps us:
+- Maintain and improve the COOLJAPAN ecosystem
+- Keep the entire ecosystem (OxiBLAS, OxiFFT, SciRS2, etc.) 100% Pure Rust
+- Provide long-term support and security updates
+
 ## 📄 License
 
-MIT OR Apache-2.0
+Apache-2.0
 
 ---
 
@@ -574,8 +612,8 @@ MIT OR Apache-2.0
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/ipfrs/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/ipfrs/discussions)
+- **Issues**: [GitHub Issues](https://github.com/cool-japan/ipfrs/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/cool-japan/ipfrs/discussions)
 - **Documentation**: [docs.rs/ipfrs](https://docs.rs/ipfrs)
 
 ---
@@ -621,6 +659,6 @@ By fusing Rust's robust implementation (The Body) with TensorLogic's flexible re
 
 ---
 
-**Status**: v0.1.0 - Production Ready (Local-First)
+**Status**: v0.2.0 - Production Ready (P2P Networking Available)
 
-🎉 **First stable release! Ready for local development and testing.**
+🎉 **v0.2.0 released 2026-06-15 — P2P networking, distributed inference, and ML agent types now available.**

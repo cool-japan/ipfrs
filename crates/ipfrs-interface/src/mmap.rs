@@ -343,17 +343,20 @@ mod tests {
     use std::io::Write;
 
     fn create_test_file() -> (tempfile::NamedTempFile, Vec<u8>) {
-        let mut file = tempfile::NamedTempFile::new().unwrap();
+        let mut file =
+            tempfile::NamedTempFile::new().expect("test: temp file creation should succeed");
         let data: Vec<u8> = (0..1024).map(|i| (i % 256) as u8).collect();
-        file.write_all(&data).unwrap();
-        file.flush().unwrap();
+        file.write_all(&data)
+            .expect("test: write to temp file should succeed");
+        file.flush()
+            .expect("test: flush to temp file should succeed");
         (file, data)
     }
 
     #[test]
     fn test_mmap_file_creation() {
         let (file, _data) = create_test_file();
-        let mmap = MmapFile::new(file.path()).unwrap();
+        let mmap = MmapFile::new(file.path()).expect("test: mmap creation should succeed");
         assert_eq!(mmap.size(), 1024);
         assert!(!mmap.is_empty());
     }
@@ -371,7 +374,7 @@ mod tests {
     #[test]
     fn test_mmap_bytes() {
         let (file, data) = create_test_file();
-        let mmap = MmapFile::new(file.path()).unwrap();
+        let mmap = MmapFile::new(file.path()).expect("test: mmap creation should succeed");
         let bytes = mmap.bytes();
         assert_eq!(bytes.len(), 1024);
         assert_eq!(&bytes[..], &data[..]);
@@ -380,9 +383,11 @@ mod tests {
     #[test]
     fn test_mmap_range() {
         let (file, data) = create_test_file();
-        let mmap = MmapFile::new(file.path()).unwrap();
+        let mmap = MmapFile::new(file.path()).expect("test: mmap creation should succeed");
 
-        let range = mmap.range(10..50).unwrap();
+        let range = mmap
+            .range(10..50)
+            .expect("test: range slice should succeed");
         assert_eq!(range.len(), 40);
         assert_eq!(&range[..], &data[10..50]);
     }
@@ -390,7 +395,7 @@ mod tests {
     #[test]
     fn test_mmap_range_invalid() {
         let (file, _data) = create_test_file();
-        let mmap = MmapFile::new(file.path()).unwrap();
+        let mmap = MmapFile::new(file.path()).expect("test: mmap creation should succeed");
 
         // Start > size
         assert!(mmap.range(2000..2100).is_err());
@@ -405,10 +410,12 @@ mod tests {
     #[test]
     fn test_mmap_multi_range() {
         let (file, data) = create_test_file();
-        let mmap = MmapFile::new(file.path()).unwrap();
+        let mmap = MmapFile::new(file.path()).expect("test: mmap creation should succeed");
 
         let ranges = vec![0..10, 50..60, 100..120];
-        let results = mmap.multi_range(&ranges).unwrap();
+        let results = mmap
+            .multi_range(&ranges)
+            .expect("test: multi_range should succeed");
 
         assert_eq!(results.len(), 3);
         assert_eq!(&results[0][..], &data[0..10]);
@@ -419,7 +426,7 @@ mod tests {
     #[test]
     fn test_mmap_clone() {
         let (file, _data) = create_test_file();
-        let mmap1 = MmapFile::new(file.path()).unwrap();
+        let mmap1 = MmapFile::new(file.path()).expect("test: mmap creation should succeed");
         let mmap2 = mmap1.clone();
 
         assert_eq!(mmap1.size(), mmap2.size());
@@ -432,11 +439,15 @@ mod tests {
         let cache = MmapCache::new(10);
 
         // First access - creates mmap
-        let mmap1 = cache.get_or_create(file.path()).unwrap();
+        let mmap1 = cache
+            .get_or_create(file.path())
+            .expect("test: cache get_or_create should succeed");
         assert_eq!(cache.len(), 1);
 
         // Second access - retrieves from cache
-        let mmap2 = cache.get_or_create(file.path()).unwrap();
+        let mmap2 = cache
+            .get_or_create(file.path())
+            .expect("test: cache get_or_create should succeed");
         assert_eq!(cache.len(), 1);
 
         // Should be the same Arc
@@ -448,7 +459,9 @@ mod tests {
         let (file, _data) = create_test_file();
         let cache = MmapCache::new(10);
 
-        cache.get_or_create(file.path()).unwrap();
+        cache
+            .get_or_create(file.path())
+            .expect("test: cache get_or_create should succeed");
         assert_eq!(cache.len(), 1);
 
         cache.clear();

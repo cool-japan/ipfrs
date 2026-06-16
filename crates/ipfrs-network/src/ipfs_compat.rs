@@ -370,7 +370,8 @@ mod tests {
         let result = parse_multiaddr_with_peer(addr_str);
         assert!(result.is_ok());
 
-        let (addr, peer_id) = result.unwrap();
+        let (addr, peer_id) =
+            result.expect("test: parse_multiaddr_with_peer should succeed for valid addr");
         assert!(peer_id.is_some());
         assert!(addr.to_string().contains("104.131.131.82"));
     }

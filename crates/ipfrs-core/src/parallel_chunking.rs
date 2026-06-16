@@ -267,7 +267,7 @@ impl ParallelChunker {
                 .collect::<Result<Vec<_>>>()?;
 
             // Collect nodes
-            let mut nodes_lock = all_nodes.lock().unwrap();
+            let mut nodes_lock = all_nodes.lock().unwrap_or_else(|e| e.into_inner());
             nodes_lock.extend(parent_results.iter().map(|(_, node)| node.clone()));
             drop(nodes_lock);
 
@@ -275,7 +275,10 @@ impl ParallelChunker {
             current_level = parent_results.into_iter().map(|(cid, _)| cid).collect();
         }
 
-        let nodes = Arc::try_unwrap(all_nodes).unwrap().into_inner().unwrap();
+        let nodes = Arc::try_unwrap(all_nodes)
+            .expect("no other Arc references to all_nodes at this point")
+            .into_inner()
+            .expect("Mutex is not poisoned");
 
         Ok(DagBuildResult {
             root_cid: current_level[0],
@@ -359,8 +362,8 @@ impl ParallelDeduplicator {
 
     /// Check if a chunk is unique (thread-safe)
     pub fn check_unique(&self, cid: &Cid, size: usize) -> bool {
-        let mut seen = self.seen_cids.lock().unwrap();
-        let mut stats = self.stats.lock().unwrap();
+        let mut seen = self.seen_cids.lock().unwrap_or_else(|e| e.into_inner());
+        let mut stats = self.stats.lock().unwrap_or_else(|e| e.into_inner());
 
         stats.total_chunks += 1;
         stats.total_data_size += size as u64;
@@ -377,7 +380,7 @@ impl ParallelDeduplicator {
 
     /// Get current deduplication statistics
     pub fn stats(&self) -> DeduplicationStats {
-        let stats = self.stats.lock().unwrap();
+        let stats = self.stats.lock().unwrap_or_else(|e| e.into_inner());
         let mut result = stats.clone();
         if result.total_data_size > 0 {
             result.space_savings_percent =

@@ -252,7 +252,10 @@ mod tests {
 
         coordinator.shutdown(ShutdownSignal::Manual);
 
-        let signal = rx.recv().await.unwrap();
+        let signal = rx
+            .recv()
+            .await
+            .expect("test: shutdown signal recv should succeed");
         assert_eq!(signal, ShutdownSignal::Manual);
     }
 
@@ -284,9 +287,18 @@ mod tests {
 
         coordinator.shutdown(ShutdownSignal::Interrupt);
 
-        assert_eq!(rx1.recv().await.unwrap(), ShutdownSignal::Interrupt);
-        assert_eq!(rx2.recv().await.unwrap(), ShutdownSignal::Interrupt);
-        assert_eq!(rx3.recv().await.unwrap(), ShutdownSignal::Interrupt);
+        assert_eq!(
+            rx1.recv().await.expect("test: rx1 recv should succeed"),
+            ShutdownSignal::Interrupt
+        );
+        assert_eq!(
+            rx2.recv().await.expect("test: rx2 recv should succeed"),
+            ShutdownSignal::Interrupt
+        );
+        assert_eq!(
+            rx3.recv().await.expect("test: rx3 recv should succeed"),
+            ShutdownSignal::Interrupt
+        );
     }
 
     #[tokio::test]

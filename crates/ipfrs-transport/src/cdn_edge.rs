@@ -522,7 +522,9 @@ mod tests {
     use ipfrs_core::CidBuilder;
 
     fn create_test_cid(data: &[u8]) -> Cid {
-        CidBuilder::new().build(data).unwrap()
+        CidBuilder::new()
+            .build(data)
+            .expect("test: build CID from data")
     }
 
     #[tokio::test]
@@ -531,7 +533,9 @@ mod tests {
         let cid = create_test_cid(b"test data");
         let data = Bytes::from("test data");
 
-        edge.put(cid, data.clone()).await.unwrap();
+        edge.put(cid, data.clone())
+            .await
+            .expect("test: put data into cache");
 
         let retrieved = edge.get(&cid).await;
         assert_eq!(retrieved, Some(data));
@@ -552,7 +556,9 @@ mod tests {
         let cid = create_test_cid(b"invalidate me");
         let data = Bytes::from("invalidate me");
 
-        edge.put(cid, data).await.unwrap();
+        edge.put(cid, data)
+            .await
+            .expect("test: put data into cache");
         assert!(edge.get(&cid).await.is_some());
 
         edge.invalidate(&cid, InvalidationReason::Manual).await;
@@ -569,7 +575,9 @@ mod tests {
         let cid = create_test_cid(b"expire soon");
         let data = Bytes::from("expire soon");
 
-        edge.put(cid, data).await.unwrap();
+        edge.put(cid, data)
+            .await
+            .expect("test: put data into cache");
         assert!(edge.get(&cid).await.is_some());
 
         // Wait for expiration
@@ -592,14 +600,20 @@ mod tests {
         let cid2 = create_test_cid(b"data2");
         let cid3 = create_test_cid(b"data3");
 
-        edge.put(cid1, Bytes::from("data1")).await.unwrap();
-        edge.put(cid2, Bytes::from("data2")).await.unwrap();
+        edge.put(cid1, Bytes::from("data1"))
+            .await
+            .expect("test: put data1 into cache");
+        edge.put(cid2, Bytes::from("data2"))
+            .await
+            .expect("test: put data2 into cache");
 
         // Access cid1 to make it more recently used
         edge.get(&cid1).await;
 
         // Add cid3, should evict cid2 (least recently used)
-        edge.put(cid3, Bytes::from("data3")).await.unwrap();
+        edge.put(cid3, Bytes::from("data3"))
+            .await
+            .expect("test: put data3 into cache");
 
         // cid1 and cid3 should exist, cid2 might be evicted
         assert!(edge.get(&cid1).await.is_some());
@@ -612,7 +626,9 @@ mod tests {
         let cid = create_test_cid(b"stats test");
         let data = Bytes::from("stats test");
 
-        edge.put(cid, data).await.unwrap();
+        edge.put(cid, data)
+            .await
+            .expect("test: put stats test data into cache");
 
         // Cache hit
         edge.get(&cid).await;
@@ -633,7 +649,9 @@ mod tests {
         let cid = create_test_cid(b"hit rate test");
         let data = Bytes::from("hit rate test");
 
-        edge.put(cid, data).await.unwrap();
+        edge.put(cid, data)
+            .await
+            .expect("test: put hit rate test data into cache");
 
         // 3 hits
         edge.get(&cid).await;
@@ -676,7 +694,9 @@ mod tests {
             .await;
 
         let origins = edge.origins.read().await;
-        let origin = origins.get("origin1").unwrap();
+        let origin = origins
+            .get("origin1")
+            .expect("test: get origin1 from origins map");
 
         assert_eq!(origin.total_requests, 3);
         assert_eq!(origin.successful_responses, 2);
@@ -705,7 +725,9 @@ mod tests {
 
         for i in 0..5 {
             let cid = create_test_cid(&[i]);
-            edge.put(cid, Bytes::from(vec![i])).await.unwrap();
+            edge.put(cid, Bytes::from(vec![i]))
+                .await
+                .expect("test: put data into cache");
         }
 
         let stats = edge.stats().await;

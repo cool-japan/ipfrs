@@ -458,7 +458,7 @@ mod tests {
         assert_eq!(buf.capacity(), 64);
         assert_eq!(buf.len(), 0);
 
-        buf.write(&[1, 2, 3]).unwrap();
+        buf.write(&[1, 2, 3]).expect("test: should succeed");
         assert_eq!(buf.len(), 3);
         assert_eq!(buf.as_slice(), &[1, 2, 3]);
 
@@ -476,7 +476,7 @@ mod tests {
     #[test]
     fn test_adaptive_buffer_small() {
         let mut buf = AdaptiveBuffer::new(10);
-        buf.write(&[1, 2, 3]).unwrap();
+        buf.write(&[1, 2, 3]).expect("test: should succeed");
 
         assert!(matches!(buf, AdaptiveBuffer::Stack(_)));
         assert_eq!(buf.as_slice(), &[1, 2, 3]);
@@ -485,7 +485,7 @@ mod tests {
     #[test]
     fn test_adaptive_buffer_large() {
         let mut buf = AdaptiveBuffer::new(512);
-        buf.write(&[1, 2, 3]).unwrap();
+        buf.write(&[1, 2, 3]).expect("test: should succeed");
 
         assert!(matches!(buf, AdaptiveBuffer::Heap(_)));
         assert_eq!(buf.as_slice(), &[1, 2, 3]);
@@ -494,8 +494,8 @@ mod tests {
     #[test]
     fn test_adaptive_buffer_upgrade() {
         let mut buf = AdaptiveBuffer::new(10);
-        buf.write(&[1; 100]).unwrap(); // Small hint but large write
-        buf.write(&[2; 200]).unwrap(); // Continue writing
+        buf.write(&[1; 100]).expect("test: should succeed"); // Small hint but large write
+        buf.write(&[2; 200]).expect("test: should succeed"); // Continue writing
 
         // Should have upgraded to heap
         assert!(matches!(buf, AdaptiveBuffer::Heap(_)));

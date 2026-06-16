@@ -72,9 +72,11 @@ bytemuck = { workspace = true }
 # UUID generation
 uuid = { workspace = true }
 
+# Random bytes for SessionId
+getrandom = { workspace = true }
+
 # PyTorch checkpoint support
 serde-pickle = { workspace = true }
-flate2 = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

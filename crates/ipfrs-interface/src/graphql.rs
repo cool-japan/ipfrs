@@ -196,7 +196,7 @@ impl QueryRoot {
         let parsed_terms: Vec<Term> = terms
             .iter()
             .map(|t| {
-                if t.starts_with('?') || t.chars().next().unwrap().is_uppercase() {
+                if t.starts_with('?') || t.chars().next().is_some_and(char::is_uppercase) {
                     Term::Var(t.to_string())
                 } else {
                     Term::Const(ipfrs_tensorlogic::Constant::String(t.to_string()))
@@ -229,7 +229,7 @@ impl QueryRoot {
         let parsed_terms: Vec<Term> = terms
             .iter()
             .map(|t| {
-                if t.starts_with('?') || t.chars().next().unwrap().is_uppercase() {
+                if t.starts_with('?') || t.chars().next().is_some_and(char::is_uppercase) {
                     Term::Var(t.to_string())
                 } else {
                     Term::Const(ipfrs_tensorlogic::Constant::String(t.to_string()))

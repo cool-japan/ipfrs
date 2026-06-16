@@ -103,26 +103,37 @@ pub async fn add_file(path: String, format: &str) -> Result<()> {
     let metadata = tokio::fs::metadata(&path).await?;
     let file_size = metadata.len();
 
-    // Warn about large files
-    const LARGE_FILE_THRESHOLD: u64 = 100 * 1024 * 1024; // 100 MB
-    if file_size > LARGE_FILE_THRESHOLD {
+    // Warn about very large files that will consume significant memory.
+    const VERY_LARGE_FILE_THRESHOLD: u64 = 100 * 1024 * 1024; // 100 MB
+    if file_size > VERY_LARGE_FILE_THRESHOLD {
         output::warning(&format!(
             "Large file detected: {}. This may take a while.",
             format_bytes(file_size)
         ));
     }
 
-    // Show progress spinner for reading
-    let pb = progress::spinner(&format!("Reading {}", filename));
+    // For files >= 10 MB on a TTY, show a progress bar; otherwise use a spinner.
+    let read_pb = progress::file_progress_bar(file_size, "Reading");
+    let spinner_pb = if read_pb.is_hidden() {
+        Some(progress::spinner(&format!("Reading {}", filename)))
+    } else {
+        None
+    };
 
     // Read file
     let data = tokio::fs::read(&path).await?;
     let bytes_data = Bytes::from(data);
 
-    progress::finish_spinner_success(
-        &pb,
-        &format!("Read {} ({})", filename, format_bytes(file_size)),
-    );
+    // Advance the bar to completion (we read in one shot).
+    read_pb.inc(file_size);
+    read_pb.finish_and_clear();
+
+    if let Some(ref pb) = spinner_pb {
+        progress::finish_spinner_success(
+            pb,
+            &format!("Read {} ({})", filename, format_bytes(file_size)),
+        );
+    }
 
     // Create block
     let pb = progress::spinner("Creating block");
@@ -157,10 +168,14 @@ pub async fn add_file(path: String, format: &str) -> Result<()> {
     Ok(())
 }
 
-/// Get file from IPFRS and save to disk
-pub async fn get_file(cid_str: String, output: Option<String>) -> Result<()> {
+/// Get file from IPFRS and save to disk.
+///
+/// `timeout_secs` bounds the entire block-fetch operation.  A value of `0`
+/// disables the timeout (waits indefinitely).
+pub async fn get_file(cid_str: String, output: Option<String>, timeout_secs: u64) -> Result<()> {
     use ipfrs_core::Cid;
     use ipfrs_storage::{BlockStoreConfig, BlockStoreTrait, SledBlockStore};
+    use std::time::Duration;
     use tokio::fs;
 
     // Parse CID
@@ -177,8 +192,22 @@ pub async fn get_file(cid_str: String, output: Option<String>) -> Result<()> {
     let config = BlockStoreConfig::default();
     let store = SledBlockStore::new(config)?;
 
-    // Retrieve block
-    match store.get(&cid).await? {
+    // Retrieve block, wrapping with an optional timeout.
+    let fetch_result = if timeout_secs > 0 {
+        tokio::time::timeout(Duration::from_secs(timeout_secs), store.get(&cid))
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "Timeout after {}s fetching {}\n\nThe block may be available on the network but \
+                     is unreachable right now.\nTry increasing --timeout or checking connectivity.",
+                    timeout_secs, cid
+                )
+            })??
+    } else {
+        store.get(&cid).await?
+    };
+
+    match fetch_result {
         Some(block) => {
             progress::finish_spinner_success(&pb, "Block retrieved");
 
@@ -189,7 +218,12 @@ pub async fn get_file(cid_str: String, output: Option<String>) -> Result<()> {
                 output::warning(&format!("Overwriting existing file: {}", output_path));
             }
 
+            // Show a progress bar for large blocks being written to disk.
+            let write_pb = progress::file_progress_bar(block.size(), "Saving");
             fs::write(&output_path, block.data()).await?;
+            write_pb.inc(block.size());
+            write_pb.finish_and_clear();
+
             success(&format!("Saved to: {}", output_path));
             print_kv("Size", &format_bytes(block.size()));
             Ok(())
@@ -204,10 +238,14 @@ pub async fn get_file(cid_str: String, output: Option<String>) -> Result<()> {
     }
 }
 
-/// Output file contents to stdout
-pub async fn cat_file(cid_str: String) -> Result<()> {
+/// Output file contents to stdout.
+///
+/// `timeout_secs` bounds the entire block-fetch operation.  A value of `0`
+/// disables the timeout (waits indefinitely).
+pub async fn cat_file(cid_str: String, timeout_secs: u64) -> Result<()> {
     use ipfrs_core::Cid;
     use ipfrs_storage::{BlockStoreConfig, BlockStoreTrait, SledBlockStore};
+    use std::time::Duration;
 
     // Parse CID
     let cid = cid_str.parse::<Cid>().map_err(|e| {
@@ -221,8 +259,22 @@ pub async fn cat_file(cid_str: String) -> Result<()> {
     let config = BlockStoreConfig::default();
     let store = SledBlockStore::new(config)?;
 
-    // Retrieve block
-    match store.get(&cid).await? {
+    // Retrieve block, wrapping with an optional timeout.
+    let fetch_result = if timeout_secs > 0 {
+        tokio::time::timeout(Duration::from_secs(timeout_secs), store.get(&cid))
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "Timeout after {}s fetching {}\n\nThe block may be available on the network but \
+                     is unreachable right now.\nTry increasing --timeout or checking connectivity.",
+                    timeout_secs, cid
+                )
+            })??
+    } else {
+        store.get(&cid).await?
+    };
+
+    match fetch_result {
         Some(block) => {
             // Write to stdout
             use std::io::Write;

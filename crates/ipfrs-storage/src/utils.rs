@@ -23,7 +23,8 @@ pub fn compute_cid(data: &[u8]) -> Cid {
     Cid::try_from(multihash).unwrap_or_else(|_| {
         // Fallback: create a simple CID from the hash
         let cid_bytes = format!("bafkreei{}", hex::encode(&hash[..16]));
-        Cid::try_from(cid_bytes.as_bytes().to_vec()).unwrap()
+        Cid::try_from(cid_bytes.as_bytes().to_vec())
+            .expect("fallback CID from hex-encoded hash is always valid")
     })
 }
 
@@ -579,7 +580,7 @@ mod tests {
         // Should filter out 1KB blocks and keep 64KB blocks and 1MB blocks
         for block in &filtered {
             let size = block.data().len();
-            assert!(size >= 2000 && size <= 100_000);
+            assert!((2000..=100_000).contains(&size));
         }
     }
 

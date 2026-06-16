@@ -502,7 +502,9 @@ mod tests {
         };
 
         let throttle = BandwidthThrottle::new(config);
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:8080"
+            .parse()
+            .expect("test: parse socket address");
 
         throttle.register_peer(addr, QosPriority::Normal);
 
@@ -526,7 +528,9 @@ mod tests {
         };
 
         let throttle = BandwidthThrottle::new(config);
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:8080"
+            .parse()
+            .expect("test: parse socket address");
 
         // High priority peer gets 2x bandwidth
         throttle.register_peer(addr, QosPriority::High);

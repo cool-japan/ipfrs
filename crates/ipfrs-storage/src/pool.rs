@@ -366,7 +366,7 @@ impl<S: BlockStore> StoragePool<S> {
             })
             .collect();
 
-        candidates.sort_by(|a, b| b.1.cmp(&a.1));
+        candidates.sort_by_key(|a| std::cmp::Reverse(a.1));
         candidates
             .into_iter()
             .take(count)
@@ -505,10 +505,7 @@ impl<S: BlockStore> StoragePool<S> {
 
     /// Record that a CID is stored in a backend
     fn record_cid_location(&self, cid: Cid, backend_id: BackendId) {
-        self.cid_map
-            .entry(cid)
-            .or_insert_with(Vec::new)
-            .push(backend_id);
+        self.cid_map.entry(cid).or_default().push(backend_id);
     }
 }
 

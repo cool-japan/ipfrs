@@ -246,7 +246,7 @@ mod tests {
     fn test_cid(seed: u64) -> Cid {
         use multihash::Multihash;
         let data = seed.to_le_bytes();
-        let hash = Multihash::wrap(0x12, &data).unwrap();
+        let hash = Multihash::wrap(0x12, &data).expect("test: wrap multihash from seed bytes");
         Cid::new_v1(0x55, hash)
     }
 
@@ -262,7 +262,10 @@ mod tests {
         let coalescer = RequestCoalescer::new(CoalescerConfig::default());
         let cid = test_cid(1);
 
-        let result = coalescer.register_request(&cid).await.unwrap();
+        let result = coalescer
+            .register_request(&cid)
+            .await
+            .expect("test: register request");
         assert!(result.is_none()); // First request should return None
         assert_eq!(coalescer.pending_count(), 1);
     }
@@ -273,11 +276,17 @@ mod tests {
         let cid = test_cid(1);
 
         // First request
-        let first = coalescer.register_request(&cid).await.unwrap();
+        let first = coalescer
+            .register_request(&cid)
+            .await
+            .expect("test: register request");
         assert!(first.is_none());
 
         // Duplicate request
-        let second = coalescer.register_request(&cid).await.unwrap();
+        let second = coalescer
+            .register_request(&cid)
+            .await
+            .expect("test: register request");
         assert!(second.is_some());
         assert_eq!(coalescer.pending_count(), 1); // Still only one pending
     }
@@ -288,22 +297,41 @@ mod tests {
         let cid = test_cid(1);
 
         // First request (will fetch)
-        let first = coalescer.register_request(&cid).await.unwrap();
+        let first = coalescer
+            .register_request(&cid)
+            .await
+            .expect("test: register request");
         assert!(first.is_none());
 
         // Second request (will wait)
-        let mut second_rx = coalescer.register_request(&cid).await.unwrap().unwrap();
+        let mut second_rx = coalescer
+            .register_request(&cid)
+            .await
+            .expect("test: register request")
+            .expect("test: receiver should be Some");
 
         // Third request (will wait)
-        let mut third_rx = coalescer.register_request(&cid).await.unwrap().unwrap();
+        let mut third_rx = coalescer
+            .register_request(&cid)
+            .await
+            .expect("test: register request")
+            .expect("test: receiver should be Some");
 
         // Complete the request
         let data = Bytes::from("test data");
         coalescer.complete_request(&cid, data.clone()).await;
 
         // Both waiters should receive the data
-        let result2 = second_rx.recv().await.unwrap().unwrap();
-        let result3 = third_rx.recv().await.unwrap().unwrap();
+        let result2 = second_rx
+            .recv()
+            .await
+            .expect("test: receive result")
+            .expect("test: inner result");
+        let result3 = third_rx
+            .recv()
+            .await
+            .expect("test: receive result")
+            .expect("test: inner result");
 
         assert_eq!(result2, data);
         assert_eq!(result3, data);
@@ -316,10 +344,17 @@ mod tests {
         let cid = test_cid(1);
 
         // First request
-        coalescer.register_request(&cid).await.unwrap();
+        coalescer
+            .register_request(&cid)
+            .await
+            .expect("test: register request");
 
         // Second request (waiter)
-        let mut rx = coalescer.register_request(&cid).await.unwrap().unwrap();
+        let mut rx = coalescer
+            .register_request(&cid)
+            .await
+            .expect("test: register request")
+            .expect("test: receiver should be Some");
 
         // Fail the request
         coalescer
@@ -327,7 +362,7 @@ mod tests {
             .await;
 
         // Waiter should receive error
-        let result = rx.recv().await.unwrap();
+        let result = rx.recv().await.expect("test: receive result");
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Network error");
         assert_eq!(coalescer.pending_count(), 0);
@@ -338,7 +373,10 @@ mod tests {
         let coalescer = RequestCoalescer::new(CoalescerConfig::default());
         let cid = test_cid(1);
 
-        coalescer.register_request(&cid).await.unwrap();
+        coalescer
+            .register_request(&cid)
+            .await
+            .expect("test: register request");
         assert_eq!(coalescer.pending_count(), 1);
 
         coalescer.cancel_request(&cid).await;
@@ -355,11 +393,20 @@ mod tests {
         let cid = test_cid(1);
 
         // First request
-        coalescer.register_request(&cid).await.unwrap();
+        coalescer
+            .register_request(&cid)
+            .await
+            .expect("test: register request");
 
         // Duplicate requests
-        coalescer.register_request(&cid).await.unwrap();
-        coalescer.register_request(&cid).await.unwrap();
+        coalescer
+            .register_request(&cid)
+            .await
+            .expect("test: register request");
+        coalescer
+            .register_request(&cid)
+            .await
+            .expect("test: register request");
 
         let stats = coalescer.stats().await;
         assert_eq!(stats.total_requests, 3);
@@ -391,14 +438,26 @@ mod tests {
         let cid = test_cid(1);
 
         // First request
-        coalescer.register_request(&cid).await.unwrap();
+        coalescer
+            .register_request(&cid)
+            .await
+            .expect("test: register request");
 
         // Add waiters
-        coalescer.register_request(&cid).await.unwrap();
-        coalescer.register_request(&cid).await.unwrap();
+        coalescer
+            .register_request(&cid)
+            .await
+            .expect("test: register request");
+        coalescer
+            .register_request(&cid)
+            .await
+            .expect("test: register request");
 
         // This should exceed max_waiters and return None (force fetch)
-        let result = coalescer.register_request(&cid).await.unwrap();
+        let result = coalescer
+            .register_request(&cid)
+            .await
+            .expect("test: register request");
         assert!(result.is_none());
     }
 
@@ -407,8 +466,14 @@ mod tests {
         let coalescer = RequestCoalescer::new(CoalescerConfig::default());
         let cid = test_cid(1);
 
-        coalescer.register_request(&cid).await.unwrap();
-        coalescer.register_request(&cid).await.unwrap();
+        coalescer
+            .register_request(&cid)
+            .await
+            .expect("test: register request");
+        coalescer
+            .register_request(&cid)
+            .await
+            .expect("test: register request");
 
         let stats = coalescer.stats().await;
         assert!(stats.total_requests > 0);
@@ -425,8 +490,14 @@ mod tests {
         let cid2 = test_cid(2);
 
         // Requests for different CIDs should not coalesce
-        let r1 = coalescer.register_request(&cid1).await.unwrap();
-        let r2 = coalescer.register_request(&cid2).await.unwrap();
+        let r1 = coalescer
+            .register_request(&cid1)
+            .await
+            .expect("test: register request");
+        let r2 = coalescer
+            .register_request(&cid2)
+            .await
+            .expect("test: register request");
 
         assert!(r1.is_none());
         assert!(r2.is_none());

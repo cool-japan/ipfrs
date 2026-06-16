@@ -112,3 +112,8 @@ perf.data.old
 crates/ipfrs/.ipfrs/blocks/db
 crates/ipfrs/.ipfrs/blocks/conf
 
+
+# Rustc ICE dumps
+rustc-ice-*.txt
+
+target

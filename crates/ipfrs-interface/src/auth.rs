@@ -177,7 +177,7 @@ impl User {
             active: true,
             created_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("system time is after UNIX epoch")
                 .as_secs(),
         })
     }
@@ -224,7 +224,7 @@ impl Claims {
     pub fn new(user: &User, expiration_hours: u64) -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system time is after UNIX epoch")
             .as_secs();
 
         Self {
@@ -241,7 +241,7 @@ impl Claims {
     pub fn new_with_scopes(sub: &str, scope: &str, expiration_hours: usize) -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system time is after UNIX epoch")
             .as_secs();
 
         Self {
@@ -258,7 +258,7 @@ impl Claims {
     pub fn is_expired(&self) -> bool {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system time is after UNIX epoch")
             .as_secs();
         now > self.exp
     }
@@ -450,7 +450,7 @@ impl ApiKey {
             name,
             created_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("system time is after UNIX epoch")
                 .as_secs(),
             last_used_at: None,
             active: true,
@@ -469,7 +469,7 @@ impl ApiKey {
         self.last_used_at = Some(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("system time is after UNIX epoch")
                 .as_secs(),
         );
     }
@@ -522,7 +522,10 @@ impl ApiKeyStore {
             let api_key = entry.value();
             if api_key.prefix == prefix && api_key.active && api_key.verify(key)? {
                 // Update last used
-                let mut key_mut = self.keys.get_mut(&api_key.id).unwrap();
+                let mut key_mut = self
+                    .keys
+                    .get_mut(&api_key.id)
+                    .expect("key exists: we just found it in the same map via iter()");
                 key_mut.mark_used();
 
                 return Ok((api_key.clone(), api_key.user_id));
@@ -618,17 +621,23 @@ mod tests {
 
     #[test]
     fn test_user_creation() {
-        let user = User::new("test".to_string(), "password123", Role::User).unwrap();
+        let user =
+            User::new("test".to_string(), "password123", Role::User).expect("test: create user");
         assert_eq!(user.username, "test");
         assert_eq!(user.role, Role::User);
         assert!(user.active);
-        assert!(user.verify_password("password123").unwrap());
-        assert!(!user.verify_password("wrong").unwrap());
+        assert!(user
+            .verify_password("password123")
+            .expect("test: verify correct password"));
+        assert!(!user
+            .verify_password("wrong")
+            .expect("test: verify wrong password"));
     }
 
     #[test]
     fn test_user_permissions() {
-        let user = User::new("test".to_string(), "password123", Role::User).unwrap();
+        let user = User::new("test".to_string(), "password123", Role::User)
+            .expect("test: user creation should succeed");
         assert!(user.has_permission(Permission::BlockRead));
         assert!(user.has_permission(Permission::BlockWrite));
         assert!(!user.has_permission(Permission::BlockDelete));
@@ -639,10 +648,15 @@ mod tests {
     fn test_jwt_generation_and_validation() {
         let secret = b"test_secret_key_32_bytes_long!!!";
         let manager = JwtManager::new(secret);
-        let user = User::new("test".to_string(), "password123", Role::User).unwrap();
+        let user = User::new("test".to_string(), "password123", Role::User)
+            .expect("test: user creation should succeed");
 
-        let token = manager.generate_token(&user, 24).unwrap();
-        let claims = manager.validate_token(&token).unwrap();
+        let token = manager
+            .generate_token(&user, 24)
+            .expect("test: token generation should succeed");
+        let claims = manager
+            .validate_token(&token)
+            .expect("test: token validation should succeed");
 
         assert_eq!(claims.username, "test");
         assert_eq!(claims.role, Role::User);
@@ -652,11 +666,16 @@ mod tests {
     #[test]
     fn test_user_store() {
         let store = UserStore::new();
-        let user = User::new("test".to_string(), "password123", Role::User).unwrap();
+        let user = User::new("test".to_string(), "password123", Role::User)
+            .expect("test: user creation should succeed");
 
-        store.add_user(user).unwrap();
+        store
+            .add_user(user)
+            .expect("test: user should be added to store");
 
-        let authenticated = store.authenticate("test", "password123").unwrap();
+        let authenticated = store
+            .authenticate("test", "password123")
+            .expect("test: authentication with correct credentials should succeed");
         assert_eq!(authenticated.username, "test");
 
         assert!(store.authenticate("test", "wrong").is_err());

@@ -51,7 +51,11 @@ impl SafetensorsFile {
         }
 
         // First 8 bytes = header length (little-endian u64)
-        let header_len = u64::from_le_bytes(data[0..8].try_into().unwrap()) as usize;
+        let header_len = u64::from_le_bytes(
+            data[0..8]
+                .try_into()
+                .expect("data[0..8] is exactly 8 bytes after bounds check"),
+        ) as usize;
 
         if data.len() < 8 + header_len {
             return Err(Error::InvalidInput(

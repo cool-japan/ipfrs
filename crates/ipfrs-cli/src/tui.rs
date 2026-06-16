@@ -110,7 +110,7 @@ impl App {
             use std::time::SystemTime;
             let seed = SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
+                .expect("system time is after UNIX epoch")
                 .as_secs();
 
             self.stats.peer_count = ((seed % 10) + 5) as usize;
@@ -436,7 +436,7 @@ fn draw_help(f: &mut Frame, area: Rect) {
 /// Draw the footer
 fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     let footer_text = format!(
-        " IPFRS v0.1.0 | Peers: {} | Blocks: {} | Press 'q' to quit ",
+        " IPFRS v0.2.0 | Peers: {} | Blocks: {} | Press 'q' to quit ",
         app.stats.peer_count, app.stats.block_count
     );
     let footer = Paragraph::new(footer_text)

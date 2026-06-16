@@ -129,7 +129,10 @@ impl<S: BlockStore> BitswapExchange<S> {
     /// Cancel a want
     pub fn cancel_want(&self, cid: &Cid) -> Result<()> {
         self.want_list.remove(cid);
-        self.pending_requests.write().unwrap().remove(cid);
+        self.pending_requests
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(cid);
         Ok(())
     }
 
@@ -203,7 +206,10 @@ impl<S: BlockStore> BitswapExchange<S> {
 
         // Calculate latency if we tracked the request
         let latency = {
-            let pending = self.pending_requests.read().unwrap();
+            let pending = self
+                .pending_requests
+                .read()
+                .unwrap_or_else(|e| e.into_inner());
             pending.get(&cid).map(|(_, start)| start.elapsed())
         };
 
@@ -264,7 +270,7 @@ impl<S: BlockStore> BitswapExchange<S> {
         }
         self.pending_requests
             .write()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .insert(cid, (peers, Instant::now()));
     }
 
@@ -273,7 +279,10 @@ impl<S: BlockStore> BitswapExchange<S> {
         let expired = self.want_list.cleanup_expired();
 
         // Also clean up pending requests for expired wants
-        let mut pending = self.pending_requests.write().unwrap();
+        let mut pending = self
+            .pending_requests
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
         for entry in expired {
             pending.remove(&entry.cid);
         }
@@ -304,7 +313,11 @@ impl<S: BlockStore> BitswapExchange<S> {
         let peer_stats = self.peer_manager.stats();
         BitswapStats {
             want_list_size: self.want_list.len(),
-            pending_requests: self.pending_requests.read().unwrap().len(),
+            pending_requests: self
+                .pending_requests
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
+                .len(),
             num_peers: peer_stats.total_peers,
             connected_peers: peer_stats.connected_peers,
             blacklisted_peers: peer_stats.blacklisted_peers,
@@ -357,35 +370,35 @@ mod tests {
     #[tokio::test]
     async fn test_bitswap_want_list() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-want"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-want"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
-        let bitswap = BitswapExchange::with_defaults(store).unwrap();
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
+        let bitswap = BitswapExchange::with_defaults(store).expect("test: create bitswap");
 
         let cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: parse cid");
 
         // Add to want list
-        bitswap.want(cid, 10).unwrap();
+        bitswap.want(cid, 10).expect("test: add want");
         assert!(bitswap.is_wanted(&cid));
 
         // Cancel want
-        bitswap.cancel_want(&cid).unwrap();
+        bitswap.cancel_want(&cid).expect("test: cancel want");
         assert!(!bitswap.is_wanted(&cid));
     }
 
     #[tokio::test]
     async fn test_peer_management() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-peer"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-peer"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
-        let bitswap = BitswapExchange::with_defaults(store).unwrap();
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
+        let bitswap = BitswapExchange::with_defaults(store).expect("test: create bitswap");
 
         let peer_id = "peer1".to_string();
 
@@ -395,7 +408,7 @@ mod tests {
         // Record HAVE message
         let cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: parse cid");
         bitswap.record_have(&peer_id, cid);
 
         // Peer should be selected as provider
@@ -411,25 +424,28 @@ mod tests {
     #[tokio::test]
     async fn test_receive_block_updates_peer() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-recv"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-recv"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
-        let bitswap = BitswapExchange::with_defaults(store).unwrap();
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
+        let bitswap = BitswapExchange::with_defaults(store).expect("test: create bitswap");
 
         let peer_id = "peer1".to_string();
         bitswap.add_peer(peer_id.clone());
 
-        let block = Block::new(vec![1, 2, 3, 4].into()).unwrap();
+        let block = Block::new(vec![1, 2, 3, 4].into()).expect("test: create block");
         let cid = *block.cid();
 
         // Want the block first
-        bitswap.want(cid, 10).unwrap();
+        bitswap.want(cid, 10).expect("test: add want");
         assert!(bitswap.is_wanted(&cid));
 
         // Receive block
-        bitswap.receive_block(&peer_id, block).await.unwrap();
+        bitswap
+            .receive_block(&peer_id, block)
+            .await
+            .expect("test: receive block");
 
         // Block should no longer be wanted
         assert!(!bitswap.is_wanted(&cid));
@@ -442,12 +458,12 @@ mod tests {
     #[tokio::test]
     async fn test_blacklist() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-blacklist"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-blacklist"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
-        let bitswap = BitswapExchange::with_defaults(store).unwrap();
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
+        let bitswap = BitswapExchange::with_defaults(store).expect("test: create bitswap");
 
         let peer_id = "bad_peer".to_string();
         bitswap.add_peer(peer_id.clone());
@@ -467,19 +483,19 @@ mod tests {
     #[tokio::test]
     async fn test_priority_update() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-priority"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-priority"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
-        let bitswap = BitswapExchange::with_defaults(store).unwrap();
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
+        let bitswap = BitswapExchange::with_defaults(store).expect("test: create bitswap");
 
         let cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: parse cid");
 
         // Add with low priority
-        bitswap.want(cid, 10).unwrap();
+        bitswap.want(cid, 10).expect("test: add want");
 
         // Update to high priority
         assert!(bitswap.update_priority(&cid, 100));
@@ -488,23 +504,23 @@ mod tests {
     #[tokio::test]
     async fn test_multiple_concurrent_wants() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-multi-want"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-multi-want"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
-        let bitswap = BitswapExchange::with_defaults(store).unwrap();
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
+        let bitswap = BitswapExchange::with_defaults(store).expect("test: create bitswap");
 
         let cid1 = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: parse cid");
         let cid2 = "bafybeihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: parse cid");
 
         // Add multiple wants with different priorities
-        bitswap.want(cid1, 100).unwrap();
-        bitswap.want(cid2, 50).unwrap();
+        bitswap.want(cid1, 100).expect("test: add want");
+        bitswap.want(cid2, 50).expect("test: add want");
 
         let wanted_cids = bitswap.get_wanted_cids();
         assert_eq!(wanted_cids.len(), 2);
@@ -512,7 +528,7 @@ mod tests {
         assert!(wanted_cids.contains(&cid2));
 
         // Cancel one
-        bitswap.cancel_want(&cid1).unwrap();
+        bitswap.cancel_want(&cid1).expect("test: cancel want");
         assert!(!bitswap.is_wanted(&cid1));
         assert!(bitswap.is_wanted(&cid2));
     }
@@ -520,25 +536,28 @@ mod tests {
     #[tokio::test]
     async fn test_send_block_exists() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-send-exists"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-send-exists"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
 
         // Store a block first
-        let block = Block::new(vec![1, 2, 3, 4].into()).unwrap();
+        let block = Block::new(vec![1, 2, 3, 4].into()).expect("test: create block");
         let cid = *block.cid();
-        store.put(&block).await.unwrap();
+        store.put(&block).await.expect("test: put block");
 
-        let bitswap = BitswapExchange::with_defaults(store).unwrap();
+        let bitswap = BitswapExchange::with_defaults(store).expect("test: create bitswap");
         let peer_id = "peer1".to_string();
 
         // Send block should succeed
-        let msg = bitswap.send_block(&peer_id, &cid).await.unwrap();
+        let msg = bitswap
+            .send_block(&peer_id, &cid)
+            .await
+            .expect("test: send block");
         assert!(msg.is_some());
 
-        match msg.unwrap() {
+        match msg.expect("test: message should be Some") {
             Message::Block(block_msg) => {
                 assert_eq!(block_msg.cid, cid);
                 assert_eq!(block_msg.data.len(), 4);
@@ -550,23 +569,26 @@ mod tests {
     #[tokio::test]
     async fn test_send_block_not_found() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-send-notfound"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-send-notfound"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
-        let bitswap = BitswapExchange::with_defaults(store).unwrap();
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
+        let bitswap = BitswapExchange::with_defaults(store).expect("test: create bitswap");
 
         let cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: parse cid");
         let peer_id = "peer1".to_string();
 
         // Send block should return DONT_HAVE
-        let msg = bitswap.send_block(&peer_id, &cid).await.unwrap();
+        let msg = bitswap
+            .send_block(&peer_id, &cid)
+            .await
+            .expect("test: send block");
         assert!(msg.is_some());
 
-        match msg.unwrap() {
+        match msg.expect("test: message should be Some") {
             Message::DontHave(dont_have) => {
                 assert_eq!(dont_have.cid, cid);
             }
@@ -577,23 +599,24 @@ mod tests {
     #[tokio::test]
     async fn test_cleanup_stale_wants() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-cleanup"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-cleanup"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
 
         // Create with very short timeout
         let mut bitswap_config = BitswapConfig::default();
         bitswap_config.want_list.default_timeout = Duration::from_millis(1);
 
-        let bitswap = BitswapExchange::new(store, bitswap_config).unwrap();
+        let bitswap =
+            BitswapExchange::new(store, bitswap_config).expect("test: create bitswap with config");
 
         let cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: parse cid");
 
-        bitswap.want(cid, 10).unwrap();
+        bitswap.want(cid, 10).expect("test: add want");
         assert!(bitswap.is_wanted(&cid));
 
         // Wait for timeout
@@ -607,16 +630,16 @@ mod tests {
     #[tokio::test]
     async fn test_mark_request_sent() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-mark-sent"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-mark-sent"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
-        let bitswap = BitswapExchange::with_defaults(store).unwrap();
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
+        let bitswap = BitswapExchange::with_defaults(store).expect("test: create bitswap");
 
         let cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: parse cid");
 
         let peers = vec!["peer1".to_string(), "peer2".to_string()];
 
@@ -631,21 +654,21 @@ mod tests {
     #[tokio::test]
     async fn test_record_failure() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-failure"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-failure"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
-        let bitswap = BitswapExchange::with_defaults(store).unwrap();
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
+        let bitswap = BitswapExchange::with_defaults(store).expect("test: create bitswap");
 
         let peer_id = "peer1".to_string();
         bitswap.add_peer(peer_id.clone());
 
         let cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: parse cid");
 
-        bitswap.want(cid, 10).unwrap();
+        bitswap.want(cid, 10).expect("test: add want");
 
         // Record failure
         bitswap.record_failure(&peer_id, &cid);
@@ -658,16 +681,16 @@ mod tests {
     #[tokio::test]
     async fn test_multiple_peers_provider_selection() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-multi-peers"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-multi-peers"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
-        let bitswap = BitswapExchange::with_defaults(store).unwrap();
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
+        let bitswap = BitswapExchange::with_defaults(store).expect("test: create bitswap");
 
         let cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: parse cid");
 
         // Add multiple peers
         bitswap.add_peer("peer1".to_string());
@@ -685,19 +708,19 @@ mod tests {
     #[tokio::test]
     async fn test_record_dont_have() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-dont-have"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-dont-have"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
-        let bitswap = BitswapExchange::with_defaults(store).unwrap();
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
+        let bitswap = BitswapExchange::with_defaults(store).expect("test: create bitswap");
 
         let peer_id = "peer1".to_string();
         bitswap.add_peer(peer_id.clone());
 
         let cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: parse cid");
 
         // Record DONT_HAVE
         bitswap.record_dont_have(&peer_id, cid);
@@ -710,22 +733,22 @@ mod tests {
     #[tokio::test]
     async fn test_get_want_list_message() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-want-msg"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-want-msg"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
-        let bitswap = BitswapExchange::with_defaults(store).unwrap();
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
+        let bitswap = BitswapExchange::with_defaults(store).expect("test: create bitswap");
 
         let cid1 = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: parse cid");
         let cid2 = "bafybeihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: parse cid");
 
-        bitswap.want(cid1, 100).unwrap();
-        bitswap.want(cid2, 50).unwrap();
+        bitswap.want(cid1, 100).expect("test: add want");
+        bitswap.want(cid2, 50).expect("test: add want");
 
         let want_list = bitswap.get_want_list();
         assert_eq!(want_list.len(), 2);
@@ -736,20 +759,20 @@ mod tests {
     #[tokio::test]
     async fn test_duplicate_want() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-dup-want"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-dup-want"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
-        let bitswap = BitswapExchange::with_defaults(store).unwrap();
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
+        let bitswap = BitswapExchange::with_defaults(store).expect("test: create bitswap");
 
         let cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: parse cid");
 
         // Add same CID twice
-        bitswap.want(cid, 10).unwrap();
-        bitswap.want(cid, 20).unwrap(); // Should update priority, not error
+        bitswap.want(cid, 10).expect("test: add want");
+        bitswap.want(cid, 20).expect("test: add want"); // Should update priority, not error
 
         assert!(bitswap.is_wanted(&cid));
         assert_eq!(bitswap.get_wanted_cids().len(), 1);
@@ -758,12 +781,12 @@ mod tests {
     #[tokio::test]
     async fn test_peer_removal() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-peer-remove"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-peer-remove"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
-        let bitswap = BitswapExchange::with_defaults(store).unwrap();
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
+        let bitswap = BitswapExchange::with_defaults(store).expect("test: create bitswap");
 
         let peer_id = "peer1".to_string();
         bitswap.add_peer(peer_id.clone());
@@ -781,12 +804,12 @@ mod tests {
     #[tokio::test]
     async fn test_peer_scores() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-scores"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-scores"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
-        let bitswap = BitswapExchange::with_defaults(store).unwrap();
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
+        let bitswap = BitswapExchange::with_defaults(store).expect("test: create bitswap");
 
         let peer_id = "peer1".to_string();
         bitswap.add_peer(peer_id.clone());
@@ -799,12 +822,12 @@ mod tests {
     #[tokio::test]
     async fn test_empty_want_list() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-empty"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-empty"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
-        let bitswap = BitswapExchange::with_defaults(store).unwrap();
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
+        let bitswap = BitswapExchange::with_defaults(store).expect("test: create bitswap");
 
         let wanted_cids = bitswap.get_wanted_cids();
         assert_eq!(wanted_cids.len(), 0);
@@ -819,18 +842,18 @@ mod tests {
     #[tokio::test]
     async fn test_boost_deadline_priorities() {
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs-test-bitswap-deadline"),
+            path: std::env::temp_dir().join("ipfrs-test-bitswap-deadline"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
-        let bitswap = BitswapExchange::with_defaults(store).unwrap();
+        let store = Arc::new(SledBlockStore::new(config).expect("test: create block store"));
+        let bitswap = BitswapExchange::with_defaults(store).expect("test: create bitswap");
 
         let cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse::<Cid>()
-            .unwrap();
+            .expect("test: parse cid");
 
-        bitswap.want(cid, 10).unwrap();
+        bitswap.want(cid, 10).expect("test: add want");
 
         // Boost deadline priorities should not panic
         bitswap.boost_deadline_priorities();

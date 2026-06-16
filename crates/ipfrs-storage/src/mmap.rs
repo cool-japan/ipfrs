@@ -370,88 +370,141 @@ mod tests {
 
     #[tokio::test]
     async fn test_mmap_put_get_block() {
-        let config = MmapConfig::new(PathBuf::from("/tmp/ipfrs-test-mmap"));
+        let config = MmapConfig::new(std::env::temp_dir().join("ipfrs-test-mmap"));
 
         // Clean up from previous test
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let store = MmapBlockStore::new(config).unwrap();
+        let store = MmapBlockStore::new(config).expect("test: MmapBlockStore should initialize");
 
         // Test with small block (below threshold)
         let small_data = Bytes::from("small block");
-        let small_block = Block::new(small_data.clone()).unwrap();
+        let small_block =
+            Block::new(small_data.clone()).expect("test: Block::new should succeed for small data");
 
-        store.put(&small_block).await.unwrap();
-        let retrieved = store.get(small_block.cid()).await.unwrap();
+        store
+            .put(&small_block)
+            .await
+            .expect("test: put small block should succeed");
+        let retrieved = store
+            .get(small_block.cid())
+            .await
+            .expect("test: get small block should succeed");
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().data(), &small_data);
+        assert_eq!(
+            retrieved
+                .expect("test: retrieved small block should be Some")
+                .data(),
+            &small_data
+        );
 
         // Test with large block (above threshold)
         let large_data = Bytes::from(vec![0u8; 2 * 1024 * 1024]); // 2MB
-        let large_block = Block::new(large_data.clone()).unwrap();
+        let large_block =
+            Block::new(large_data.clone()).expect("test: Block::new should succeed for large data");
 
-        store.put(&large_block).await.unwrap();
-        let retrieved = store.get(large_block.cid()).await.unwrap();
+        store
+            .put(&large_block)
+            .await
+            .expect("test: put large block should succeed");
+        let retrieved = store
+            .get(large_block.cid())
+            .await
+            .expect("test: get large block should succeed");
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().data(), &large_data);
+        assert_eq!(
+            retrieved
+                .expect("test: retrieved large block should be Some")
+                .data(),
+            &large_data
+        );
 
         // Test has
-        assert!(store.has(small_block.cid()).await.unwrap());
-        assert!(store.has(large_block.cid()).await.unwrap());
+        assert!(store
+            .has(small_block.cid())
+            .await
+            .expect("test: has small block should succeed"));
+        assert!(store
+            .has(large_block.cid())
+            .await
+            .expect("test: has large block should succeed"));
 
         // Test delete
-        store.delete(small_block.cid()).await.unwrap();
-        assert!(!store.has(small_block.cid()).await.unwrap());
+        store
+            .delete(small_block.cid())
+            .await
+            .expect("test: delete small block should succeed");
+        assert!(!store
+            .has(small_block.cid())
+            .await
+            .expect("test: has after delete should succeed"));
     }
 
     #[tokio::test]
     async fn test_mmap_partial_read() {
-        let config =
-            MmapConfig::new(PathBuf::from("/tmp/ipfrs-test-mmap-partial")).with_threshold(1024); // Lower threshold for testing
+        let config = MmapConfig::new(std::env::temp_dir().join("ipfrs-test-mmap-partial"))
+            .with_threshold(1024); // Lower threshold for testing
 
         // Clean up from previous test
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let store = MmapBlockStore::new(config).unwrap();
+        let store = MmapBlockStore::new(config).expect("test: MmapBlockStore should initialize");
 
         // Create a large block
         let data = Bytes::from((0..10000).map(|i| (i % 256) as u8).collect::<Vec<u8>>());
-        let block = Block::new(data.clone()).unwrap();
+        let block = Block::new(data.clone())
+            .expect("test: Block::new should succeed for partial read data");
 
-        store.put(&block).await.unwrap();
+        store
+            .put(&block)
+            .await
+            .expect("test: put block should succeed");
 
         // Read a range
-        let range = store.get_range(block.cid(), 100, 500).await.unwrap();
+        let range = store
+            .get_range(block.cid(), 100, 500)
+            .await
+            .expect("test: get_range should succeed");
         assert!(range.is_some());
 
-        let range_data = range.unwrap();
+        let range_data = range.expect("test: range result should be Some");
         assert_eq!(range_data.len(), 500);
         assert_eq!(&range_data[..], &data[100..600]);
     }
 
     #[tokio::test]
     async fn test_mmap_cache() {
-        let config =
-            MmapConfig::new(PathBuf::from("/tmp/ipfrs-test-mmap-cache")).with_threshold(1024);
+        let config = MmapConfig::new(std::env::temp_dir().join("ipfrs-test-mmap-cache"))
+            .with_threshold(1024);
 
         // Clean up from previous test
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let store = MmapBlockStore::new(config).unwrap();
+        let store = MmapBlockStore::new(config).expect("test: MmapBlockStore should initialize");
 
         // Create a large block
         let data = Bytes::from(vec![0u8; 10000]);
-        let block = Block::new(data.clone()).unwrap();
+        let block =
+            Block::new(data.clone()).expect("test: Block::new should succeed for cache data");
 
-        store.put(&block).await.unwrap();
+        store
+            .put(&block)
+            .await
+            .expect("test: put block should succeed");
 
         // First get should populate cache
         assert_eq!(store.cache_size(), 0);
-        let _ = store.get(block.cid()).await.unwrap();
+        let _ = store
+            .get(block.cid())
+            .await
+            .expect("test: first get should succeed");
         assert_eq!(store.cache_size(), 1);
 
         // Second get should use cache
-        let _ = store.get(block.cid()).await.unwrap();
+        let _ = store
+            .get(block.cid())
+            .await
+            .expect("test: second get from cache should succeed");
         assert_eq!(store.cache_size(), 1);
 
         // Clear cache
@@ -461,27 +514,30 @@ mod tests {
 
     #[tokio::test]
     async fn test_mmap_list_cids() {
-        let config = MmapConfig::new(PathBuf::from("/tmp/ipfrs-test-mmap-list"));
+        let config = MmapConfig::new(std::env::temp_dir().join("ipfrs-test-mmap-list"));
 
         // Clean up from previous test
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let store = MmapBlockStore::new(config).unwrap();
+        let store = MmapBlockStore::new(config).expect("test: MmapBlockStore should initialize");
 
         // Create multiple blocks
         let blocks: Vec<Block> = (0..5)
             .map(|i| {
                 let data = Bytes::from(format!("block {}", i));
-                Block::new(data).unwrap()
+                Block::new(data).expect("test: Block::new should succeed for list data")
             })
             .collect();
 
         for block in &blocks {
-            store.put(block).await.unwrap();
+            store
+                .put(block)
+                .await
+                .expect("test: put block should succeed");
         }
 
         // List CIDs
-        let cids = store.list_cids().unwrap();
+        let cids = store.list_cids().expect("test: list_cids should succeed");
         assert_eq!(cids.len(), 5);
 
         // Verify all CIDs are present

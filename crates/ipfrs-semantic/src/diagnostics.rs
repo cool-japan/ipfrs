@@ -298,7 +298,7 @@ impl HealthMonitor {
     pub fn check(&mut self, index: &VectorIndex) -> &DiagnosticReport {
         self.last_report = Some(diagnose_index(index));
         self.last_check = Some(Instant::now());
-        self.last_report.as_ref().unwrap()
+        self.last_report.as_ref().expect("just assigned above")
     }
 
     /// Get the last diagnostic report
@@ -324,7 +324,8 @@ mod tests {
 
     #[test]
     fn test_diagnose_empty_index() {
-        let index = VectorIndex::with_defaults(128).unwrap();
+        let index =
+            VectorIndex::with_defaults(128).expect("test: VectorIndex::with_defaults failed");
         let report = diagnose_index(&index);
 
         assert_eq!(report.size, 0);
@@ -337,11 +338,14 @@ mod tests {
 
     #[test]
     fn test_diagnose_normal_index() {
-        let mut index = VectorIndex::with_defaults(128).unwrap();
+        let mut index =
+            VectorIndex::with_defaults(128).expect("test: VectorIndex::with_defaults failed");
         let cid: ipfrs_core::Cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse()
-            .unwrap();
-        index.insert(&cid, &vec![0.1; 128]).unwrap();
+            .expect("test: CID parse failed");
+        index
+            .insert(&cid, &vec![0.1; 128])
+            .expect("test: index insert failed");
 
         let report = diagnose_index(&index);
 
@@ -369,7 +373,8 @@ mod tests {
     #[test]
     fn test_health_monitor() {
         let mut monitor = HealthMonitor::new(Duration::from_millis(100));
-        let index = VectorIndex::with_defaults(128).unwrap();
+        let index = VectorIndex::with_defaults(128)
+            .expect("test: VectorIndex creation with dim 128 should succeed");
 
         assert!(monitor.should_check());
 

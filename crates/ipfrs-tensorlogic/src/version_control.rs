@@ -541,7 +541,7 @@ mod tests {
             "test@example.com".to_string(),
         );
 
-        repo.init(commit).unwrap();
+        repo.init(commit).expect("test: should succeed");
 
         assert_eq!(repo.current_branch(), Some("main"));
         assert!(repo.head_commit().is_some());
@@ -559,9 +559,10 @@ mod tests {
             "test@example.com".to_string(),
         );
 
-        repo.init(commit).unwrap();
+        repo.init(commit).expect("test: should succeed");
 
-        repo.create_branch("develop".to_string(), None).unwrap();
+        repo.create_branch("develop".to_string(), None)
+            .expect("test: should succeed");
 
         assert_eq!(repo.list_branches().len(), 2);
     }
@@ -578,10 +579,11 @@ mod tests {
             "test@example.com".to_string(),
         );
 
-        repo.init(commit).unwrap();
-        repo.create_branch("develop".to_string(), None).unwrap();
+        repo.init(commit).expect("test: should succeed");
+        repo.create_branch("develop".to_string(), None)
+            .expect("test: should succeed");
 
-        repo.checkout("develop").unwrap();
+        repo.checkout("develop").expect("test: should succeed");
 
         assert_eq!(repo.current_branch(), Some("develop"));
     }

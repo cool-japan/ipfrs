@@ -617,10 +617,9 @@ pub async fn import_from_car<S: BlockStore>(store: &S, path: &Path) -> Result<Ca
 mod tests {
     use super::*;
     use crate::blockstore::{BlockStoreConfig, SledBlockStore};
-    use std::path::PathBuf;
 
     fn make_test_block(data: &[u8]) -> Block {
-        Block::new(Bytes::copy_from_slice(data)).unwrap()
+        Block::new(Bytes::copy_from_slice(data)).expect("test data is valid block content")
     }
 
     #[test]
@@ -629,7 +628,7 @@ mod tests {
 
         for &val in &test_values {
             let encoded = encode_varint(val);
-            let (decoded, _) = decode_varint(&encoded).unwrap();
+            let (decoded, _) = decode_varint(&encoded).expect("test: varint decode should succeed");
             assert_eq!(val, decoded, "Failed for value {}", val);
         }
     }
@@ -641,8 +640,10 @@ mod tests {
         let roots = vec![*block1.cid(), *block2.cid()];
 
         let header = CarHeader::new(roots.clone());
-        let cbor = header.to_cbor().unwrap();
-        let decoded = CarHeader::from_cbor(&cbor).unwrap();
+        let cbor = header
+            .to_cbor()
+            .expect("test: header CBOR encoding should succeed");
+        let decoded = CarHeader::from_cbor(&cbor).expect("test: CBOR decoding should succeed");
 
         assert_eq!(decoded.version, CAR_VERSION);
         assert_eq!(decoded.roots.len(), 2);
@@ -652,7 +653,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_car_write_read() {
-        let path = PathBuf::from("/tmp/test-car.car");
+        let path = std::env::temp_dir().join("test-car.car");
         let _ = std::fs::remove_file(&path);
 
         let block1 = make_test_block(b"hello world");
@@ -661,29 +662,51 @@ mod tests {
 
         // Write CAR
         {
-            let mut writer = CarWriter::create(&path, roots.clone()).await.unwrap();
-            writer.write_block(&block1).await.unwrap();
-            writer.write_block(&block2).await.unwrap();
-            let stats = writer.finish().await.unwrap();
+            let mut writer = CarWriter::create(&path, roots.clone())
+                .await
+                .expect("test: CarWriter::create should succeed");
+            writer
+                .write_block(&block1)
+                .await
+                .expect("test: write block1 should succeed");
+            writer
+                .write_block(&block2)
+                .await
+                .expect("test: write block2 should succeed");
+            let stats = writer.finish().await.expect("test: finish should succeed");
             assert_eq!(stats.blocks_written, 2);
         }
 
         // Read CAR
         {
-            let mut reader = CarReader::open(&path).await.unwrap();
+            let mut reader = CarReader::open(&path)
+                .await
+                .expect("test: CarReader::open should succeed");
             assert_eq!(reader.roots().len(), 1);
             assert_eq!(reader.roots()[0], *block1.cid());
 
-            let read_block1 = reader.read_block().await.unwrap().unwrap();
+            let read_block1 = reader
+                .read_block()
+                .await
+                .expect("test: read_block should succeed")
+                .expect("test: first block should be present");
             assert_eq!(read_block1.cid(), block1.cid());
             assert_eq!(read_block1.data(), block1.data());
 
-            let read_block2 = reader.read_block().await.unwrap().unwrap();
+            let read_block2 = reader
+                .read_block()
+                .await
+                .expect("test: read_block should succeed")
+                .expect("test: second block should be present");
             assert_eq!(read_block2.cid(), block2.cid());
             assert_eq!(read_block2.data(), block2.data());
 
             // No more blocks
-            assert!(reader.read_block().await.unwrap().is_none());
+            assert!(reader
+                .read_block()
+                .await
+                .expect("test: read_block at EOF should succeed")
+                .is_none());
         }
 
         let _ = std::fs::remove_file(&path);
@@ -691,8 +714,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_export_import_car() {
-        let store_path = PathBuf::from("/tmp/ipfrs-test-car-store");
-        let car_path = PathBuf::from("/tmp/test-export.car");
+        let store_path = std::env::temp_dir().join("ipfrs-test-car-store");
+        let car_path = std::env::temp_dir().join("test-export.car");
         let _ = std::fs::remove_dir_all(&store_path);
         let _ = std::fs::remove_file(&car_path);
 
@@ -700,35 +723,50 @@ mod tests {
             path: store_path.clone(),
             cache_size: 1024 * 1024,
         };
-        let store = SledBlockStore::new(config).unwrap();
+        let store = SledBlockStore::new(config).expect("test: SledBlockStore::new should succeed");
 
         // Add blocks
         let block1 = make_test_block(b"block1");
         let block2 = make_test_block(b"block2");
-        store.put(&block1).await.unwrap();
-        store.put(&block2).await.unwrap();
+        store
+            .put(&block1)
+            .await
+            .expect("test: put block1 should succeed");
+        store
+            .put(&block2)
+            .await
+            .expect("test: put block2 should succeed");
 
         // Export
         let write_stats = export_to_car(&store, &car_path, vec![*block1.cid()])
             .await
-            .unwrap();
+            .expect("test: export_to_car should succeed");
         assert_eq!(write_stats.blocks_written, 2);
 
         // Create new store and import
-        let store_path2 = PathBuf::from("/tmp/ipfrs-test-car-store2");
+        let store_path2 = std::env::temp_dir().join("ipfrs-test-car-store2");
         let _ = std::fs::remove_dir_all(&store_path2);
         let config2 = BlockStoreConfig {
             path: store_path2.clone(),
             cache_size: 1024 * 1024,
         };
-        let store2 = SledBlockStore::new(config2).unwrap();
+        let store2 = SledBlockStore::new(config2)
+            .expect("test: SledBlockStore::new for store2 should succeed");
 
-        let read_stats = import_from_car(&store2, &car_path).await.unwrap();
+        let read_stats = import_from_car(&store2, &car_path)
+            .await
+            .expect("test: import_from_car should succeed");
         assert_eq!(read_stats.blocks_read, 2);
 
         // Verify blocks
-        assert!(store2.has(block1.cid()).await.unwrap());
-        assert!(store2.has(block2.cid()).await.unwrap());
+        assert!(store2
+            .has(block1.cid())
+            .await
+            .expect("test: has block1 should succeed"));
+        assert!(store2
+            .has(block2.cid())
+            .await
+            .expect("test: has block2 should succeed"));
 
         let _ = std::fs::remove_dir_all(&store_path);
         let _ = std::fs::remove_dir_all(&store_path2);

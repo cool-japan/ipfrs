@@ -515,7 +515,9 @@ mod tests {
         profiler.record_memory(2048);
         profiler.record_memory(3072);
 
-        let stats = profiler.stats().unwrap();
+        let stats = profiler
+            .stats()
+            .expect("test: stats should succeed with recorded samples");
 
         assert_eq!(stats.avg_cpu, 50.0);
         assert_eq!(stats.peak_cpu, 70.0);
@@ -532,7 +534,9 @@ mod tests {
             profiler.record_latency(Duration::from_micros(i * 10));
         }
 
-        let stats = profiler.stats().unwrap();
+        let stats = profiler
+            .stats()
+            .expect("test: stats should succeed with 100 latency samples");
 
         assert!(stats.avg_latency > 0);
         assert!(stats.p95_latency > stats.avg_latency);

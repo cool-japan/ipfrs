@@ -16,7 +16,8 @@ use std::time::Duration;
 /// Creates a CID from a seed value for reproducible tests.
 pub fn test_cid(seed: u64) -> Cid {
     let data = seed.to_le_bytes();
-    let hash = Multihash::wrap(0x12, &data).unwrap();
+    let hash = Multihash::wrap(0x12, &data)
+        .expect("wrapping 8-byte seed into SHA2-256 multihash is infallible");
     Cid::new_v1(0x55, hash)
 }
 

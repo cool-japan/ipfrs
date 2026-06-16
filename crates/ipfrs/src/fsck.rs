@@ -248,23 +248,42 @@ mod tests {
     use ipfrs_storage::{BlockStoreConfig, SledBlockStore};
     use std::collections::BTreeMap;
 
+    fn unique_fsck_path(tag: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("ipfrs_fsck_{}_{}", tag, std::process::id()))
+    }
+
     #[tokio::test]
     async fn test_fsck_healthy_repo() {
+        let path = unique_fsck_path("healthy");
+        let _ = std::fs::remove_dir_all(&path);
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs_fsck_test_healthy"),
+            path: path.clone(),
             ..Default::default()
         };
-        let storage = Arc::new(SledBlockStore::new(config).unwrap());
+        let storage = Arc::new(
+            SledBlockStore::new(config).expect("test: block store creation should succeed"),
+        );
         let fsck = FilesystemChecker::new(storage.clone());
 
         // Add valid blocks
-        let block1 = Block::new(Bytes::from("test data 1")).unwrap();
-        let block2 = Block::new(Bytes::from("test data 2")).unwrap();
-        storage.put(&block1).await.unwrap();
-        storage.put(&block2).await.unwrap();
+        let block1 =
+            Block::new(Bytes::from("test data 1")).expect("test: block creation should succeed");
+        let block2 =
+            Block::new(Bytes::from("test data 2")).expect("test: block creation should succeed");
+        storage
+            .put(&block1)
+            .await
+            .expect("test: put block1 should succeed");
+        storage
+            .put(&block2)
+            .await
+            .expect("test: put block2 should succeed");
 
         // Run check
-        let result = fsck.check(FsckConfig::default()).await.unwrap();
+        let result = fsck
+            .check(FsckConfig::default())
+            .await
+            .expect("test: fsck check should succeed");
 
         // Should be healthy
         assert!(result.is_healthy());
@@ -273,45 +292,61 @@ mod tests {
         assert_eq!(result.total_issues(), 0);
 
         // Cleanup
-        let _ = std::fs::remove_dir_all("/tmp/ipfrs_fsck_test_healthy");
+        let _ = std::fs::remove_dir_all(&path);
     }
 
     #[tokio::test]
     async fn test_fsck_quick_check() {
+        let path = unique_fsck_path("quick");
+        let _ = std::fs::remove_dir_all(&path);
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs_fsck_test_quick"),
+            path: path.clone(),
             ..Default::default()
         };
-        let storage = Arc::new(SledBlockStore::new(config).unwrap());
+        let storage = Arc::new(
+            SledBlockStore::new(config).expect("test: block store creation should succeed"),
+        );
         let fsck = FilesystemChecker::new(storage.clone());
 
         // Add valid block
-        let block = Block::new(Bytes::from("test data")).unwrap();
-        storage.put(&block).await.unwrap();
+        let block =
+            Block::new(Bytes::from("test data")).expect("test: block creation should succeed");
+        storage.put(&block).await.expect("test: put should succeed");
 
         // Run quick check
-        let result = fsck.quick_check().await.unwrap();
+        let result = fsck
+            .quick_check()
+            .await
+            .expect("test: quick_check should succeed");
 
         assert!(result.is_healthy());
         assert_eq!(result.blocks_valid, 1);
 
         // Cleanup
-        let _ = std::fs::remove_dir_all("/tmp/ipfrs_fsck_test_quick");
+        let _ = std::fs::remove_dir_all(&path);
     }
 
     #[tokio::test]
     async fn test_fsck_with_links() {
+        let path = unique_fsck_path("links");
+        let _ = std::fs::remove_dir_all(&path);
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs_fsck_test_links"),
+            path: path.clone(),
             ..Default::default()
         };
-        let storage = Arc::new(SledBlockStore::new(config).unwrap());
+        let storage = Arc::new(
+            SledBlockStore::new(config).expect("test: block store creation should succeed"),
+        );
         let fsck = FilesystemChecker::new(storage.clone());
 
         // Create a block
-        let block1 = Block::new(Bytes::from("referenced data")).unwrap();
+        let block1 = Block::new(Bytes::from("referenced data"))
+            .expect("test: block creation should succeed");
         let cid1 = *block1.cid();
-        storage.put(&block1).await.unwrap();
+        storage
+            .put(&block1)
+            .await
+            .expect("test: put block1 should succeed");
 
         // Create an IPLD structure that references the block
         let mut map = BTreeMap::new();
@@ -319,18 +354,27 @@ mod tests {
         let ipld = Ipld::Map(map);
 
         // Store the IPLD
-        let ipld_bytes = ipld.to_dag_cbor().unwrap();
-        let block2 = Block::new(Bytes::from(ipld_bytes)).unwrap();
-        storage.put(&block2).await.unwrap();
+        let ipld_bytes = ipld
+            .to_dag_cbor()
+            .expect("test: IPLD serialization should succeed");
+        let block2 =
+            Block::new(Bytes::from(ipld_bytes)).expect("test: block creation should succeed");
+        storage
+            .put(&block2)
+            .await
+            .expect("test: put block2 should succeed");
 
         // Run check
-        let result = fsck.check(FsckConfig::default()).await.unwrap();
+        let result = fsck
+            .check(FsckConfig::default())
+            .await
+            .expect("test: fsck check should succeed");
 
         // Should be healthy (all references exist)
         assert!(result.is_healthy());
         assert_eq!(result.blocks_missing.len(), 0);
 
         // Cleanup
-        let _ = std::fs::remove_dir_all("/tmp/ipfrs_fsck_test_links");
+        let _ = std::fs::remove_dir_all(&path);
     }
 }

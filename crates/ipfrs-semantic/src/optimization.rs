@@ -285,9 +285,7 @@ impl MemoryOptimizer {
 
         let total = vector_memory + graph_memory + overhead;
 
-        if num_vectors > 0 {
-            self.memory_per_vector = total / num_vectors;
-        }
+        self.memory_per_vector = total.checked_div(num_vectors).unwrap_or(0);
 
         total
     }
@@ -300,13 +298,13 @@ impl MemoryOptimizer {
 
     /// Get maximum vectors that can fit in budget
     pub fn max_vectors(&self, dimension: usize, m: usize) -> usize {
-        if self.memory_per_vector == 0 {
-            // First estimate
-            let bytes_per_vector = dimension * 4 + m * 2 * 8 + 100;
-            self.target_memory / bytes_per_vector
-        } else {
-            self.target_memory / self.memory_per_vector
-        }
+        self.target_memory
+            .checked_div(self.memory_per_vector)
+            .unwrap_or_else(|| {
+                // memory_per_vector is 0: fall back to first estimate
+                let bytes_per_vector = dimension * 4 + m * 2 * 8 + 100;
+                self.target_memory / bytes_per_vector
+            })
     }
 
     /// Recommend configuration for memory budget

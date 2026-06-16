@@ -18,9 +18,9 @@
 //! let manager = SessionManager::new();
 //!
 //! // Create test CIDs
-//! let hash1 = Multihash::wrap(0x12, &[1, 2, 3]).unwrap();
+//! let hash1 = Multihash::wrap(0x12, &[1, 2, 3]).expect("valid multihash bytes");
 //! let cid1 = Cid::new_v1(0x55, hash1);
-//! let hash2 = Multihash::wrap(0x12, &[4, 5, 6]).unwrap();
+//! let hash2 = Multihash::wrap(0x12, &[4, 5, 6]).expect("valid multihash bytes");
 //! let cid2 = Cid::new_v1(0x55, hash2);
 //!
 //! // Create a session
@@ -305,7 +305,7 @@ impl Session {
             // Update average block time
             let fetch_time = block
                 .completed_at
-                .unwrap()
+                .expect("completed_at was just set above")
                 .duration_since(block.requested_at);
             stats.avg_block_time = Some(
                 stats
@@ -563,7 +563,10 @@ mod tests {
 
     fn dummy_cid(n: u8) -> Cid {
         let data = vec![n; 32];
-        Cid::new_v1(0x55, multihash::Multihash::wrap(0x12, &data).unwrap())
+        Cid::new_v1(
+            0x55,
+            multihash::Multihash::wrap(0x12, &data).expect("test: create multihash"),
+        )
     }
 
     #[test]
@@ -583,8 +586,12 @@ mod tests {
         let cid1 = dummy_cid(1);
         let cid2 = dummy_cid(2);
 
-        session.add_block(cid1, None).unwrap();
-        session.add_block(cid2, Some(Priority::High)).unwrap();
+        session
+            .add_block(cid1, None)
+            .expect("test: add block to session");
+        session
+            .add_block(cid2, Some(Priority::High))
+            .expect("test: add block to session");
 
         let stats = session.stats();
         assert_eq!(stats.total_blocks, 2);
@@ -597,10 +604,14 @@ mod tests {
         let session = manager.create_session(SessionConfig::default());
 
         let cid = dummy_cid(1);
-        session.add_block(cid, None).unwrap();
+        session
+            .add_block(cid, None)
+            .expect("test: add block to session");
 
         let data = Bytes::from(vec![1, 2, 3, 4]);
-        session.mark_received(&cid, &data).unwrap();
+        session
+            .mark_received(&cid, &data)
+            .expect("test: mark received");
 
         let stats = session.stats();
         assert_eq!(stats.blocks_received, 1);
@@ -615,11 +626,11 @@ mod tests {
 
         session
             .add_blocks(&[dummy_cid(1), dummy_cid(2), dummy_cid(3)], None)
-            .unwrap();
+            .expect("test: add blocks to session");
 
         session
             .mark_received(&dummy_cid(1), &Bytes::from(vec![1]))
-            .unwrap();
+            .expect("test: mark received");
         let progress1 = session.stats().progress();
         assert!(
             (progress1 - 100.0 / 3.0).abs() < 1e-6,
@@ -629,7 +640,7 @@ mod tests {
 
         session
             .mark_received(&dummy_cid(2), &Bytes::from(vec![2]))
-            .unwrap();
+            .expect("test: mark received");
         let progress2 = session.stats().progress();
         assert!(
             (progress2 - 200.0 / 3.0).abs() < 1e-6,
@@ -639,7 +650,7 @@ mod tests {
 
         session
             .mark_received(&dummy_cid(3), &Bytes::from(vec![3]))
-            .unwrap();
+            .expect("test: mark received");
         let progress3 = session.stats().progress();
         assert!(
             (progress3 - 100.0).abs() < 1e-6,
@@ -680,17 +691,22 @@ mod tests {
         let manager = SessionManager::new();
         let session = manager.create_session(SessionConfig::default());
 
-        session.add_block(dummy_cid(1), None).unwrap();
+        session
+            .add_block(dummy_cid(1), None)
+            .expect("test: add block to session");
 
         let session_clone = session.clone();
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(10)).await;
             session_clone
                 .mark_received(&dummy_cid(1), &Bytes::from(vec![1]))
-                .unwrap();
+                .expect("test: mark received");
         });
 
-        let stats = session.wait_completion().await.unwrap();
+        let stats = session
+            .wait_completion()
+            .await
+            .expect("test: wait completion");
         assert_eq!(stats.blocks_received, 1);
     }
 }

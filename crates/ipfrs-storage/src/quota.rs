@@ -238,7 +238,9 @@ impl QuotaManager {
                 // Create tenant with default quota
                 let default_quota = self.config.read().default_quota.clone();
                 self.set_quota(tenant_id.to_string(), default_quota);
-                self.tenants.get(tenant_id).unwrap()
+                self.tenants
+                    .get(tenant_id)
+                    .expect("tenant just inserted via set_quota")
             }
         };
 

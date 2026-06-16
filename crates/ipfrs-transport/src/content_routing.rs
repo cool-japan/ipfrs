@@ -440,7 +440,9 @@ mod tests {
 
     fn create_test_cid(data: &[u8]) -> Cid {
         use ipfrs_core::CidBuilder;
-        CidBuilder::new().build(data).unwrap()
+        CidBuilder::new()
+            .build(data)
+            .expect("test: build CID from data")
     }
 
     #[tokio::test]
@@ -497,7 +499,10 @@ mod tests {
 
         // Check provider score
         if let Some(providers) = router.providers.get(&cid) {
-            let provider = providers.iter().find(|p| p.peer_id == peer).unwrap();
+            let provider = providers
+                .iter()
+                .find(|p| p.peer_id == peer)
+                .expect("test: find provider matching peer");
             assert_eq!(provider.successful_retrievals, 3);
             assert_eq!(provider.failed_retrievals, 1);
             assert!((provider.score - 0.75).abs() < 0.01); // 3/4 = 0.75

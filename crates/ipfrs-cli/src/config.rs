@@ -569,8 +569,10 @@ mod tests {
     #[test]
     fn test_config_serialization() {
         let config = Config::default();
-        let toml_str = toml::to_string_pretty(&config).unwrap();
-        let parsed: Config = toml::from_str(&toml_str).unwrap();
+        let toml_str =
+            toml::to_string_pretty(&config).expect("test: config serialization should succeed");
+        let parsed: Config =
+            toml::from_str(&toml_str).expect("test: config deserialization should succeed");
         assert_eq!(parsed.general.log_level, config.general.log_level);
     }
 
@@ -602,8 +604,10 @@ mod tests {
             .aliases
             .insert("gs".to_string(), "git status".to_string());
 
-        let toml_str = toml::to_string_pretty(&shell_config).unwrap();
-        let parsed: super::ShellConfig = toml::from_str(&toml_str).unwrap();
+        let toml_str = toml::to_string_pretty(&shell_config)
+            .expect("test: shell config serialization should succeed");
+        let parsed: super::ShellConfig =
+            toml::from_str(&toml_str).expect("test: shell config deserialization should succeed");
 
         assert_eq!(parsed.hints_enabled, shell_config.hints_enabled);
         assert_eq!(parsed.history_size, shell_config.history_size);
@@ -615,8 +619,8 @@ mod tests {
     #[test]
     fn test_config_caching() {
         // Load config twice - should return the same instance (via caching)
-        let config1 = Config::load().unwrap();
-        let config2 = Config::load().unwrap();
+        let config1 = Config::load().expect("test: config load should succeed");
+        let config2 = Config::load().expect("test: config load should succeed");
 
         // Both should have the same default values
         assert_eq!(config1.general.log_level, config2.general.log_level);
@@ -626,8 +630,8 @@ mod tests {
     #[test]
     fn test_config_uncached_load() {
         // Load uncached config multiple times
-        let config1 = Config::load_uncached().unwrap();
-        let config2 = Config::load_uncached().unwrap();
+        let config1 = Config::load_uncached().expect("test: config uncached load should succeed");
+        let config2 = Config::load_uncached().expect("test: config uncached load should succeed");
 
         // Both should have the same default values
         assert_eq!(config1.general.log_level, config2.general.log_level);
@@ -640,7 +644,7 @@ mod tests {
         Config::clear_cache();
 
         // Config should still load successfully
-        let config = Config::load().unwrap();
+        let config = Config::load().expect("test: config load should succeed");
         assert_eq!(config.general.log_level, "info");
     }
 }

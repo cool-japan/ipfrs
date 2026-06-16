@@ -713,7 +713,7 @@ mod tests {
         let assembler = ProofAssembler::new(&store);
 
         // Verify fact
-        let fact_fragment = store.get(&id_ab).unwrap();
+        let fact_fragment = store.get(&id_ab).expect("test: should succeed");
         let fact_proof = fact_fragment.to_proof(vec![]);
         assert!(assembler.verify(&fact_proof));
     }

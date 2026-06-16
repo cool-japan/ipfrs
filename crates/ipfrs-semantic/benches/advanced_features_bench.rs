@@ -1,10 +1,11 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use ipfrs_core::Cid;
 use ipfrs_semantic::{
     analyze_optimization, analyze_quality, compute_batch_stats, detect_anomaly, diagnose_index,
     find_outliers, HealthMonitor, OptimizationGoal, QueryOptimizer, SearchProfiler, VectorIndex,
 };
 use multihash_codetable::{Code, MultihashDigest};
+use std::hint::black_box;
 use std::time::Duration;
 
 /// Benchmark vector quality analysis for different vector sizes

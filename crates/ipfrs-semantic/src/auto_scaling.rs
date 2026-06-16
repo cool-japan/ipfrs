@@ -270,7 +270,11 @@ impl AutoScalingAdvisor {
         }
 
         // Sort actions by priority
-        actions.sort_by(|a, b| b.priority.partial_cmp(&a.priority).unwrap());
+        actions.sort_by(|a, b| {
+            b.priority
+                .partial_cmp(&a.priority)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Calculate health score
         let health_score = self.calculate_health_score(current);
@@ -353,7 +357,11 @@ impl AutoScalingAdvisor {
 
         // Calculate trends
         let qps_trend = if recent.len() > 1 {
-            (recent.last().unwrap().queries_per_second - recent[0].queries_per_second)
+            (recent
+                .last()
+                .expect("recent.len() > 1 checked above")
+                .queries_per_second
+                - recent[0].queries_per_second)
                 / recent[0].queries_per_second
         } else {
             0.0
@@ -414,7 +422,9 @@ mod tests {
             index_size: 1_000_000,
         };
 
-        let recommendations = advisor.analyze(&metrics).unwrap();
+        let recommendations = advisor
+            .analyze(&metrics)
+            .expect("test: analyze should succeed for healthy metrics");
         assert!(recommendations.health_score > 0.8);
         assert!(recommendations.actions.is_empty() || recommendations.actions[0].priority < 0.5);
     }
@@ -433,7 +443,9 @@ mod tests {
             index_size: 10_000_000,
         };
 
-        let recommendations = advisor.analyze(&metrics).unwrap();
+        let recommendations = advisor
+            .analyze(&metrics)
+            .expect("test: analyze should succeed for high latency metrics");
         assert!(recommendations.health_score < 0.7);
         assert!(!recommendations.actions.is_empty());
         assert!(recommendations
@@ -456,7 +468,9 @@ mod tests {
             index_size: 5_000_000,
         };
 
-        let recommendations = advisor.analyze(&metrics).unwrap();
+        let recommendations = advisor
+            .analyze(&metrics)
+            .expect("test: analyze should succeed for low cache hit rate metrics");
         assert!(recommendations
             .actions
             .iter()
@@ -477,7 +491,9 @@ mod tests {
             index_size: 8_000_000,
         };
 
-        let recommendations = advisor.analyze(&metrics).unwrap();
+        let recommendations = advisor
+            .analyze(&metrics)
+            .expect("test: analyze should succeed for high CPU metrics");
         assert!(recommendations
             .actions
             .iter()
@@ -498,7 +514,9 @@ mod tests {
             index_size: 10_000_000, // Large index
         };
 
-        let recommendations = advisor.analyze(&metrics).unwrap();
+        let recommendations = advisor
+            .analyze(&metrics)
+            .expect("test: analyze should succeed for high memory metrics");
         assert!(recommendations
             .actions
             .iter()
@@ -539,7 +557,9 @@ mod tests {
             index_size: 5_000_000,
         };
 
-        let recommendations = advisor.analyze(&metrics).unwrap();
+        let recommendations = advisor
+            .analyze(&metrics)
+            .expect("test: analyze should succeed for capacity headroom check");
         assert!(recommendations.capacity_headroom > 0.5);
     }
 
@@ -586,7 +606,9 @@ mod tests {
             index_size: 5_000_000,
         };
 
-        let recommendations = advisor.analyze(&metrics).unwrap();
+        let recommendations = advisor
+            .analyze(&metrics)
+            .expect("test: analyze should succeed with custom config");
         assert!(!recommendations.actions.is_empty());
     }
 
@@ -604,7 +626,9 @@ mod tests {
             index_size: 10_000_000,
         };
 
-        let recommendations = advisor.analyze(&metrics).unwrap();
+        let recommendations = advisor
+            .analyze(&metrics)
+            .expect("test: analyze should succeed for priority ordering check");
 
         // Actions should be sorted by priority
         for i in 1..recommendations.actions.len() {

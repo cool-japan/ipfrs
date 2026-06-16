@@ -395,7 +395,8 @@ mod tests {
         let strategy = manager.get_fallback_strategy(peer, Some("test_key"));
         assert!(strategy.is_some());
 
-        match strategy.unwrap() {
+        match strategy.expect("test: fallback strategy should be Some when alternative peer exists")
+        {
             FallbackStrategy::AlternativePeers { alternatives } => {
                 assert_eq!(alternatives.len(), 1);
                 assert_eq!(alternatives[0], alt_peer);
@@ -415,7 +416,8 @@ mod tests {
         let strategy = manager.get_fallback_strategy(peer, None);
         assert!(strategy.is_some());
 
-        match strategy.unwrap() {
+        match strategy.expect("test: fallback strategy should be Some when relay peer is available")
+        {
             FallbackStrategy::RelayFallback {
                 relay_peer,
                 target_peer,

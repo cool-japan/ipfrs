@@ -58,8 +58,7 @@ async fn caching_demo() -> anyhow::Result<()> {
     println!("\n2. Caching for Performance");
 
     let base_store = MemoryBlockStore::new();
-    let cache_size = 10 * 1024 * 1024; // 10MB
-    let cached_store = CachedBlockStore::new(base_store, cache_size);
+    let cached_store = CachedBlockStore::with_default_config(base_store);
 
     // Store multiple blocks
     let blocks: Vec<Block> = (0..5)

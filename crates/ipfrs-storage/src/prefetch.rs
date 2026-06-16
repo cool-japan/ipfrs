@@ -189,14 +189,11 @@ impl<S: BlockStore + Send + Sync + 'static> PredictivePrefetcher<S> {
     /// Record an access and update patterns
     pub fn record_access(&self, cid: &Cid) {
         let now = SystemTime::now();
-        let previous = self.last_accessed.lock().clone();
+        let previous = *self.last_accessed.lock();
 
         // Add to access history (drop guard before accessing prev_history to avoid deadlock)
         {
-            let mut history = self
-                .access_history
-                .entry(*cid)
-                .or_insert_with(VecDeque::new);
+            let mut history = self.access_history.entry(*cid).or_default();
             history.push_back(AccessRecord {
                 timestamp: now,
                 previous_cid: previous,
@@ -244,10 +241,7 @@ impl<S: BlockStore + Send + Sync + 'static> PredictivePrefetcher<S> {
 
     /// Update co-location pattern
     fn update_colocation_pattern(&self, cid1: &Cid, cid2: &Cid) {
-        let patterns = self
-            .colocation_patterns
-            .entry(*cid1)
-            .or_insert_with(DashMap::new);
+        let patterns = self.colocation_patterns.entry(*cid1).or_default();
 
         patterns
             .entry(*cid2)
@@ -286,7 +280,11 @@ impl<S: BlockStore + Send + Sync + 'static> PredictivePrefetcher<S> {
 
         // Filter by confidence and limit depth
         predictions.retain(|p| p.confidence >= config.min_confidence);
-        predictions.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
+        predictions.sort_by(|a, b| {
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let depth = self.current_depth.load(Ordering::Relaxed);
         predictions.truncate(depth);

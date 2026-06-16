@@ -611,7 +611,7 @@ mod tests {
         );
         assert!(result.is_ok());
 
-        let user = result.unwrap();
+        let user = result.expect("test: user creation should succeed");
         assert_eq!(user.username, "alice");
         assert!(user.has_permission(Permission::BlockRead));
     }
@@ -626,11 +626,11 @@ mod tests {
                 None,
                 vec![Role::Admin].into_iter().collect(),
             )
-            .unwrap();
+            .expect("test: user creation should succeed");
 
         let token = manager
             .create_api_key(&user.id, Some("test_key".to_string()))
-            .unwrap();
+            .expect("test: API key creation should succeed");
         assert_eq!(token.token_type, TokenType::ApiKey);
         assert!(token.secret.starts_with("ipfrs_"));
         assert!(token.is_admin());
@@ -646,9 +646,11 @@ mod tests {
                 None,
                 vec![Role::User].into_iter().collect(),
             )
-            .unwrap();
+            .expect("test: user creation should succeed");
 
-        let token = manager.create_jwt_token(&user.id, None).unwrap();
+        let token = manager
+            .create_jwt_token(&user.id, None)
+            .expect("test: JWT creation should succeed");
         assert_eq!(token.token_type, TokenType::Jwt);
         assert!(!token.is_expired());
     }
@@ -663,9 +665,11 @@ mod tests {
                 None,
                 vec![Role::User].into_iter().collect(),
             )
-            .unwrap();
+            .expect("test: user creation should succeed");
 
-        let token = manager.create_api_key(&user.id, None).unwrap();
+        let token = manager
+            .create_api_key(&user.id, None)
+            .expect("test: API key creation should succeed");
         let verified = manager.verify_token(&token.secret);
         assert!(verified.is_ok());
 
@@ -683,9 +687,11 @@ mod tests {
                 None,
                 vec![Role::ReadOnly].into_iter().collect(),
             )
-            .unwrap();
+            .expect("test: user creation should succeed");
 
-        let token = manager.create_api_key(&user.id, None).unwrap();
+        let token = manager
+            .create_api_key(&user.id, None)
+            .expect("test: API key creation should succeed");
 
         assert!(manager
             .check_permission(&token, Permission::BlockRead)
@@ -705,12 +711,16 @@ mod tests {
                 None,
                 vec![Role::User].into_iter().collect(),
             )
-            .unwrap();
+            .expect("test: user creation should succeed");
 
-        let token = manager.create_api_key(&user.id, None).unwrap();
+        let token = manager
+            .create_api_key(&user.id, None)
+            .expect("test: API key creation should succeed");
         assert!(manager.verify_token(&token.secret).is_ok());
 
-        manager.revoke_token(&token.id).unwrap();
+        manager
+            .revoke_token(&token.id)
+            .expect("test: token revocation should succeed");
         assert!(manager.verify_token(&token.secret).is_err());
     }
 }

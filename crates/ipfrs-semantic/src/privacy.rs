@@ -78,7 +78,7 @@ impl PrivacyMechanism {
 
     /// Add noise to an embedding
     pub fn add_noise(&self, embedding: &[f32]) -> Vec<f32> {
-        use rand::Rng;
+        use rand::RngExt;
         let mut rng = rand::rng();
 
         match self.distribution {
@@ -127,7 +127,7 @@ impl PrivacyMechanism {
 }
 
 /// Sample from Laplacian distribution with scale parameter
-fn sample_laplacian<R: rand::Rng>(rng: &mut R, scale: f32) -> f32 {
+fn sample_laplacian<R: rand::RngExt>(rng: &mut R, scale: f32) -> f32 {
     let u: f32 = rng.random_range(-0.5..0.5);
     if u >= 0.0 {
         -scale * (1.0 - 2.0 * u).ln()
@@ -176,7 +176,10 @@ impl PrivacyBudget {
 
     /// Check if we can afford a query with given epsilon/delta
     pub fn can_afford(&self, epsilon: f32, delta: f32) -> bool {
-        let remaining = self.remaining_epsilon.lock().unwrap();
+        let remaining = self
+            .remaining_epsilon
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         *remaining >= epsilon && self.total_delta >= delta
     }
 
@@ -186,10 +189,13 @@ impl PrivacyBudget {
             return Err(Error::InvalidInput("Insufficient privacy budget".into()));
         }
 
-        let mut remaining = self.remaining_epsilon.lock().unwrap();
+        let mut remaining = self
+            .remaining_epsilon
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         *remaining -= epsilon;
 
-        let mut queries = self.queries.lock().unwrap();
+        let mut queries = self.queries.lock().unwrap_or_else(|e| e.into_inner());
         queries.push(QueryRecord {
             epsilon,
             delta,
@@ -201,13 +207,19 @@ impl PrivacyBudget {
 
     /// Get remaining epsilon
     pub fn remaining(&self) -> f32 {
-        *self.remaining_epsilon.lock().unwrap()
+        *self
+            .remaining_epsilon
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     /// Get statistics
     pub fn stats(&self) -> PrivacyBudgetStats {
-        let remaining = *self.remaining_epsilon.lock().unwrap();
-        let queries = self.queries.lock().unwrap();
+        let remaining = *self
+            .remaining_epsilon
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let queries = self.queries.lock().unwrap_or_else(|e| e.into_inner());
 
         PrivacyBudgetStats {
             total_epsilon: self.total_epsilon,
@@ -298,7 +310,8 @@ impl TradeoffAnalyzer {
         self.epsilons
             .iter()
             .map(|&epsilon| {
-                let mechanism = PrivacyMechanism::laplacian(epsilon, self.sensitivity).unwrap();
+                let mechanism = PrivacyMechanism::laplacian(epsilon, self.sensitivity)
+                    .expect("epsilons from preset list are all positive");
                 let utility_loss = mechanism.expected_utility_loss(dimension);
 
                 TradeoffPoint {
@@ -318,7 +331,7 @@ impl TradeoffAnalyzer {
             .into_iter()
             .filter(|p| p.utility_loss <= max_utility_loss)
             .map(|p| p.epsilon)
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
     }
 }
 
@@ -339,7 +352,8 @@ mod tests {
 
     #[test]
     fn test_laplacian_mechanism() {
-        let mechanism = PrivacyMechanism::laplacian(1.0, 1.0).unwrap();
+        let mechanism =
+            PrivacyMechanism::laplacian(1.0, 1.0).expect("test: valid laplacian params");
         assert_eq!(mechanism.epsilon(), 1.0);
         assert_eq!(mechanism.delta(), 0.0);
 
@@ -353,7 +367,8 @@ mod tests {
 
     #[test]
     fn test_gaussian_mechanism() {
-        let mechanism = PrivacyMechanism::gaussian(1.0, 0.001, 1.0).unwrap();
+        let mechanism =
+            PrivacyMechanism::gaussian(1.0, 0.001, 1.0).expect("test: valid gaussian params");
         assert_eq!(mechanism.epsilon(), 1.0);
         assert!(mechanism.delta() > 0.0);
 
@@ -365,12 +380,14 @@ mod tests {
 
     #[test]
     fn test_privacy_budget() {
-        let budget = PrivacyBudget::new(10.0, 0.001).unwrap();
+        let budget = PrivacyBudget::new(10.0, 0.001).expect("test: valid budget params");
 
         assert!(budget.can_afford(1.0, 0.0001));
         assert_eq!(budget.remaining(), 10.0);
 
-        budget.consume(1.0, 0.0001).unwrap();
+        budget
+            .consume(1.0, 0.0001)
+            .expect("test: consume within budget");
         assert_eq!(budget.remaining(), 9.0);
 
         let stats = budget.stats();
@@ -380,10 +397,14 @@ mod tests {
 
     #[test]
     fn test_budget_exhaustion() {
-        let budget = PrivacyBudget::new(1.0, 0.001).unwrap();
+        let budget = PrivacyBudget::new(1.0, 0.001).expect("test: valid budget params");
 
-        budget.consume(0.5, 0.0001).unwrap();
-        budget.consume(0.5, 0.0001).unwrap();
+        budget
+            .consume(0.5, 0.0001)
+            .expect("test: consume within budget");
+        budget
+            .consume(0.5, 0.0001)
+            .expect("test: consume within budget");
 
         // Should fail - budget exhausted
         assert!(budget.consume(0.1, 0.0001).is_err());
@@ -392,7 +413,8 @@ mod tests {
     #[test]
     fn test_private_embedding() {
         let embedding = vec![1.0, 2.0, 3.0];
-        let mechanism = PrivacyMechanism::laplacian(1.0, 1.0).unwrap();
+        let mechanism =
+            PrivacyMechanism::laplacian(1.0, 1.0).expect("test: valid laplacian params");
 
         let private_emb = PrivateEmbedding::new(embedding.clone(), mechanism);
 
@@ -408,7 +430,13 @@ mod tests {
 
         assert!(!points.is_empty());
         // Higher epsilon should give lower utility loss
-        assert!(points[0].utility_loss > points.last().unwrap().utility_loss);
+        assert!(
+            points[0].utility_loss
+                > points
+                    .last()
+                    .expect("test: non-empty points vec")
+                    .utility_loss
+        );
     }
 
     #[test]
@@ -417,12 +445,13 @@ mod tests {
         let epsilon = analyzer.find_epsilon_for_utility(768, 10.0);
 
         assert!(epsilon.is_some());
-        assert!(epsilon.unwrap() > 0.0);
+        assert!(epsilon.expect("test: epsilon found for utility bound") > 0.0);
     }
 
     #[test]
     fn test_utility_loss_estimation() {
-        let mechanism = PrivacyMechanism::laplacian(1.0, 1.0).unwrap();
+        let mechanism =
+            PrivacyMechanism::laplacian(1.0, 1.0).expect("test: valid laplacian params");
         let loss = mechanism.expected_utility_loss(768);
 
         // Should be roughly sqrt(768) for unit scale

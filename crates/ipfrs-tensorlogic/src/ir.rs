@@ -5,6 +5,7 @@
 
 use ipfrs_core::Cid;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 
 /// A logical term in TensorLogic
@@ -315,6 +316,44 @@ impl KnowledgeBase {
             num_facts: self.facts.len(),
             num_rules: self.rules.len(),
         }
+    }
+
+    /// Build a predicate-name → CID index from a pre-computed rule-CID map.
+    ///
+    /// `rule_cids` maps each rule's position in `self.rules` to its content-
+    /// addressed [`Cid`].  Rules that have no entry in the map are skipped.
+    ///
+    /// The returned index can be used by distributed reasoners to quickly look
+    /// up which peers might hold rules relevant to a given predicate.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let index = kb.index_rules_by_predicate(&cid_map);
+    /// let parent_cids = index.get("parent").cloned().unwrap_or_default();
+    /// ```
+    pub fn index_rules_by_predicate(
+        &self,
+        rule_cids: &HashMap<usize, Cid>,
+    ) -> HashMap<String, Vec<Cid>> {
+        let mut index: HashMap<String, Vec<Cid>> = HashMap::new();
+        for (idx, rule) in self.rules.iter().enumerate() {
+            if let Some(cid) = rule_cids.get(&idx) {
+                index.entry(rule.head.name.clone()).or_default().push(*cid);
+            }
+        }
+        index
+    }
+
+    /// Build a predicate-name → rule-index index without CID information.
+    ///
+    /// Useful for local-only query planning when CIDs have not been computed yet.
+    pub fn index_rules_by_predicate_local(&self) -> HashMap<String, Vec<usize>> {
+        let mut index: HashMap<String, Vec<usize>> = HashMap::new();
+        for (idx, rule) in self.rules.iter().enumerate() {
+            index.entry(rule.head.name.clone()).or_default().push(idx);
+        }
+        index
     }
 }
 

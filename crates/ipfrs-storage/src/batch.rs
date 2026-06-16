@@ -142,7 +142,11 @@ pub async fn batch_put<S: BlockStore + Send + Sync + 'static>(
 
     for chunk in blocks.chunks(config.batch_size) {
         for block in chunk {
-            let permit = semaphore.clone().acquire_owned().await.unwrap();
+            let permit = semaphore
+                .clone()
+                .acquire_owned()
+                .await
+                .expect("semaphore is never explicitly closed");
             let block = block.clone();
             let cid = *block.cid();
             let store = store.clone();
@@ -194,7 +198,11 @@ pub async fn batch_get<S: BlockStore + Send + Sync + 'static>(
 
     for chunk in cids.chunks(config.batch_size) {
         for cid in chunk {
-            let permit = semaphore.clone().acquire_owned().await.unwrap();
+            let permit = semaphore
+                .clone()
+                .acquire_owned()
+                .await
+                .expect("semaphore is never explicitly closed");
             let cid = *cid;
             let store = store.clone();
 
@@ -251,7 +259,11 @@ pub async fn batch_delete<S: BlockStore + Send + Sync + 'static>(
 
     for chunk in cids.chunks(config.batch_size) {
         for cid in chunk {
-            let permit = semaphore.clone().acquire_owned().await.unwrap();
+            let permit = semaphore
+                .clone()
+                .acquire_owned()
+                .await
+                .expect("semaphore is never explicitly closed");
             let cid = *cid;
             let store = store.clone();
 
@@ -299,7 +311,11 @@ pub async fn batch_has<S: BlockStore + Send + Sync + 'static>(
 
     for chunk in cids.chunks(config.batch_size) {
         for cid in chunk {
-            let permit = semaphore.clone().acquire_owned().await.unwrap();
+            let permit = semaphore
+                .clone()
+                .acquire_owned()
+                .await
+                .expect("semaphore is never explicitly closed");
             let cid = *cid;
             let store = store.clone();
 

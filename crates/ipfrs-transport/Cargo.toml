@@ -17,6 +17,7 @@ homepage.workspace = true
 ipfrs-core = { workspace = true }
 ipfrs-network = { workspace = true }
 ipfrs-storage = { workspace = true }
+ipfrs-tensorlogic = { workspace = true }
 
 # Networking
 libp2p = { workspace = true }
@@ -25,9 +26,11 @@ tokio-tungstenite = { workspace = true }
 
 # TLS/Crypto for QUIC
 rustls = { workspace = true }
+rustls-rustcrypto = { workspace = true }
 rcgen = { workspace = true }
 
 # Zero-copy serialization
+arrow = { workspace = true }
 safetensors = { workspace = true }
 bytes = { workspace = true }
 
@@ -58,6 +61,9 @@ oxicode = { workspace = true }
 
 # Random number generation
 rand = { workspace = true }
+
+# Checksum
+crc32fast = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

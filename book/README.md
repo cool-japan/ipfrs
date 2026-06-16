@@ -126,4 +126,4 @@ mdbook test
 
 ## License
 
-The documentation is licensed under the same license as IPFRS (MIT).
+The documentation is licensed under the same license as IPFRS (Apache-2.0).

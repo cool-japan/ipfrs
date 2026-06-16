@@ -361,28 +361,30 @@ mod tests {
 
     #[test]
     fn test_parse_fact() {
-        let fact = parse_fact("parent(alice, bob).").unwrap();
+        let fact = parse_fact("parent(alice, bob).").expect("test: should succeed");
         assert_eq!(fact.name, "parent");
         assert_eq!(fact.arity(), 2);
     }
 
     #[test]
     fn test_parse_rule() {
-        let rule = parse_rule("grandparent(X, Z) :- parent(X, Y), parent(Y, Z).").unwrap();
+        let rule = parse_rule("grandparent(X, Z) :- parent(X, Y), parent(Y, Z).")
+            .expect("test: should succeed");
         assert_eq!(rule.head.name, "grandparent");
         assert_eq!(rule.body.len(), 2);
     }
 
     #[test]
     fn test_parse_query() {
-        let query = parse_query("?- parent(alice, X).").unwrap();
+        let query = parse_query("?- parent(alice, X).").expect("test: should succeed");
         assert_eq!(query.name, "parent");
         assert_eq!(query.arity(), 2);
     }
 
     #[test]
     fn test_parse_with_comments() {
-        let fact = parse_fact("parent(alice, bob). % Alice is parent of Bob").unwrap();
+        let fact = parse_fact("parent(alice, bob). % Alice is parent of Bob")
+            .expect("test: should succeed");
         assert_eq!(fact.name, "parent");
     }
 }

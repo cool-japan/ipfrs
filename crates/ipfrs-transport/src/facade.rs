@@ -418,7 +418,7 @@ impl TransportFacade {
     /// Update network metrics for auto-tuning
     pub fn update_network_metrics(&self, metrics: NetworkMetrics) -> bool {
         if let Some(tuner) = &self.auto_tuner {
-            let mut tuner = tuner.write().unwrap();
+            let mut tuner = tuner.write().unwrap_or_else(|e| e.into_inner());
             tuner.update_metrics(metrics)
         } else {
             false
@@ -428,7 +428,7 @@ impl TransportFacade {
     /// Get current auto-tuning recommendations
     pub fn get_tuning_recommendations(&self) -> Option<Vec<String>> {
         self.auto_tuner.as_ref().map(|tuner| {
-            let tuner = tuner.read().unwrap();
+            let tuner = tuner.read().unwrap_or_else(|e| e.into_inner());
             tuner.get_recommendations()
         })
     }
@@ -440,7 +440,7 @@ impl TransportFacade {
                 .peer_stats(self.peer_manager.stats())
                 .build();
 
-            let mut collector = collector.write().unwrap();
+            let mut collector = collector.write().unwrap_or_else(|e| e.into_inner());
             collector.record(aggregated);
         }
     }
@@ -448,7 +448,7 @@ impl TransportFacade {
     /// Get the latest statistics
     pub fn latest_stats(&self) -> Option<crate::AggregatedStats> {
         self.stats_collector.as_ref().and_then(|collector| {
-            let collector = collector.read().unwrap();
+            let collector = collector.read().unwrap_or_else(|e| e.into_inner());
             collector.latest().cloned()
         })
     }
@@ -458,7 +458,7 @@ impl TransportFacade {
         self.stats_collector
             .as_ref()
             .map(|collector| {
-                let collector = collector.read().unwrap();
+                let collector = collector.read().unwrap_or_else(|e| e.into_inner());
                 collector.avg_throughput()
             })
             .unwrap_or(0)
@@ -582,7 +582,9 @@ mod tests {
         facade.update_network_metrics(metrics);
         let recommendations = facade.get_tuning_recommendations();
         assert!(recommendations.is_some());
-        assert!(!recommendations.unwrap().is_empty());
+        assert!(!recommendations
+            .expect("test: tuning recommendations should be present after metrics update")
+            .is_empty());
     }
 
     #[test]

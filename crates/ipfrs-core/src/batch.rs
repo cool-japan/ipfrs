@@ -147,7 +147,7 @@ impl BatchProcessor {
             .par_iter()
             .filter_map(|block| {
                 let cid = *block.cid();
-                let mut seen = seen.lock().unwrap();
+                let mut seen = seen.lock().unwrap_or_else(|e| e.into_inner());
                 if seen.insert(cid.to_string()) {
                     Some(cid)
                 } else {

@@ -169,7 +169,7 @@ impl Default for HiddenServiceConfig {
         Self {
             local_port: 8080,
             virtual_port: 8080,
-            data_dir: PathBuf::from("/tmp/tor-hidden-service"),
+            data_dir: std::env::temp_dir().join("tor-hidden-service"),
             max_connections: 100,
             use_v3: true,
         }
@@ -213,9 +213,13 @@ pub struct TorConfig {
 impl Default for TorConfig {
     fn default() -> Self {
         Self {
-            socks_proxy: "127.0.0.1:9050".parse().unwrap(),
-            control_port: "127.0.0.1:9051".parse().unwrap(),
-            data_dir: PathBuf::from("/tmp/tor-data"),
+            socks_proxy: "127.0.0.1:9050"
+                .parse()
+                .expect("static socket addr literal must parse"),
+            control_port: "127.0.0.1:9051"
+                .parse()
+                .expect("static socket addr literal must parse"),
+            data_dir: std::env::temp_dir().join("tor-data"),
             stream_isolation: true,
             max_circuits: 10,
             circuit_timeout: Duration::from_secs(60),
@@ -680,7 +684,9 @@ impl TorManager {
             return false;
         }
 
-        let name = address.strip_suffix(".onion").unwrap();
+        let name = address
+            .strip_suffix(".onion")
+            .expect("just confirmed ends_with('.onion')");
 
         // Base32 character set: a-z, 2-7
         let is_valid_base32 = |c: char| c.is_ascii_lowercase() || ('2'..='7').contains(&c);
@@ -706,7 +712,9 @@ mod tests {
     #[tokio::test]
     async fn test_manager_creation() {
         let config = TorConfig::default();
-        let manager = TorManager::new(config).await.unwrap();
+        let manager = TorManager::new(config)
+            .await
+            .expect("test: TorManager::new should succeed");
 
         assert!(!manager.is_running());
         assert_eq!(manager.stats().circuits_created, 0);
@@ -715,28 +723,37 @@ mod tests {
     #[tokio::test]
     async fn test_start_stop() {
         let config = TorConfig::default();
-        let mut manager = TorManager::new(config).await.unwrap();
+        let mut manager = TorManager::new(config)
+            .await
+            .expect("test: TorManager::new should succeed");
 
         assert!(!manager.is_running());
 
-        manager.start().await.unwrap();
+        manager.start().await.expect("test: start should succeed");
         assert!(manager.is_running());
 
-        manager.stop().await.unwrap();
+        manager.stop().await.expect("test: stop should succeed");
         assert!(!manager.is_running());
     }
 
     #[tokio::test]
     async fn test_create_circuit() {
         let config = TorConfig::default();
-        let mut manager = TorManager::new(config).await.unwrap();
+        let mut manager = TorManager::new(config)
+            .await
+            .expect("test: TorManager::new should succeed");
 
-        manager.start().await.unwrap();
+        manager.start().await.expect("test: start should succeed");
 
-        let circuit_id = manager.create_circuit().await.unwrap();
+        let circuit_id = manager
+            .create_circuit()
+            .await
+            .expect("test: create_circuit should succeed");
         assert_eq!(circuit_id, 0);
 
-        let circuit = manager.get_circuit(circuit_id).unwrap();
+        let circuit = manager
+            .get_circuit(circuit_id)
+            .expect("test: circuit should exist after creation");
         assert_eq!(circuit.state, CircuitState::Ready);
         assert_eq!(circuit.hops.len(), 3);
 
@@ -752,13 +769,21 @@ mod tests {
             circuit_timeout: Duration::from_millis(100),
             ..Default::default()
         };
-        let mut manager = TorManager::new(config).await.unwrap();
+        let mut manager = TorManager::new(config)
+            .await
+            .expect("test: TorManager::new should succeed");
 
-        manager.start().await.unwrap();
+        manager.start().await.expect("test: start should succeed");
 
         // Create 2 circuits (should succeed)
-        let circuit1 = manager.create_circuit().await.unwrap();
-        let _circuit2 = manager.create_circuit().await.unwrap();
+        let circuit1 = manager
+            .create_circuit()
+            .await
+            .expect("test: create first circuit should succeed");
+        let _circuit2 = manager
+            .create_circuit()
+            .await
+            .expect("test: create second circuit should succeed");
 
         // Close first circuit's streams to make it eligible for cleanup
         if let Some(mut circuit) = manager.circuits.get_mut(&circuit1) {
@@ -776,11 +801,16 @@ mod tests {
     #[tokio::test]
     async fn test_connect() {
         let config = TorConfig::default();
-        let mut manager = TorManager::new(config).await.unwrap();
+        let mut manager = TorManager::new(config)
+            .await
+            .expect("test: TorManager::new should succeed");
 
-        manager.start().await.unwrap();
+        manager.start().await.expect("test: start should succeed");
 
-        let stream_id = manager.connect("example.onion:8080").await.unwrap();
+        let stream_id = manager
+            .connect("example.onion:8080")
+            .await
+            .expect("test: connect should succeed");
         assert_eq!(stream_id, 0);
 
         let stats = manager.stats();
@@ -794,13 +824,21 @@ mod tests {
             stream_isolation: true,
             ..Default::default()
         };
-        let mut manager = TorManager::new(config).await.unwrap();
+        let mut manager = TorManager::new(config)
+            .await
+            .expect("test: TorManager::new should succeed");
 
-        manager.start().await.unwrap();
+        manager.start().await.expect("test: start should succeed");
 
         // Two streams should use different circuits with stream isolation
-        manager.connect("example1.onion:8080").await.unwrap();
-        manager.connect("example2.onion:8080").await.unwrap();
+        manager
+            .connect("example1.onion:8080")
+            .await
+            .expect("test: connect to example1 should succeed");
+        manager
+            .connect("example2.onion:8080")
+            .await
+            .expect("test: connect to example2 should succeed");
 
         let stats = manager.stats();
         assert_eq!(stats.circuits_created, 2);
@@ -810,12 +848,17 @@ mod tests {
     #[tokio::test]
     async fn test_hidden_service() {
         let config = TorConfig::default();
-        let mut manager = TorManager::new(config).await.unwrap();
+        let mut manager = TorManager::new(config)
+            .await
+            .expect("test: TorManager::new should succeed");
 
-        manager.start().await.unwrap();
+        manager.start().await.expect("test: start should succeed");
 
         let hs_config = HiddenServiceConfig::default();
-        let onion_addr = manager.create_hidden_service(hs_config).await.unwrap();
+        let onion_addr = manager
+            .create_hidden_service(hs_config)
+            .await
+            .expect("test: create_hidden_service should succeed");
 
         assert!(onion_addr.ends_with(".onion"));
         assert_eq!(onion_addr.len(), 62); // 56 chars + ".onion" (6 chars)
@@ -827,14 +870,22 @@ mod tests {
     #[tokio::test]
     async fn test_remove_hidden_service() {
         let config = TorConfig::default();
-        let mut manager = TorManager::new(config).await.unwrap();
+        let mut manager = TorManager::new(config)
+            .await
+            .expect("test: TorManager::new should succeed");
 
-        manager.start().await.unwrap();
+        manager.start().await.expect("test: start should succeed");
 
         let hs_config = HiddenServiceConfig::default();
-        let onion_addr = manager.create_hidden_service(hs_config).await.unwrap();
+        let onion_addr = manager
+            .create_hidden_service(hs_config)
+            .await
+            .expect("test: create_hidden_service should succeed");
 
-        manager.remove_hidden_service(&onion_addr).await.unwrap();
+        manager
+            .remove_hidden_service(&onion_addr)
+            .await
+            .expect("test: remove_hidden_service should succeed");
 
         let stats = manager.stats();
         assert_eq!(stats.hidden_services, 0);
@@ -843,12 +894,19 @@ mod tests {
     #[tokio::test]
     async fn test_close_stream() {
         let config = TorConfig::default();
-        let mut manager = TorManager::new(config).await.unwrap();
+        let mut manager = TorManager::new(config)
+            .await
+            .expect("test: TorManager::new should succeed");
 
-        manager.start().await.unwrap();
+        manager.start().await.expect("test: start should succeed");
 
-        let stream_id = manager.connect("example.onion:8080").await.unwrap();
-        manager.close_stream(stream_id).unwrap();
+        let stream_id = manager
+            .connect("example.onion:8080")
+            .await
+            .expect("test: connect should succeed");
+        manager
+            .close_stream(stream_id)
+            .expect("test: close_stream should succeed");
 
         let stats = manager.stats();
         assert_eq!(stats.active_streams, 0);
@@ -896,12 +954,17 @@ mod tests {
             circuit_timeout: Duration::from_millis(100),
             ..Default::default()
         };
-        let mut manager = TorManager::new(config).await.unwrap();
+        let mut manager = TorManager::new(config)
+            .await
+            .expect("test: TorManager::new should succeed");
 
-        manager.start().await.unwrap();
+        manager.start().await.expect("test: start should succeed");
 
         // Create a circuit
-        let _circuit_id = manager.create_circuit().await.unwrap();
+        let _circuit_id = manager
+            .create_circuit()
+            .await
+            .expect("test: create_circuit should succeed");
 
         // Wait for timeout
         tokio::time::sleep(Duration::from_millis(150)).await;
@@ -916,7 +979,9 @@ mod tests {
     #[tokio::test]
     async fn test_not_running_errors() {
         let config = TorConfig::default();
-        let manager = TorManager::new(config).await.unwrap();
+        let manager = TorManager::new(config)
+            .await
+            .expect("test: TorManager::new should succeed");
 
         // These should fail when not running
         assert!(manager.create_circuit().await.is_err());

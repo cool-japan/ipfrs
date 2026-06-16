@@ -2,11 +2,12 @@
 //!
 //! Benchmarks for batch query performance comparing single vs batch queries
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use ipfrs_core::Cid;
 use ipfrs_semantic::router::{RouterConfig, SemanticRouter};
 use multihash_codetable::{Code, MultihashDigest};
-use rand::Rng;
+use rand::RngExt;
+use std::hint::black_box;
 
 fn generate_test_data(dimension: usize, count: usize) -> (SemanticRouter, Vec<Vec<f32>>) {
     let router = SemanticRouter::new(RouterConfig {

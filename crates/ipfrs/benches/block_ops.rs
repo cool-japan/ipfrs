@@ -1,7 +1,8 @@
 //! Benchmarks for block storage operations
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use ipfrs::{Node, NodeConfig};
+use std::hint::black_box;
 use tokio::runtime::Runtime;
 
 /// Benchmark block put operations

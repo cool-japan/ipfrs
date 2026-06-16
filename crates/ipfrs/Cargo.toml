@@ -54,6 +54,7 @@ urlencoding = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 tempfile = { workspace = true }
+serde_json = { workspace = true }
 
 [[bench]]
 name = "block_operations"

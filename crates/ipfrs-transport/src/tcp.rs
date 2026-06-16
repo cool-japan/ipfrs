@@ -394,12 +394,21 @@ mod tests {
         let transport = TcpTransport::default_config();
 
         // Bind to localhost
-        let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-        transport.listen(addr).await.unwrap();
+        let addr: SocketAddr = "127.0.0.1:0"
+            .parse()
+            .expect("test: valid loopback address literal");
+        transport
+            .listen(addr)
+            .await
+            .expect("test: listener should bind to loopback");
 
         // Get the actual bound address
         let listener = transport.listener.lock().await;
-        let bound_addr = listener.as_ref().unwrap().local_addr().unwrap();
+        let bound_addr = listener
+            .as_ref()
+            .expect("test: listener should be present after listen()")
+            .local_addr()
+            .expect("test: OS should provide bound local address");
         drop(listener);
 
         // Spawn accept task
@@ -413,14 +422,23 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(10)).await;
 
         // Connect
-        let mut client_conn = transport_clone.connect(bound_addr).await.unwrap();
-        let mut server_conn = accept_handle.await.unwrap().unwrap();
+        let mut client_conn = transport_clone
+            .connect(bound_addr)
+            .await
+            .expect("test: connect transport");
+        let mut server_conn = accept_handle
+            .await
+            .expect("test: await accept")
+            .expect("test: accept connection");
 
         // Test send/receive
         let test_data = Bytes::from("Hello, TCP!");
-        client_conn.send(test_data.clone()).await.unwrap();
+        client_conn
+            .send(test_data.clone())
+            .await
+            .expect("test: send data");
 
-        let received = server_conn.receive().await.unwrap();
+        let received = server_conn.receive().await.expect("test: receive data");
         assert_eq!(received, test_data);
 
         // Check metrics
@@ -431,7 +449,7 @@ mod tests {
         assert!(server_metrics.bytes_received > 0);
 
         // Close connections
-        client_conn.close().await.unwrap();
-        server_conn.close().await.unwrap();
+        client_conn.close().await.expect("test: close connection");
+        server_conn.close().await.expect("test: close connection");
     }
 }

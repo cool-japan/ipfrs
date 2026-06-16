@@ -113,6 +113,6 @@ let array: ArrayView2<f32> = weights.as_arrow_array()?;
 
 ## References
 
-- IPFRS v0.2.0 Whitepaper (Neural-Symbolic Storage)
-- IPFRS v0.3.0 Whitepaper (Zero-Copy Tensor Transport)
+- IPFRS v0.2.0 Whitepaper (TensorLogic Architecture)
+- IPFRS v0.3.0 Whitepaper (Zero-Copy Tensor Transport) *(planned v0.3.0)*
 - TensorLogic Paper: arXiv:2510.12269

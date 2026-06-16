@@ -131,7 +131,7 @@ fn test_version_response_format() {
     // }
 
     let response = serde_json::json!({
-        "Version": "0.1.0",
+        "Version": "0.2.0",
         "Commit": "ipfrs-test",
         "System": "x86_64-linux",
         "Golang": "rust-1.75.0"  // IPFRS uses rustc

@@ -416,7 +416,10 @@ mod tests {
 
     #[test]
     fn test_message_type_conversion() {
-        assert_eq!(MessageType::from_u8(0x01).unwrap(), MessageType::GetBlock);
+        assert_eq!(
+            MessageType::from_u8(0x01).expect("test: 0x01 should map to GetBlock"),
+            MessageType::GetBlock
+        );
         assert_eq!(MessageType::GetBlock.to_u8(), 0x01);
         assert!(MessageType::from_u8(0xFF).is_err());
     }
@@ -426,8 +429,11 @@ mod tests {
         let payload = Bytes::from("test payload");
         let msg = BinaryMessage::new(MessageType::GetBlock, 42, payload.clone());
 
-        let encoded = msg.encode().unwrap();
-        let decoded = BinaryMessage::decode(&encoded).unwrap();
+        let encoded = msg
+            .encode()
+            .expect("test: BinaryMessage encode should succeed");
+        let decoded =
+            BinaryMessage::decode(&encoded).expect("test: BinaryMessage decode should succeed");
 
         assert_eq!(decoded.version, PROTOCOL_VERSION);
         assert_eq!(decoded.msg_type, MessageType::GetBlock);
@@ -453,8 +459,10 @@ mod tests {
     fn test_batch_get_request_encode_decode() {
         // Create test CIDs from actual blocks
         use ipfrs_core::Block;
-        let block1 = Block::new(Bytes::from("test data 1")).unwrap();
-        let block2 = Block::new(Bytes::from("test data 2")).unwrap();
+        let block1 = Block::new(Bytes::from("test data 1"))
+            .expect("test: Block creation should succeed for test data 1");
+        let block2 = Block::new(Bytes::from("test data 2"))
+            .expect("test: Block creation should succeed for test data 2");
         let cid1 = *block1.cid();
         let cid2 = *block2.cid();
 
@@ -462,8 +470,11 @@ mod tests {
             cids: vec![cid1, cid2],
         };
 
-        let encoded = request.encode().unwrap();
-        let decoded = BatchGetRequest::decode(&encoded).unwrap();
+        let encoded = request
+            .encode()
+            .expect("test: BatchGetRequest encode should succeed");
+        let decoded =
+            BatchGetRequest::decode(&encoded).expect("test: BatchGetRequest decode should succeed");
 
         assert_eq!(decoded.cids.len(), 2);
         assert_eq!(decoded.cids[0], cid1);
@@ -477,8 +488,11 @@ mod tests {
             message: "Block not found".to_string(),
         };
 
-        let encoded = response.encode().unwrap();
-        let decoded = ErrorResponse::decode(&encoded).unwrap();
+        let encoded = response
+            .encode()
+            .expect("test: ErrorResponse encode should succeed");
+        let decoded =
+            ErrorResponse::decode(&encoded).expect("test: ErrorResponse decode should succeed");
 
         assert_eq!(decoded.error_code, 404);
         assert_eq!(decoded.message, "Block not found");
@@ -491,12 +505,16 @@ mod tests {
 
         // Test current version
         msg.version = PROTOCOL_VERSION;
-        let encoded = msg.encode().unwrap();
+        let encoded = msg
+            .encode()
+            .expect("test: encode should succeed with current protocol version");
         assert!(BinaryMessage::decode(&encoded).is_ok());
 
         // Test future version (should fail)
         msg.version = PROTOCOL_VERSION + 1;
-        let encoded = msg.encode().unwrap();
+        let encoded = msg
+            .encode()
+            .expect("test: encode should succeed with future protocol version");
         assert!(BinaryMessage::decode(&encoded).is_err());
     }
 }

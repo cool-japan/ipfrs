@@ -404,7 +404,7 @@ mod tests {
         let optimizer = QueryOptimizer::new();
 
         let block = Block::new(vec![0u8; 1024].into()).unwrap();
-        let cids = vec![block.cid().clone(); 100];
+        let cids = vec![*block.cid(); 100];
 
         let plan = optimizer.optimize_batch_get(&cids);
         assert!(plan.batch_size > 0);
@@ -425,7 +425,7 @@ mod tests {
     fn test_optimize_large_query() {
         let optimizer = QueryOptimizer::new();
         let block = Block::new(vec![0u8; 1024].into()).unwrap();
-        let cids = vec![block.cid().clone(); 1000];
+        let cids = vec![*block.cid(); 1000];
 
         let plan = optimizer.optimize_batch_get(&cids);
         assert_eq!(plan.strategy, QueryStrategy::ParallelBatch);
@@ -434,14 +434,16 @@ mod tests {
 
     #[test]
     fn test_optimize_streaming_query() {
-        let mut config = OptimizerConfig::default();
-        config.streaming_threshold_bytes = 1024; // Very low threshold for testing
+        let config = OptimizerConfig {
+            streaming_threshold_bytes: 1024,
+            ..OptimizerConfig::default()
+        }; // Very low threshold for testing
 
         let mut optimizer = QueryOptimizer::with_config(config);
         optimizer.update_stats(2048, 0.5); // Set avg block size to ensure streaming threshold is met
 
         let block = Block::new(vec![0u8; 1024].into()).unwrap();
-        let cids = vec![block.cid().clone(); 100];
+        let cids = vec![*block.cid(); 100];
 
         let plan = optimizer.optimize_batch_get(&cids);
         assert_eq!(plan.strategy, QueryStrategy::Streaming);
@@ -460,12 +462,12 @@ mod tests {
     fn test_pattern_analysis() {
         let optimizer = QueryOptimizer::new();
         let block = Block::new(vec![0u8; 1024].into()).unwrap();
-        let cid = block.cid().clone();
+        let cid = *block.cid();
 
         // Create log with repeated accesses
         let log = vec![
             QueryLogEntry {
-                cids: vec![cid.clone()],
+                cids: vec![cid],
                 duration: Duration::from_millis(10),
                 cache_hit: false,
             };
@@ -492,7 +494,7 @@ mod tests {
         optimizer.update_stats(1024, 0.95); // High cache hit rate
 
         let block = Block::new(vec![0u8; 1024].into()).unwrap();
-        let cids = vec![block.cid().clone(); 50]; // Below parallel threshold
+        let cids = vec![*block.cid(); 50]; // Below parallel threshold
 
         let plan = optimizer.optimize_batch_get(&cids);
         assert_eq!(plan.strategy, QueryStrategy::CacheFirst);

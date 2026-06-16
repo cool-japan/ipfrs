@@ -195,102 +195,260 @@ mod tests {
     #[tokio::test]
     async fn test_gc_basic() {
         // Create temporary storage
+        let path = std::env::temp_dir().join(format!("ipfrs_gc_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs_gc_test"),
+            path: path.clone(),
             ..Default::default()
         };
-        let storage = Arc::new(SledBlockStore::new(config).unwrap());
+        let storage = Arc::new(
+            SledBlockStore::new(config).expect("test: block store creation should succeed"),
+        );
         let pin_manager = Arc::new(PinManager::new());
         let gc = GarbageCollector::new(storage.clone(), pin_manager.clone());
 
         // Add some blocks
-        let block1 = Block::new(Bytes::from("test data 1")).unwrap();
-        let block2 = Block::new(Bytes::from("test data 2")).unwrap();
+        let block1 =
+            Block::new(Bytes::from("test data 1")).expect("test: block creation should succeed");
+        let block2 =
+            Block::new(Bytes::from("test data 2")).expect("test: block creation should succeed");
         let cid1 = *block1.cid();
         let cid2 = *block2.cid();
 
-        storage.put(&block1).await.unwrap();
-        storage.put(&block2).await.unwrap();
+        storage
+            .put(&block1)
+            .await
+            .expect("test: put block1 should succeed");
+        storage
+            .put(&block2)
+            .await
+            .expect("test: put block2 should succeed");
 
         // Pin only first block
-        pin_manager.pin(cid1, PinType::Direct, None).unwrap();
+        pin_manager
+            .pin(cid1, PinType::Direct, None)
+            .expect("test: pin should succeed");
 
         // Run GC
         let config = GcConfig {
             dry_run: false,
             ..Default::default()
         };
-        let stats = gc.collect(config).await.unwrap();
+        let stats = gc
+            .collect(config)
+            .await
+            .expect("test: GC collect should succeed");
 
         // Should have collected block2
         assert_eq!(stats.blocks_collected, 1);
         assert!(stats.bytes_freed > 0);
 
         // Verify block1 still exists, block2 is gone
-        assert!(storage.has(&cid1).await.unwrap());
-        assert!(!storage.has(&cid2).await.unwrap());
+        assert!(storage
+            .has(&cid1)
+            .await
+            .expect("test: storage has check should succeed"));
+        assert!(!storage
+            .has(&cid2)
+            .await
+            .expect("test: storage has check should succeed"));
 
         // Cleanup
-        let _ = std::fs::remove_dir_all("/tmp/ipfrs_gc_test");
+        let _ = std::fs::remove_dir_all(&path);
     }
 
     #[tokio::test]
     async fn test_gc_dry_run() {
         // Create temporary storage
+        let path = std::env::temp_dir().join(format!("ipfrs_gc_test_dry_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs_gc_test_dry"),
+            path: path.clone(),
             ..Default::default()
         };
-        let storage = Arc::new(SledBlockStore::new(config).unwrap());
+        let storage = Arc::new(
+            SledBlockStore::new(config).expect("test: block store creation should succeed"),
+        );
         let pin_manager = Arc::new(PinManager::new());
         let gc = GarbageCollector::new(storage.clone(), pin_manager.clone());
 
         // Add unpinned block
-        let block = Block::new(Bytes::from("test data")).unwrap();
+        let block =
+            Block::new(Bytes::from("test data")).expect("test: block creation should succeed");
         let cid = *block.cid();
-        storage.put(&block).await.unwrap();
+        storage.put(&block).await.expect("test: put should succeed");
 
         // Run dry run GC
         let config = GcConfig {
             dry_run: true,
             ..Default::default()
         };
-        let stats = gc.collect(config).await.unwrap();
+        let stats = gc
+            .collect(config)
+            .await
+            .expect("test: GC dry run should succeed");
 
         // Should report what would be collected, but not actually delete
         assert_eq!(stats.blocks_collected, 1);
-        assert!(storage.has(&cid).await.unwrap()); // Still exists
+        assert!(storage
+            .has(&cid)
+            .await
+            .expect("test: storage has check should succeed")); // Still exists
 
         // Cleanup
-        let _ = std::fs::remove_dir_all("/tmp/ipfrs_gc_test_dry");
+        let _ = std::fs::remove_dir_all(&path);
+    }
+
+    /// Helper: create a unique temp path to avoid test interference.
+    fn unique_path(tag: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("ipfrs-gc-{}-{}", tag, std::process::id()))
+    }
+
+    /// `ipfrs gc --dry-run` must not delete anything.
+    #[tokio::test]
+    async fn test_gc_dry_run_no_delete() {
+        let path = unique_path("dry-run-no-del");
+        let _ = std::fs::remove_dir_all(&path);
+
+        let config = BlockStoreConfig {
+            path: path.clone(),
+            ..Default::default()
+        };
+        let storage = Arc::new(
+            SledBlockStore::new(config).expect("test: block store creation should succeed"),
+        );
+        let pin_manager = Arc::new(PinManager::new());
+        let gc = GarbageCollector::new(storage.clone(), pin_manager.clone());
+
+        // Add an unpinned block — the orphan target.
+        let block =
+            Block::new(Bytes::from("orphan block")).expect("test: block creation should succeed");
+        let orphan_cid = *block.cid();
+        storage.put(&block).await.expect("test: put should succeed");
+
+        // Dry-run GC must report the block without deleting it.
+        let stats = gc
+            .collect(GcConfig {
+                dry_run: true,
+                ..Default::default()
+            })
+            .await
+            .expect("test: GC dry run should succeed");
+        assert_eq!(
+            stats.blocks_collected, 1,
+            "dry-run must report 1 collectable block"
+        );
+        assert!(
+            storage
+                .has(&orphan_cid)
+                .await
+                .expect("test: storage has check should succeed"),
+            "dry-run must not delete the block"
+        );
+
+        let _ = std::fs::remove_dir_all(&path);
+    }
+
+    /// `ipfrs gc` (no dry-run, min_age=0) must collect unpinned orphans.
+    #[tokio::test]
+    async fn test_gc_collects_orphans() {
+        let path = unique_path("collects-orphans");
+        let _ = std::fs::remove_dir_all(&path);
+
+        let config = BlockStoreConfig {
+            path: path.clone(),
+            ..Default::default()
+        };
+        let storage = Arc::new(
+            SledBlockStore::new(config).expect("test: block store creation should succeed"),
+        );
+        let pin_manager = Arc::new(PinManager::new());
+        let gc = GarbageCollector::new(storage.clone(), pin_manager.clone());
+
+        // Block A is pinned; block B is an orphan.
+        let block_a =
+            Block::new(Bytes::from("pinned data")).expect("test: block creation should succeed");
+        let block_b =
+            Block::new(Bytes::from("orphan data")).expect("test: block creation should succeed");
+        let cid_a = *block_a.cid();
+        let cid_b = *block_b.cid();
+
+        storage
+            .put(&block_a)
+            .await
+            .expect("test: put block_a should succeed");
+        storage
+            .put(&block_b)
+            .await
+            .expect("test: put block_b should succeed");
+        pin_manager
+            .pin(cid_a, PinType::Direct, None)
+            .expect("test: pin should succeed");
+
+        // GC with min_age=0 must collect the orphan immediately.
+        let stats = gc
+            .collect(GcConfig {
+                dry_run: false,
+                min_age_seconds: 0,
+                ..Default::default()
+            })
+            .await
+            .expect("test: GC collect should succeed");
+
+        assert_eq!(stats.blocks_collected, 1, "one orphan should be collected");
+        assert!(
+            storage
+                .has(&cid_a)
+                .await
+                .expect("test: storage has check should succeed"),
+            "pinned block must survive"
+        );
+        assert!(
+            !storage
+                .has(&cid_b)
+                .await
+                .expect("test: storage has check should succeed"),
+            "orphan block must be deleted"
+        );
+
+        let _ = std::fs::remove_dir_all(&path);
     }
 
     #[tokio::test]
     async fn test_gc_count_unpinned() {
+        let path = std::env::temp_dir().join(format!("ipfrs_gc_test_count_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs_gc_test_count"),
+            path: path.clone(),
             ..Default::default()
         };
-        let storage = Arc::new(SledBlockStore::new(config).unwrap());
+        let storage = Arc::new(
+            SledBlockStore::new(config).expect("test: block store creation should succeed"),
+        );
         let pin_manager = Arc::new(PinManager::new());
         let gc = GarbageCollector::new(storage.clone(), pin_manager.clone());
 
         // Add 3 blocks, pin 1
         for i in 0..3 {
-            let block = Block::new(Bytes::from(format!("data {}", i))).unwrap();
+            let block = Block::new(Bytes::from(format!("data {}", i)))
+                .expect("test: block creation should succeed");
             let cid = *block.cid();
-            storage.put(&block).await.unwrap();
+            storage.put(&block).await.expect("test: put should succeed");
 
             if i == 0 {
-                pin_manager.pin(cid, PinType::Direct, None).unwrap();
+                pin_manager
+                    .pin(cid, PinType::Direct, None)
+                    .expect("test: pin should succeed");
             }
         }
 
         // Should have 2 unpinned
-        let count = gc.count_unpinned().unwrap();
+        let count = gc
+            .count_unpinned()
+            .expect("test: count_unpinned should succeed");
         assert_eq!(count, 2);
 
         // Cleanup
-        let _ = std::fs::remove_dir_all("/tmp/ipfrs_gc_test_count");
+        let _ = std::fs::remove_dir_all(&path);
     }
 }

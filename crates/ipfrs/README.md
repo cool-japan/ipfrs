@@ -168,11 +168,11 @@ Control which components to include:
 
 ```toml
 [dependencies]
-ipfrs = { version = "0.3.0", features = ["full"] }
+ipfrs = { version = "0.2.0", features = ["full"] }
 
 # Or selectively enable features:
 ipfrs = {
-    version = "0.3.0",
+    version = "0.2.0",
     features = ["storage", "network", "tensorlogic"]
 }
 ```
@@ -210,6 +210,5 @@ Available features:
 
 ## References
 
-- IPFRS v0.1.0 Whitepaper (Performance Focus)
-- IPFRS v0.2.0 Whitepaper (TensorLogic Integration)
-- IPFRS v0.3.0 Whitepaper (Unified Architecture)
+- IPFRS v0.2.0 Whitepaper (Network Architecture)
+- IPFRS v0.3.0 Whitepaper (Intelligence/Unified Architecture) *(planned)*

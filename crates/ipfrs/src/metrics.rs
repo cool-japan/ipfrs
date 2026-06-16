@@ -35,8 +35,8 @@ impl MetricsRegistry {
     /// use std::net::SocketAddr;
     ///
     /// let registry = MetricsRegistry::new();
-    /// let addr: SocketAddr = "127.0.0.1:9000".parse().unwrap();
-    /// registry.init_prometheus(addr).unwrap();
+    /// let addr: SocketAddr = "127.0.0.1:9000".parse().expect("valid socket address");
+    /// registry.init_prometheus(addr).expect("prometheus init should succeed");
     /// ```
     pub fn init_prometheus(&self, addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
         PrometheusBuilder::new()

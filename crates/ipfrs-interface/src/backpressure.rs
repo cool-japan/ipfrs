@@ -315,7 +315,10 @@ mod tests {
     async fn test_acquire_permit() {
         let controller = BackpressureController::default();
 
-        let permit = controller.acquire().await.unwrap();
+        let permit = controller
+            .acquire()
+            .await
+            .expect("test: acquire permit should succeed");
         assert_eq!(controller.items_sent(), 1);
         assert_eq!(controller.items_consumed(), 0);
         assert_eq!(controller.pending_items(), 1);
@@ -335,8 +338,12 @@ mod tests {
         };
         let controller = BackpressureController::new(config);
 
-        let _permit1 = controller.try_acquire().unwrap();
-        let _permit2 = controller.try_acquire().unwrap();
+        let _permit1 = controller
+            .try_acquire()
+            .expect("test: first try_acquire should succeed within window");
+        let _permit2 = controller
+            .try_acquire()
+            .expect("test: second try_acquire should succeed within window");
 
         // Third acquire should fail
         assert!(controller.try_acquire().is_err());
@@ -356,7 +363,12 @@ mod tests {
         // Simulate slow consumer by acquiring many permits
         let mut permits = Vec::new();
         for _ in 0..9 {
-            permits.push(controller.acquire().await.unwrap());
+            permits.push(
+                controller
+                    .acquire()
+                    .await
+                    .expect("test: acquire permit should succeed within congestion test window"),
+            );
         }
 
         // Should have 9 pending items
@@ -401,7 +413,12 @@ mod tests {
         // Acquire permits to simulate congestion
         let mut permits = Vec::new();
         for _ in 0..9 {
-            permits.push(controller.acquire().await.unwrap());
+            permits.push(
+                controller
+                    .acquire()
+                    .await
+                    .expect("test: acquire permit should succeed in adaptive delay test"),
+            );
         }
 
         let start = Instant::now();
@@ -431,7 +448,10 @@ mod tests {
         handle.abort();
 
         // Controller should still be functional
-        let _permit = controller.acquire().await.unwrap();
+        let _permit = controller
+            .acquire()
+            .await
+            .expect("test: acquire permit should succeed after monitoring");
     }
 
     #[tokio::test]

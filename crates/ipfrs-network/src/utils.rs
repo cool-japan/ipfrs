@@ -212,7 +212,7 @@ pub fn exponential_backoff(attempt: u32, base: Duration, max: Duration) -> Durat
 /// assert!(backoff <= Duration::from_secs(5));
 /// ```
 pub fn jittered_backoff(attempt: u32, base: Duration, max: Duration) -> Duration {
-    use rand::RngCore;
+    use rand::Rng;
     let backoff = exponential_backoff(attempt, base, max);
     let mut rng = rand::rng();
     let random_value = rng.next_u64() as f64 / u64::MAX as f64;
@@ -356,7 +356,8 @@ mod tests {
 
     #[test]
     fn test_parse_multiaddr() {
-        let addr = parse_multiaddr("/ip4/127.0.0.1/tcp/4001").unwrap();
+        let addr =
+            parse_multiaddr("/ip4/127.0.0.1/tcp/4001").expect("test: valid multiaddr should parse");
         assert!(addr.to_string().contains("127.0.0.1"));
     }
 
@@ -366,31 +367,37 @@ mod tests {
             "/ip4/127.0.0.1/tcp/4001".to_string(),
             "/ip6/::1/tcp/4001".to_string(),
         ])
-        .unwrap();
+        .expect("test: valid multiaddrs should parse");
         assert_eq!(addrs.len(), 2);
     }
 
     #[test]
     fn test_is_local_addr() {
-        let local = parse_multiaddr("/ip4/127.0.0.1/tcp/4001").unwrap();
+        let local =
+            parse_multiaddr("/ip4/127.0.0.1/tcp/4001").expect("test: valid multiaddr should parse");
         assert!(is_local_addr(&local));
 
-        let local_ipv6 = parse_multiaddr("/ip6/::1/tcp/4001").unwrap();
+        let local_ipv6 =
+            parse_multiaddr("/ip6/::1/tcp/4001").expect("test: valid multiaddr should parse");
         assert!(is_local_addr(&local_ipv6));
 
-        let private = parse_multiaddr("/ip4/192.168.1.1/tcp/4001").unwrap();
+        let private = parse_multiaddr("/ip4/192.168.1.1/tcp/4001")
+            .expect("test: valid multiaddr should parse");
         assert!(is_local_addr(&private));
 
-        let public = parse_multiaddr("/ip4/8.8.8.8/tcp/4001").unwrap();
+        let public =
+            parse_multiaddr("/ip4/8.8.8.8/tcp/4001").expect("test: valid multiaddr should parse");
         assert!(!is_local_addr(&public));
     }
 
     #[test]
     fn test_is_public_addr() {
-        let public = parse_multiaddr("/ip4/8.8.8.8/tcp/4001").unwrap();
+        let public =
+            parse_multiaddr("/ip4/8.8.8.8/tcp/4001").expect("test: valid multiaddr should parse");
         assert!(is_public_addr(&public));
 
-        let local = parse_multiaddr("/ip4/127.0.0.1/tcp/4001").unwrap();
+        let local =
+            parse_multiaddr("/ip4/127.0.0.1/tcp/4001").expect("test: valid multiaddr should parse");
         assert!(!is_public_addr(&local));
     }
 

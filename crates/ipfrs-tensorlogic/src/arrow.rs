@@ -517,7 +517,7 @@ mod tests {
         assert_eq!(tensor.metadata.shape, vec![2, 3]);
         assert_eq!(tensor.len(), 6);
 
-        let slice = tensor.as_slice_f32().unwrap();
+        let slice = tensor.as_slice_f32().expect("test: should succeed");
         assert_eq!(slice, &data);
     }
 
@@ -542,12 +542,12 @@ mod tests {
         let data: Vec<f32> = (0..12).map(|i| i as f32).collect();
         store.insert(ArrowTensor::from_slice_f32("test", vec![3, 4], &data));
 
-        let bytes = store.to_bytes().unwrap();
-        let loaded = ArrowTensorStore::from_bytes(&bytes).unwrap();
+        let bytes = store.to_bytes().expect("test: should succeed");
+        let loaded = ArrowTensorStore::from_bytes(&bytes).expect("test: should succeed");
 
         assert_eq!(loaded.len(), 1);
-        let tensor = loaded.get("test").unwrap();
-        assert_eq!(tensor.as_slice_f32().unwrap(), &data);
+        let tensor = loaded.get("test").expect("test: should succeed");
+        assert_eq!(tensor.as_slice_f32().expect("test: should succeed"), &data);
     }
 
     #[test]

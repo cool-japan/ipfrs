@@ -10,11 +10,12 @@
 //
 // Run with: cargo bench --bench kubo_comparison -- --ignored
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use ipfrs_storage::{
     BlockStoreConfig, BlockStoreTrait, ParityDbBlockStore, ParityDbConfig, ParityDbPreset,
     SledBlockStore,
 };
+use std::hint::black_box;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
@@ -104,7 +105,7 @@ impl KuboClient {
             client: reqwest::Client::builder()
                 .timeout(Duration::from_secs(30))
                 .build()
-                .unwrap(),
+                .expect("bench: build HTTP client"),
         }
     }
 
@@ -178,7 +179,7 @@ impl KuboClient {
 // Benchmark ipfrs-storage backends
 fn bench_ipfrs_write(c: &mut Criterion) {
     let mut group = c.benchmark_group("ipfrs_write");
-    let rt = Runtime::new().unwrap();
+    let rt = Runtime::new().expect("bench: create tokio runtime");
     let workload = WorkloadGenerator::new();
     let blocks = workload.generate_blocks();
 
@@ -186,16 +187,17 @@ fn bench_ipfrs_write(c: &mut Criterion) {
     group.bench_function("sled", |b| {
         b.iter(|| {
             rt.block_on(async {
-                let temp_dir = tempfile::tempdir().unwrap();
+                let temp_dir = tempfile::tempdir().expect("bench: create temp dir");
                 let config = BlockStoreConfig {
                     path: temp_dir.path().to_path_buf(),
                     cache_size: 512 * 1024 * 1024,
                 };
-                let store = SledBlockStore::new(config).unwrap();
+                let store = SledBlockStore::new(config).expect("bench: open sled store");
 
                 for block in &blocks {
-                    let block_data = ipfrs_storage::create_block(block.clone()).unwrap();
-                    store.put(&block_data).await.unwrap();
+                    let block_data =
+                        ipfrs_storage::create_block(block.clone()).expect("bench: create block");
+                    store.put(&block_data).await.expect("bench: put block");
                 }
             })
         })
@@ -205,14 +207,15 @@ fn bench_ipfrs_write(c: &mut Criterion) {
     group.bench_function("paritydb", |b| {
         b.iter(|| {
             rt.block_on(async {
-                let temp_dir = tempfile::tempdir().unwrap();
+                let temp_dir = tempfile::tempdir().expect("bench: create temp dir");
                 let config =
                     ParityDbConfig::new(temp_dir.path().to_path_buf(), ParityDbPreset::Balanced);
-                let store = ParityDbBlockStore::new(config).unwrap();
+                let store = ParityDbBlockStore::new(config).expect("bench: open paritydb store");
 
                 for block in &blocks {
-                    let block_data = ipfrs_storage::create_block(block.clone()).unwrap();
-                    store.put(&block_data).await.unwrap();
+                    let block_data =
+                        ipfrs_storage::create_block(block.clone()).expect("bench: create block");
+                    store.put(&block_data).await.expect("bench: put block");
                 }
             })
         })
@@ -223,36 +226,38 @@ fn bench_ipfrs_write(c: &mut Criterion) {
 
 fn bench_ipfrs_read(c: &mut Criterion) {
     let mut group = c.benchmark_group("ipfrs_read");
-    let rt = Runtime::new().unwrap();
+    let rt = Runtime::new().expect("bench: create tokio runtime");
     let workload = WorkloadGenerator::new();
     let blocks = workload.generate_blocks();
 
     // Prepare Sled store
-    let temp_dir_sled = tempfile::tempdir().unwrap();
+    let temp_dir_sled = tempfile::tempdir().expect("bench: create temp dir");
     let sled_store = rt.block_on(async {
         let config = BlockStoreConfig {
             path: temp_dir_sled.path().to_path_buf(),
             cache_size: 512 * 1024 * 1024,
         };
-        let store = SledBlockStore::new(config).unwrap();
+        let store = SledBlockStore::new(config).expect("bench: open sled store");
         for block in &blocks {
-            let block_data = ipfrs_storage::create_block(block.clone()).unwrap();
-            store.put(&block_data).await.unwrap();
+            let block_data =
+                ipfrs_storage::create_block(block.clone()).expect("bench: create block");
+            store.put(&block_data).await.expect("bench: put block");
         }
         Arc::new(store)
     });
 
     // Prepare ParityDB store
-    let temp_dir_parity = tempfile::tempdir().unwrap();
+    let temp_dir_parity = tempfile::tempdir().expect("bench: create temp dir");
     let parity_store = rt.block_on(async {
         let config = ParityDbConfig::new(
             temp_dir_parity.path().to_path_buf(),
             ParityDbPreset::Balanced,
         );
-        let store = ParityDbBlockStore::new(config).unwrap();
+        let store = ParityDbBlockStore::new(config).expect("bench: open paritydb store");
         for block in &blocks {
-            let block_data = ipfrs_storage::create_block(block.clone()).unwrap();
-            store.put(&block_data).await.unwrap();
+            let block_data =
+                ipfrs_storage::create_block(block.clone()).expect("bench: create block");
+            store.put(&block_data).await.expect("bench: put block");
         }
         Arc::new(store)
     });
@@ -266,7 +271,7 @@ fn bench_ipfrs_read(c: &mut Criterion) {
                 for &idx in &read_pattern[..100] {
                     let block = &blocks[idx % blocks.len()];
                     let cid = ipfrs_storage::utils::compute_cid(block);
-                    let _ = black_box(store.get(&cid).await.unwrap());
+                    let _ = black_box(store.get(&cid).await.expect("bench: get block"));
                 }
             })
         })
@@ -279,7 +284,7 @@ fn bench_ipfrs_read(c: &mut Criterion) {
                 for &idx in &read_pattern[..100] {
                     let block = &blocks[idx % blocks.len()];
                     let cid = ipfrs_storage::utils::compute_cid(block);
-                    let _ = black_box(store.get(&cid).await.unwrap());
+                    let _ = black_box(store.get(&cid).await.expect("bench: get block"));
                 }
             })
         })
@@ -290,7 +295,7 @@ fn bench_ipfrs_read(c: &mut Criterion) {
 
 fn bench_ipfrs_batch(c: &mut Criterion) {
     let mut group = c.benchmark_group("ipfrs_batch");
-    let rt = Runtime::new().unwrap();
+    let rt = Runtime::new().expect("bench: create tokio runtime");
     let workload = WorkloadGenerator::new();
     let blocks = workload.generate_blocks();
 
@@ -300,20 +305,25 @@ fn bench_ipfrs_batch(c: &mut Criterion) {
     group.bench_function("sled_batch_write", |b| {
         b.iter(|| {
             rt.block_on(async {
-                let temp_dir = tempfile::tempdir().unwrap();
+                let temp_dir = tempfile::tempdir().expect("bench: create temp dir");
                 let config = BlockStoreConfig {
                     path: temp_dir.path().to_path_buf(),
                     cache_size: 512 * 1024 * 1024,
                 };
-                let store = SledBlockStore::new(config).unwrap();
+                let store = SledBlockStore::new(config).expect("bench: open sled store");
 
                 let items: Vec<_> = blocks
                     .iter()
                     .take(batch_size)
-                    .map(|block| ipfrs_storage::create_block(block.clone()).unwrap())
+                    .map(|block| {
+                        ipfrs_storage::create_block(block.clone()).expect("bench: create block")
+                    })
                     .collect();
 
-                store.put_many(&items).await.unwrap();
+                store
+                    .put_many(&items)
+                    .await
+                    .expect("bench: put many blocks");
             })
         })
     });
@@ -321,18 +331,23 @@ fn bench_ipfrs_batch(c: &mut Criterion) {
     group.bench_function("paritydb_batch_write", |b| {
         b.iter(|| {
             rt.block_on(async {
-                let temp_dir = tempfile::tempdir().unwrap();
+                let temp_dir = tempfile::tempdir().expect("bench: create temp dir");
                 let config =
                     ParityDbConfig::new(temp_dir.path().to_path_buf(), ParityDbPreset::Balanced);
-                let store = ParityDbBlockStore::new(config).unwrap();
+                let store = ParityDbBlockStore::new(config).expect("bench: open paritydb store");
 
                 let items: Vec<_> = blocks
                     .iter()
                     .take(batch_size)
-                    .map(|block| ipfrs_storage::create_block(block.clone()).unwrap())
+                    .map(|block| {
+                        ipfrs_storage::create_block(block.clone()).expect("bench: create block")
+                    })
                     .collect();
 
-                store.put_many(&items).await.unwrap();
+                store
+                    .put_many(&items)
+                    .await
+                    .expect("bench: put many blocks");
             })
         })
     });
@@ -344,7 +359,7 @@ fn bench_ipfrs_batch(c: &mut Criterion) {
 #[cfg(feature = "kubo_bench")]
 fn bench_kubo_comparison(c: &mut Criterion) {
     let mut group = c.benchmark_group("kubo_comparison");
-    let rt = Runtime::new().unwrap();
+    let rt = Runtime::new().expect("bench: create tokio runtime");
     let workload = WorkloadGenerator::new();
     let blocks = workload.generate_blocks();
 

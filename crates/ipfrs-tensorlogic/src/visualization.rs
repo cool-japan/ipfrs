@@ -16,18 +16,18 @@
 //! let input = GraphNode::new("input".to_string(), TensorOp::Input {
 //!     name: "x".to_string(),
 //! });
-//! graph.add_node(input).unwrap();
+//! graph.add_node(input).expect("write to String is infallible");
 //! graph.mark_input("input".to_string());
 //!
 //! let relu = GraphNode::new("relu".to_string(), TensorOp::ReLU)
 //!     .add_input("input".to_string());
-//! graph.add_node(relu).unwrap();
+//! graph.add_node(relu).expect("write to String is infallible");
 //! graph.mark_output("relu".to_string());
 //!
 //! // Export to DOT format
 //! let dot = GraphVisualizer::to_dot(&graph);
 //! println!("{}", dot);
-//! // Save to file: std::fs::write("graph.dot", dot).unwrap();
+//! // Save to file: std::fs::write("graph.dot", dot).expect("write to String is infallible");
 //! // Render: dot -Tpng graph.dot -o graph.png
 //! ```
 
@@ -48,10 +48,10 @@ impl GraphVisualizer {
     /// ```
     pub fn to_dot(graph: &ComputationGraph) -> String {
         let mut dot = String::new();
-        writeln!(dot, "digraph ComputationGraph {{").unwrap();
-        writeln!(dot, "  rankdir=TB;").unwrap();
-        writeln!(dot, "  node [shape=box, style=filled];").unwrap();
-        writeln!(dot).unwrap();
+        writeln!(dot, "digraph ComputationGraph {{").expect("write to String is infallible");
+        writeln!(dot, "  rankdir=TB;").expect("write to String is infallible");
+        writeln!(dot, "  node [shape=box, style=filled];").expect("write to String is infallible");
+        writeln!(dot).expect("write to String is infallible");
 
         // Write nodes
         for (node_id, node) in &graph.nodes {
@@ -74,10 +74,10 @@ impl GraphVisualizer {
                 color,
                 shape
             )
-            .unwrap();
+            .expect("write to String is infallible");
         }
 
-        writeln!(dot).unwrap();
+        writeln!(dot).expect("write to String is infallible");
 
         // Write edges
         for (node_id, node) in &graph.nodes {
@@ -88,34 +88,34 @@ impl GraphVisualizer {
                     Self::escape(input),
                     Self::escape(node_id)
                 )
-                .unwrap();
+                .expect("write to String is infallible");
             }
         }
 
         // Add legend
-        writeln!(dot).unwrap();
-        writeln!(dot, "  subgraph cluster_legend {{").unwrap();
-        writeln!(dot, "    label=\"Legend\";").unwrap();
-        writeln!(dot, "    style=filled;").unwrap();
-        writeln!(dot, "    fillcolor=lightgrey;").unwrap();
+        writeln!(dot).expect("write to String is infallible");
+        writeln!(dot, "  subgraph cluster_legend {{").expect("write to String is infallible");
+        writeln!(dot, "    label=\"Legend\";").expect("write to String is infallible");
+        writeln!(dot, "    style=filled;").expect("write to String is infallible");
+        writeln!(dot, "    fillcolor=lightgrey;").expect("write to String is infallible");
         writeln!(
             dot,
             "    legend_input [label=\"Input\", shape=ellipse, fillcolor=lightblue];"
         )
-        .unwrap();
+        .expect("write to String is infallible");
         writeln!(
             dot,
             "    legend_output [label=\"Output\", shape=doubleoctagon, fillcolor=lightgreen];"
         )
-        .unwrap();
+        .expect("write to String is infallible");
         writeln!(
             dot,
             "    legend_compute [label=\"Compute\", shape=box, fillcolor=lightyellow];"
         )
-        .unwrap();
-        writeln!(dot, "  }}").unwrap();
+        .expect("write to String is infallible");
+        writeln!(dot, "  }}").expect("write to String is infallible");
 
-        writeln!(dot, "}}").unwrap();
+        writeln!(dot, "}}").expect("write to String is infallible");
         dot
     }
 
@@ -206,10 +206,13 @@ impl GraphVisualizer {
     /// Export graph statistics
     pub fn graph_stats(graph: &ComputationGraph) -> String {
         let mut stats = String::new();
-        writeln!(stats, "Graph Statistics:").unwrap();
-        writeln!(stats, "  Total nodes: {}", graph.nodes.len()).unwrap();
-        writeln!(stats, "  Input nodes: {}", graph.inputs.len()).unwrap();
-        writeln!(stats, "  Output nodes: {}", graph.outputs.len()).unwrap();
+        writeln!(stats, "Graph Statistics:").expect("write to String is infallible");
+        writeln!(stats, "  Total nodes: {}", graph.nodes.len())
+            .expect("write to String is infallible");
+        writeln!(stats, "  Input nodes: {}", graph.inputs.len())
+            .expect("write to String is infallible");
+        writeln!(stats, "  Output nodes: {}", graph.outputs.len())
+            .expect("write to String is infallible");
 
         // Count operation types
         let mut op_counts = std::collections::HashMap::new();
@@ -218,11 +221,11 @@ impl GraphVisualizer {
             *op_counts.entry(op_name).or_insert(0) += 1;
         }
 
-        writeln!(stats, "  Operation counts:").unwrap();
+        writeln!(stats, "  Operation counts:").expect("write to String is infallible");
         let mut ops: Vec<_> = op_counts.into_iter().collect();
-        ops.sort_by(|a, b| b.1.cmp(&a.1));
+        ops.sort_by_key(|a| std::cmp::Reverse(a.1));
         for (op, count) in ops {
-            writeln!(stats, "    {}: {}", op, count).unwrap();
+            writeln!(stats, "    {}: {}", op, count).expect("write to String is infallible");
         }
 
         stats
@@ -278,15 +281,16 @@ impl ProofVisualizer {
     /// and premises as child nodes.
     pub fn to_dot(proof: &ProofFragment, id: usize) -> String {
         let mut dot = String::new();
-        writeln!(dot, "digraph ProofTree {{").unwrap();
-        writeln!(dot, "  rankdir=TB;").unwrap();
-        writeln!(dot, "  node [shape=box, style=\"filled,rounded\"];").unwrap();
-        writeln!(dot).unwrap();
+        writeln!(dot, "digraph ProofTree {{").expect("write to String is infallible");
+        writeln!(dot, "  rankdir=TB;").expect("write to String is infallible");
+        writeln!(dot, "  node [shape=box, style=\"filled,rounded\"];")
+            .expect("write to String is infallible");
+        writeln!(dot).expect("write to String is infallible");
 
         let mut node_counter = 0;
         Self::write_proof_node(&mut dot, proof, id, &mut node_counter);
 
-        writeln!(dot, "}}").unwrap();
+        writeln!(dot, "}}").expect("write to String is infallible");
         dot
     }
 
@@ -310,7 +314,7 @@ impl ProofVisualizer {
             GraphVisualizer::escape(&conclusion_str),
             color
         )
-        .unwrap();
+        .expect("write to String is infallible");
 
         // Write premise references as child nodes
         for premise_ref in &proof.premise_refs {
@@ -327,8 +331,9 @@ impl ProofVisualizer {
                 premise_id,
                 GraphVisualizer::escape(&premise_str)
             )
-            .unwrap();
-            writeln!(dot, "  node_{} -> node_{};", node_id, premise_id).unwrap();
+            .expect("write to String is infallible");
+            writeln!(dot, "  node_{} -> node_{};", node_id, premise_id)
+                .expect("write to String is infallible");
         }
 
         // Add rule information
@@ -339,13 +344,13 @@ impl ProofVisualizer {
                 node_id,
                 GraphVisualizer::escape(&rule_ref.rule_id)
             )
-            .unwrap();
+            .expect("write to String is infallible");
             writeln!(
                 dot,
                 "  node_{}_rule -> node_{} [style=dashed];",
                 node_id, node_id
             )
-            .unwrap();
+            .expect("write to String is infallible");
         }
     }
 
@@ -354,13 +359,16 @@ impl ProofVisualizer {
         let mut explanation = String::new();
         let indent = "  ".repeat(depth);
 
-        writeln!(explanation, "{}Prove: {:?}", indent, proof.conclusion).unwrap();
+        writeln!(explanation, "{}Prove: {:?}", indent, proof.conclusion)
+            .expect("write to String is infallible");
 
         if proof.premise_refs.is_empty() {
-            writeln!(explanation, "{}  ✓ This is a known fact", indent).unwrap();
+            writeln!(explanation, "{}  ✓ This is a known fact", indent)
+                .expect("write to String is infallible");
         } else {
             if let Some(ref rule_ref) = proof.rule_applied {
-                writeln!(explanation, "{}  Using rule: {}", indent, rule_ref.rule_id).unwrap();
+                writeln!(explanation, "{}  Using rule: {}", indent, rule_ref.rule_id)
+                    .expect("write to String is infallible");
             }
             writeln!(
                 explanation,
@@ -368,20 +376,23 @@ impl ProofVisualizer {
                 indent,
                 proof.premise_refs.len()
             )
-            .unwrap();
+            .expect("write to String is infallible");
             for (i, premise_ref) in proof.premise_refs.iter().enumerate() {
                 let hint = premise_ref
                     .conclusion_hint
                     .as_deref()
                     .unwrap_or("(premise)");
-                writeln!(explanation, "{}    {}. {}", indent, i + 1, hint).unwrap();
+                writeln!(explanation, "{}    {}. {}", indent, i + 1, hint)
+                    .expect("write to String is infallible");
             }
         }
 
         if let Some(complexity) = proof.metadata.complexity {
-            writeln!(explanation, "{}  Complexity: {} steps", indent, complexity).unwrap();
+            writeln!(explanation, "{}  Complexity: {} steps", indent, complexity)
+                .expect("write to String is infallible");
         }
-        writeln!(explanation, "{}  Depth: {}", indent, proof.metadata.depth).unwrap();
+        writeln!(explanation, "{}  Depth: {}", indent, proof.metadata.depth)
+            .expect("write to String is infallible");
 
         explanation
     }
@@ -389,32 +400,36 @@ impl ProofVisualizer {
     /// Generate a summary of proof statistics
     pub fn proof_stats(proof: &ProofFragment) -> String {
         let mut stats = String::new();
-        writeln!(stats, "Proof Statistics:").unwrap();
-        writeln!(stats, "  ID: {}", proof.id).unwrap();
-        writeln!(stats, "  Direct premises: {}", proof.premise_refs.len()).unwrap();
+        writeln!(stats, "Proof Statistics:").expect("write to String is infallible");
+        writeln!(stats, "  ID: {}", proof.id).expect("write to String is infallible");
+        writeln!(stats, "  Direct premises: {}", proof.premise_refs.len())
+            .expect("write to String is infallible");
 
         writeln!(
             stats,
             "  Complexity: {} steps",
             proof.metadata.complexity.unwrap_or(0)
         )
-        .unwrap();
-        writeln!(stats, "  Depth: {}", proof.metadata.depth).unwrap();
+        .expect("write to String is infallible");
+        writeln!(stats, "  Depth: {}", proof.metadata.depth)
+            .expect("write to String is infallible");
         if let Some(ref created_by) = proof.metadata.created_by {
-            writeln!(stats, "  Created by: {}", created_by).unwrap();
+            writeln!(stats, "  Created by: {}", created_by).expect("write to String is infallible");
         }
 
         if proof.premise_refs.is_empty() {
-            writeln!(stats, "  Type: Fact (axiom)").unwrap();
+            writeln!(stats, "  Type: Fact (axiom)").expect("write to String is infallible");
         } else {
-            writeln!(stats, "  Type: Rule application").unwrap();
+            writeln!(stats, "  Type: Rule application").expect("write to String is infallible");
             if let Some(ref rule_ref) = proof.rule_applied {
-                writeln!(stats, "  Rule: {}", rule_ref.rule_id).unwrap();
+                writeln!(stats, "  Rule: {}", rule_ref.rule_id)
+                    .expect("write to String is infallible");
             }
         }
 
         if !proof.substitution.is_empty() {
-            writeln!(stats, "  Substitutions: {}", proof.substitution.len()).unwrap();
+            writeln!(stats, "  Substitutions: {}", proof.substitution.len())
+                .expect("write to String is infallible");
         }
 
         stats
@@ -436,12 +451,12 @@ mod tests {
                 name: "x".to_string(),
             },
         );
-        graph.add_node(input).unwrap();
+        graph.add_node(input).expect("test: should succeed");
         graph.mark_input("input".to_string());
 
         let relu =
             GraphNode::new("relu".to_string(), TensorOp::ReLU).add_input("input".to_string());
-        graph.add_node(relu).unwrap();
+        graph.add_node(relu).expect("test: should succeed");
         graph.mark_output("relu".to_string());
 
         let dot = GraphVisualizer::to_dot(&graph);
@@ -462,11 +477,11 @@ mod tests {
                 name: "x".to_string(),
             },
         );
-        graph.add_node(input).unwrap();
+        graph.add_node(input).expect("test: should succeed");
 
         let relu =
             GraphNode::new("relu".to_string(), TensorOp::ReLU).add_input("input".to_string());
-        graph.add_node(relu).unwrap();
+        graph.add_node(relu).expect("test: should succeed");
 
         let stats = GraphVisualizer::graph_stats(&graph);
 

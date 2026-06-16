@@ -6,7 +6,7 @@
 use crate::traits::BlockStore;
 use crate::utils::create_block;
 use ipfrs_core::{Block, Cid, Result};
-use rand::Rng;
+use rand::{Rng, RngExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -451,7 +451,8 @@ impl WorkloadSimulator {
 
         // Collect results from all tasks
         for task in tasks {
-            let (task_counts, task_latencies, task_errors, task_bytes) = task.await.unwrap();
+            let (task_counts, task_latencies, task_errors, task_bytes) =
+                task.await.expect("workload task should not panic");
 
             for (op, count) in task_counts {
                 *operation_counts.entry(op).or_insert(0) += count;
@@ -643,7 +644,7 @@ mod tests {
 
         assert_eq!(result.total_operations, 1_000);
         assert!(result.ops_per_second > 0.0);
-        assert!(result.operation_counts.len() > 0);
+        assert!(!result.operation_counts.is_empty());
     }
 
     #[tokio::test]

@@ -126,7 +126,7 @@ impl BlockCache {
     /// cache.insert(block);
     /// ```
     pub fn insert(&self, block: Block) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         let cid = *block.cid();
         let size = block.len() as u64;
 
@@ -177,11 +177,16 @@ impl BlockCache {
     /// }
     /// ```
     pub fn get(&self, cid: &Cid) -> Option<Block> {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
 
         if inner.blocks.contains_key(cid) {
             inner.stats.hits += 1;
-            let block = inner.blocks.get(cid).unwrap().block.clone();
+            let block = inner
+                .blocks
+                .get(cid)
+                .expect("just confirmed key is present via contains_key")
+                .block
+                .clone();
             inner.update_access(cid);
             Some(block)
         } else {
@@ -194,13 +199,13 @@ impl BlockCache {
     ///
     /// This does not update LRU access time.
     pub fn contains(&self, cid: &Cid) -> bool {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.blocks.contains_key(cid)
     }
 
     /// Remove a block from the cache
     pub fn remove(&self, cid: &Cid) -> Option<Block> {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
 
         if let Some(entry) = inner.blocks.remove(cid) {
             inner.current_size -= entry.size;
@@ -216,7 +221,7 @@ impl BlockCache {
 
     /// Clear all blocks from the cache
     pub fn clear(&self) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         inner.blocks.clear();
         inner.lru_list.clear();
         inner.current_size = 0;
@@ -242,37 +247,37 @@ impl BlockCache {
     /// assert_eq!(stats.misses, 0);
     /// ```
     pub fn stats(&self) -> CacheStats {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.stats.clone()
     }
 
     /// Get the number of blocks currently in the cache
     pub fn len(&self) -> usize {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.blocks.len()
     }
 
     /// Check if the cache is empty
     pub fn is_empty(&self) -> bool {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.blocks.is_empty()
     }
 
     /// Get the current total size of cached blocks in bytes
     pub fn size(&self) -> u64 {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.current_size
     }
 
     /// Get the maximum cache size in bytes
     pub fn max_size(&self) -> u64 {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.max_size_bytes
     }
 
     /// Get the maximum number of blocks (if configured)
     pub fn max_blocks(&self) -> Option<usize> {
-        let inner = self.inner.read().unwrap();
+        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner.max_blocks
     }
 }

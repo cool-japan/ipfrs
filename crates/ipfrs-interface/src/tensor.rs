@@ -62,7 +62,11 @@ impl TensorMetadata {
             return Err("Data too short for safetensors format".to_string());
         }
 
-        let header_len = u64::from_le_bytes(data[0..8].try_into().unwrap()) as usize;
+        let header_len = u64::from_le_bytes(
+            data[0..8]
+                .try_into()
+                .expect("data[0..8] is exactly 8 bytes after bounds check"),
+        ) as usize;
         if data.len() < 8 + header_len {
             return Err("Incomplete safetensors header".to_string());
         }
@@ -173,12 +177,109 @@ impl TensorSlice {
 
         let element_size = TensorMetadata::dtype_size(&metadata.dtype);
 
-        // For simplicity, implement 1D and 2D slicing
+        // Dispatch to specialised implementations for 1D/2D, then fall through to the
+        // general N-D path which handles any number of dimensions ≥ 3.
         match metadata.shape.len() {
             1 => self.extract_1d(data, &metadata.shape, element_size),
             2 => self.extract_2d(data, &metadata.shape, element_size),
-            _ => Err("Tensor slicing for dimensions > 2 not yet implemented".to_string()),
+            _ => self.extract_nd(data, &metadata.shape, element_size),
         }
+    }
+
+    /// Extract an N-dimensional slice for tensors with 3 or more dimensions.
+    ///
+    /// The tensor is assumed to be stored in row-major (C) order.
+    /// For each dimension `d`, the stride is `product(shape[d+1..]) * element_size`.
+    /// We iterate over the Cartesian product of all slice ranges and copy
+    /// one element at a time, so no contiguous-memory assumption is required.
+    fn extract_nd(
+        &self,
+        data: &[u8],
+        shape: &[usize],
+        element_size: usize,
+    ) -> Result<Vec<u8>, String> {
+        let ndim = shape.len();
+
+        // Validate ranges and compute concrete (start, end) pairs.
+        let mut starts = Vec::with_capacity(ndim);
+        let mut ends = Vec::with_capacity(ndim);
+        for (dim, &(start, end_opt)) in self.ranges.iter().enumerate() {
+            let end = end_opt.unwrap_or(shape[dim]);
+            if start >= shape[dim] {
+                return Err(format!(
+                    "Slice start {} out of bounds for dimension {} (size {})",
+                    start, dim, shape[dim]
+                ));
+            }
+            if end > shape[dim] {
+                return Err(format!(
+                    "Slice end {} out of bounds for dimension {} (size {})",
+                    end, dim, shape[dim]
+                ));
+            }
+            if start >= end {
+                return Err(format!(
+                    "Slice start {} >= end {} for dimension {}",
+                    start, end, dim
+                ));
+            }
+            starts.push(start);
+            ends.push(end);
+        }
+
+        // Compute row-major strides (in elements, not bytes).
+        let mut strides = vec![1usize; ndim];
+        for d in (0..ndim - 1).rev() {
+            strides[d] = strides[d + 1] * shape[d + 1];
+        }
+
+        // Pre-compute the total number of output elements.
+        let out_elements: usize = starts
+            .iter()
+            .zip(ends.iter())
+            .map(|(&s, &e)| e - s)
+            .product();
+        let mut result = vec![0u8; out_elements * element_size];
+
+        // Iterate over the Cartesian product of all slice ranges using a
+        // multi-dimensional counter (indices relative to tensor origin).
+        let mut indices = starts.clone();
+        for out_elem in 0..out_elements {
+            // Compute the flat source offset.
+            let src_elem: usize = indices
+                .iter()
+                .zip(strides.iter())
+                .map(|(&i, &s)| i * s)
+                .sum();
+            let src_byte = src_elem * element_size;
+            if src_byte + element_size > data.len() {
+                return Err(format!(
+                    "Source byte range {}..{} exceeds data length {}",
+                    src_byte,
+                    src_byte + element_size,
+                    data.len()
+                ));
+            }
+            let dst_byte = out_elem * element_size;
+            result[dst_byte..dst_byte + element_size]
+                .copy_from_slice(&data[src_byte..src_byte + element_size]);
+
+            // Advance the multi-dimensional counter (last dimension increments fastest).
+            let mut carry = true;
+            for d in (0..ndim).rev() {
+                if carry {
+                    indices[d] += 1;
+                    if indices[d] >= ends[d] {
+                        indices[d] = starts[d];
+                        // carry propagates
+                    } else {
+                        carry = false;
+                    }
+                }
+            }
+        }
+
+        Ok(result)
     }
 
     /// Extract 1D slice
@@ -440,7 +541,7 @@ pub async fn get_tensor(
             },
         )
         .body(Body::from(response_data))
-        .unwrap();
+        .expect("building HTTP response with valid headers and body is infallible");
 
     // Add caching headers
     add_caching_headers(response.headers_mut(), &cid_str, &cache_config);
@@ -533,7 +634,11 @@ pub async fn get_tensor_arrow(
         slice.extract_data(data, &metadata)?
     } else {
         // Return full tensor data (skip safetensors header)
-        let header_len = u64::from_le_bytes(data[0..8].try_into().unwrap()) as usize;
+        let header_len = u64::from_le_bytes(
+            data[0..8]
+                .try_into()
+                .expect("data[0..8] is exactly 8 bytes"),
+        ) as usize;
         data[8 + header_len..].to_vec()
     };
 
@@ -674,7 +779,7 @@ pub async fn get_tensor_mmap(
             },
         )
         .body(Body::from(response_data))
-        .unwrap();
+        .expect("building HTTP response with valid headers and body is infallible");
 
     // Add caching headers
     add_caching_headers(response.headers_mut(), &cid_str, &cache_config);
@@ -743,7 +848,7 @@ pub async fn get_tensor_mmap_range(
         )
         .header("X-Served-By", "mmap")
         .body(Body::from(range_data))
-        .unwrap();
+        .expect("building PARTIAL_CONTENT response with valid headers and body is infallible");
 
     Ok(response)
 }
@@ -819,25 +924,26 @@ mod tests {
 
     #[test]
     fn test_tensor_slice_parse_single() {
-        let slice = TensorSlice::parse("5").unwrap();
+        let slice = TensorSlice::parse("5").expect("test: parse single index should succeed");
         assert_eq!(slice.ranges, vec![(5, Some(6))]);
     }
 
     #[test]
     fn test_tensor_slice_parse_range() {
-        let slice = TensorSlice::parse("10:20").unwrap();
+        let slice = TensorSlice::parse("10:20").expect("test: parse range slice should succeed");
         assert_eq!(slice.ranges, vec![(10, Some(20))]);
     }
 
     #[test]
     fn test_tensor_slice_parse_open_end() {
-        let slice = TensorSlice::parse("10:").unwrap();
+        let slice = TensorSlice::parse("10:").expect("test: parse open-end slice should succeed");
         assert_eq!(slice.ranges, vec![(10, None)]);
     }
 
     #[test]
     fn test_tensor_slice_parse_multi_dim() {
-        let slice = TensorSlice::parse("0:10,5:15,2:8").unwrap();
+        let slice = TensorSlice::parse("0:10,5:15,2:8")
+            .expect("test: parse multi-dim slice should succeed");
         assert_eq!(
             slice.ranges,
             vec![(0, Some(10)), (5, Some(15)), (2, Some(8))]
@@ -847,16 +953,18 @@ mod tests {
     #[test]
     fn test_tensor_slice_calculate_size() {
         let meta = TensorMetadata::from_raw(vec![100, 100], "f32".to_string());
-        let slice = TensorSlice::parse("0:10,0:10").unwrap();
+        let slice = TensorSlice::parse("0:10,0:10").expect("test: parse 2D slice should succeed");
 
-        let size = slice.calculate_size(&meta).unwrap();
+        let size = slice
+            .calculate_size(&meta)
+            .expect("test: size calculation should succeed");
         assert_eq!(size, 10 * 10 * 4); // 10x10 elements * 4 bytes
     }
 
     #[test]
     fn test_tensor_slice_invalid_dimensions() {
         let meta = TensorMetadata::from_raw(vec![100, 100], "f32".to_string());
-        let slice = TensorSlice::parse("0:10").unwrap(); // Only 1 dimension
+        let slice = TensorSlice::parse("0:10").expect("test: parse 1D slice should succeed"); // Only 1 dimension
 
         let result = slice.calculate_size(&meta);
         assert!(result.is_err());
@@ -865,7 +973,8 @@ mod tests {
     #[test]
     fn test_tensor_slice_out_of_bounds() {
         let meta = TensorMetadata::from_raw(vec![100, 100], "f32".to_string());
-        let slice = TensorSlice::parse("0:200,0:10").unwrap();
+        let slice = TensorSlice::parse("0:200,0:10")
+            .expect("test: parse out-of-bounds slice should succeed");
 
         let result = slice.calculate_size(&meta);
         assert!(result.is_err());
@@ -874,11 +983,13 @@ mod tests {
     #[test]
     fn test_tensor_layout_serialization() {
         let layout = TensorLayout::RowMajor;
-        let json = serde_json::to_string(&layout).unwrap();
+        let json =
+            serde_json::to_string(&layout).expect("test: RowMajor serialization should succeed");
         assert_eq!(json, r#""rowmajor""#);
 
         let layout = TensorLayout::ColumnMajor;
-        let json = serde_json::to_string(&layout).unwrap();
+        let json =
+            serde_json::to_string(&layout).expect("test: ColumnMajor serialization should succeed");
         assert_eq!(json, r#""columnmajor""#);
     }
 
@@ -888,9 +999,11 @@ mod tests {
         let data: Vec<u8> = (0..10).flat_map(|i| (i as f32).to_le_bytes()).collect();
 
         let meta = TensorMetadata::from_raw(vec![10], "f32".to_string());
-        let slice = TensorSlice::parse("2:5").unwrap();
+        let slice = TensorSlice::parse("2:5").expect("test: parse 1D range should succeed");
 
-        let result = slice.extract_data(&data, &meta).unwrap();
+        let result = slice
+            .extract_data(&data, &meta)
+            .expect("test: 1D slice extraction should succeed");
 
         // Should extract elements 2, 3, 4 (3 elements * 4 bytes = 12 bytes)
         assert_eq!(result.len(), 12);
@@ -898,7 +1011,13 @@ mod tests {
         // Verify the extracted values
         let values: Vec<f32> = result
             .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
+            .map(|chunk| {
+                f32::from_le_bytes(
+                    chunk
+                        .try_into()
+                        .expect("test: chunk to [u8;4] conversion should succeed"),
+                )
+            })
             .collect();
 
         assert_eq!(values, vec![2.0, 3.0, 4.0]);
@@ -914,9 +1033,12 @@ mod tests {
         let data: Vec<u8> = (0..12).flat_map(|i| (i as f32).to_le_bytes()).collect();
 
         let meta = TensorMetadata::from_raw(vec![4, 3], "f32".to_string());
-        let slice = TensorSlice::parse("1:3,0:2").unwrap(); // Rows 1-2, Cols 0-1
+        let slice =
+            TensorSlice::parse("1:3,0:2").expect("test: parse 2D row/col slice should succeed"); // Rows 1-2, Cols 0-1
 
-        let result = slice.extract_data(&data, &meta).unwrap();
+        let result = slice
+            .extract_data(&data, &meta)
+            .expect("test: 2D slice extraction should succeed");
 
         // Should extract:
         // [[3, 4],
@@ -926,7 +1048,13 @@ mod tests {
 
         let values: Vec<f32> = result
             .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
+            .map(|chunk| {
+                f32::from_le_bytes(
+                    chunk
+                        .try_into()
+                        .expect("test: chunk to [u8;4] conversion should succeed"),
+                )
+            })
             .collect();
 
         assert_eq!(values, vec![3.0, 4.0, 6.0, 7.0]);
@@ -937,16 +1065,25 @@ mod tests {
         let data: Vec<u8> = (0..12).flat_map(|i| (i as f32).to_le_bytes()).collect();
 
         let meta = TensorMetadata::from_raw(vec![4, 3], "f32".to_string());
-        let slice = TensorSlice::parse("2:3,0:3").unwrap(); // Row 2, all columns
+        let slice =
+            TensorSlice::parse("2:3,0:3").expect("test: parse single-row slice should succeed"); // Row 2, all columns
 
-        let result = slice.extract_data(&data, &meta).unwrap();
+        let result = slice
+            .extract_data(&data, &meta)
+            .expect("test: single-row extraction should succeed");
 
         // Should extract: [6, 7, 8]
         assert_eq!(result.len(), 12);
 
         let values: Vec<f32> = result
             .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
+            .map(|chunk| {
+                f32::from_le_bytes(
+                    chunk
+                        .try_into()
+                        .expect("test: chunk to [u8;4] conversion should succeed"),
+                )
+            })
             .collect();
 
         assert_eq!(values, vec![6.0, 7.0, 8.0]);
@@ -956,7 +1093,8 @@ mod tests {
     fn test_tensor_slice_extract_invalid_dimension() {
         let data = vec![0u8; 40]; // 10 f32 elements
         let meta = TensorMetadata::from_raw(vec![10], "f32".to_string());
-        let slice = TensorSlice::parse("2:5,0:2").unwrap(); // 2D slice for 1D tensor
+        let slice = TensorSlice::parse("2:5,0:2")
+            .expect("test: parse 2D slice for 1D tensor should succeed"); // 2D slice for 1D tensor
 
         let result = slice.extract_data(&data, &meta);
         assert!(result.is_err());
@@ -967,7 +1105,8 @@ mod tests {
         let data: Vec<u8> = (0..10).flat_map(|i| (i as f32).to_le_bytes()).collect();
 
         let meta = TensorMetadata::from_raw(vec![10], "f32".to_string());
-        let slice = TensorSlice::parse("8:12").unwrap(); // Out of bounds
+        let slice =
+            TensorSlice::parse("8:12").expect("test: parse out-of-bounds range should succeed"); // Out of bounds
 
         let result = slice.extract_data(&data, &meta);
         assert!(result.is_err());

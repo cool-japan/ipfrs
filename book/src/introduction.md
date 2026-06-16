@@ -96,7 +96,7 @@ Ready to dive in? Here's where to start:
 
 ## License
 
-IPFRS is open source software licensed under the MIT License.
+IPFRS is open source software licensed under the Apache-2.0 License.
 
 ---
 

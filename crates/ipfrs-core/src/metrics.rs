@@ -337,7 +337,7 @@ impl Metrics {
         let pool_hits = self.pool_hits.load(Ordering::Relaxed);
         let pool_misses = self.pool_misses.load(Ordering::Relaxed);
 
-        let timings = self.timings.lock().unwrap();
+        let timings = self.timings.lock().unwrap_or_else(|e| e.into_inner());
 
         // Calculate derived metrics
         let avg_block_size = if blocks_created > 0 {

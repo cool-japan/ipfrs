@@ -492,7 +492,6 @@ pub struct ModelStats {
 mod tests {
     use super::*;
     use crate::blockstore::{BlockStoreConfig, SledBlockStore};
-    use std::path::PathBuf;
 
     #[test]
     fn test_dtype_size() {
@@ -517,12 +516,15 @@ mod tests {
     #[tokio::test]
     async fn test_safetensors_store() {
         let config = BlockStoreConfig {
-            path: PathBuf::from("/tmp/ipfrs-safetensors-test"),
+            path: std::env::temp_dir().join("ipfrs-safetensors-test"),
             cache_size: 100 * 1024 * 1024,
         };
         let _ = std::fs::remove_dir_all(&config.path);
 
-        let store = Arc::new(SledBlockStore::new(config).unwrap());
+        let store = Arc::new(
+            SledBlockStore::new(config)
+                .expect("failed to create SledBlockStore for safetensors test"),
+        );
         let safetensors_store = SafetensorsStore::new(store);
 
         // Create a minimal safetensors file
@@ -537,13 +539,13 @@ mod tests {
         let manifest_cid = safetensors_store
             .import_from_bytes("test_model".to_string(), &data)
             .await
-            .unwrap();
+            .expect("test: import_from_bytes should succeed");
 
         // Load manifest
         let manifest = safetensors_store
             .load_manifest(&manifest_cid)
             .await
-            .unwrap();
+            .expect("test: load_manifest should succeed");
         assert_eq!(manifest.name, "test_model");
         assert_eq!(manifest.tensors.len(), 1);
 
@@ -551,7 +553,7 @@ mod tests {
         let stats = safetensors_store
             .get_model_stats(&manifest_cid)
             .await
-            .unwrap();
+            .expect("test: get_model_stats should succeed");
         assert_eq!(stats.tensor_count, 1);
         assert_eq!(stats.total_parameters, 4);
     }
@@ -564,7 +566,8 @@ mod tests {
         data.extend_from_slice(&header_size.to_le_bytes());
         data.extend_from_slice(header.as_bytes());
 
-        let (parsed, offset) = SafetensorsStore::<SledBlockStore>::parse_header(&data).unwrap();
+        let (parsed, offset) = SafetensorsStore::<SledBlockStore>::parse_header(&data)
+            .expect("test: parse_header should succeed on valid header");
         assert_eq!(offset, 8 + header.len());
         assert_eq!(parsed.tensors.len(), 1);
         assert!(parsed.tensors.contains_key("tensor1"));

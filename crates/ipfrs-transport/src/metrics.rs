@@ -83,7 +83,7 @@ impl LatencyTracker {
     pub fn record(&self, latency: Duration) {
         // Apply sampling
         if self.config.sample_rate < 1.0 {
-            use rand::Rng;
+            use rand::RngExt;
             let mut rng = rand::rng();
             if rng.random_range(0.0..1.0) > self.config.sample_rate {
                 return;
@@ -99,7 +99,7 @@ impl LatencyTracker {
 
             // Limit sample size using reservoir sampling
             if samples.len() > self.config.max_samples {
-                use rand::Rng;
+                use rand::RngExt;
                 let mut rng = rand::rng();
                 let remove_idx = rng.random_range(0..samples.len());
                 samples.swap_remove(remove_idx);
@@ -121,8 +121,12 @@ impl LatencyTracker {
         let mut sorted = samples.clone();
         sorted.sort();
 
-        let min = *sorted.first().unwrap();
-        let max = *sorted.last().unwrap();
+        let min = *sorted
+            .first()
+            .expect("sorted is non-empty: early return above");
+        let max = *sorted
+            .last()
+            .expect("sorted is non-empty: early return above");
         let mean = if total_count > 0 {
             total_duration / total_count as u32
         } else {

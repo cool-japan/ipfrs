@@ -1149,7 +1149,7 @@ mod tests {
         let result = NetworkFacadeBuilder::new().build();
         assert!(result.is_ok());
 
-        let facade = result.unwrap();
+        let facade = result.expect("test: facade creation should succeed");
         assert!(facade.semantic_dht.is_none());
         assert!(facade.gossipsub.is_none());
     }
@@ -1159,7 +1159,7 @@ mod tests {
         let result = NetworkFacadeBuilder::new().with_semantic_dht().build();
         assert!(result.is_ok());
 
-        let facade = result.unwrap();
+        let facade = result.expect("test: facade with semantic DHT should be created successfully");
         assert!(facade.semantic_dht.is_some());
     }
 
@@ -1179,7 +1179,7 @@ mod tests {
 
         assert!(result.is_ok());
 
-        let facade = result.unwrap();
+        let facade = result.expect("test: facade with all features should be created successfully");
         assert!(facade.semantic_dht.is_some());
         assert!(facade.gossipsub.is_some());
         assert!(facade.geo_router.is_some());
@@ -1193,34 +1193,44 @@ mod tests {
 
     #[tokio::test]
     async fn test_facade_peer_id() {
-        let facade = NetworkFacadeBuilder::new().build().unwrap();
+        let facade = NetworkFacadeBuilder::new()
+            .build()
+            .expect("test: facade build should succeed for peer_id test");
         let peer_id = facade.peer_id();
         assert!(!peer_id.to_string().is_empty());
     }
 
     #[tokio::test]
     async fn test_facade_connected_peers_empty() {
-        let facade = NetworkFacadeBuilder::new().build().unwrap();
+        let facade = NetworkFacadeBuilder::new()
+            .build()
+            .expect("test: facade build should succeed for connected peers test");
         let peers = facade.connected_peers();
         assert_eq!(peers.len(), 0);
     }
 
     #[tokio::test]
     async fn test_facade_peer_count_zero() {
-        let facade = NetworkFacadeBuilder::new().build().unwrap();
+        let facade = NetworkFacadeBuilder::new()
+            .build()
+            .expect("test: facade build should succeed for peer count test");
         assert_eq!(facade.peer_count(), 0);
     }
 
     #[tokio::test]
     async fn test_facade_health() {
-        let facade = NetworkFacadeBuilder::new().build().unwrap();
+        let facade = NetworkFacadeBuilder::new()
+            .build()
+            .expect("test: facade build should succeed for health test");
         let health = facade.get_health();
         assert!(matches!(health.status, _));
     }
 
     #[tokio::test]
     async fn test_facade_bandwidth_stats() {
-        let facade = NetworkFacadeBuilder::new().build().unwrap();
+        let facade = NetworkFacadeBuilder::new()
+            .build()
+            .expect("test: facade build should succeed for bandwidth stats test");
         assert_eq!(facade.bytes_sent(), 0);
         assert_eq!(facade.bytes_received(), 0);
     }

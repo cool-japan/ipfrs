@@ -316,7 +316,7 @@ mod tests {
 
     fn test_cid(seed: u64) -> Cid {
         let data = seed.to_le_bytes();
-        let hash = Multihash::wrap(0x12, &data).unwrap();
+        let hash = Multihash::wrap(0x12, &data).expect("test: create multihash");
         Cid::new_v1(0x55, hash)
     }
 
@@ -338,7 +338,10 @@ mod tests {
         scheduler.schedule(req2).await;
 
         // FIFO should return req1 first
-        let next = scheduler.next().await.unwrap();
+        let next = scheduler
+            .next()
+            .await
+            .expect("test: get next scheduled item");
         assert_eq!(next.cid, test_cid(1));
     }
 
@@ -353,7 +356,10 @@ mod tests {
         scheduler.schedule(req2).await;
 
         // Should return smaller job first
-        let next = scheduler.next().await.unwrap();
+        let next = scheduler
+            .next()
+            .await
+            .expect("test: get next scheduled item");
         assert_eq!(next.cid, test_cid(2));
     }
 
@@ -373,7 +379,10 @@ mod tests {
         scheduler.schedule(req2).await;
 
         // Should return request with nearer deadline
-        let next = scheduler.next().await.unwrap();
+        let next = scheduler
+            .next()
+            .await
+            .expect("test: get next scheduled item");
         assert_eq!(next.cid, test_cid(2));
     }
 
@@ -388,7 +397,10 @@ mod tests {
         scheduler.schedule(req_high).await;
 
         // Higher priority should come first
-        let next = scheduler.next().await.unwrap();
+        let next = scheduler
+            .next()
+            .await
+            .expect("test: get next scheduled item");
         assert_eq!(next.cid, test_cid(2));
     }
 
@@ -420,7 +432,10 @@ mod tests {
         let req = ScheduledRequest::new(test_cid(1), SchedulePriority::Normal);
 
         scheduler.schedule(req.clone()).await;
-        let next = scheduler.next().await.unwrap();
+        let next = scheduler
+            .next()
+            .await
+            .expect("test: get next scheduled item");
         scheduler
             .mark_completed(&next, Duration::from_millis(100))
             .await;
@@ -440,7 +455,10 @@ mod tests {
             .with_deadline(past_deadline);
 
         scheduler.schedule(req.clone()).await;
-        let next = scheduler.next().await.unwrap();
+        let next = scheduler
+            .next()
+            .await
+            .expect("test: get next scheduled item");
         scheduler
             .mark_completed(&next, Duration::from_millis(100))
             .await;
@@ -494,7 +512,7 @@ mod tests {
 
         scheduler.schedule(req.clone()).await;
 
-        let peeked = scheduler.peek().await.unwrap();
+        let peeked = scheduler.peek().await.expect("test: peek scheduler");
         assert_eq!(peeked.cid, test_cid(1));
 
         // Queue should still have the item
@@ -507,7 +525,10 @@ mod tests {
         let req = ScheduledRequest::new(test_cid(1), SchedulePriority::Normal);
 
         scheduler.schedule(req.clone()).await;
-        let next = scheduler.next().await.unwrap();
+        let next = scheduler
+            .next()
+            .await
+            .expect("test: get next scheduled item");
         scheduler
             .mark_completed(&next, Duration::from_millis(100))
             .await;
@@ -534,7 +555,10 @@ mod tests {
         scheduler.schedule(req2).await;
 
         // Older request should get priority boost
-        let next = scheduler.next().await.unwrap();
+        let next = scheduler
+            .next()
+            .await
+            .expect("test: get next scheduled item");
         // Could be either depending on exact scoring, but let's just verify it works
         assert!(next.cid == test_cid(1) || next.cid == test_cid(2));
     }

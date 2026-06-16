@@ -62,7 +62,7 @@ impl PrometheusExporter {
 
     /// Record a counter metric
     pub fn record_counter(&mut self, name: &str, value: f64, help: &str) {
-        let mut metrics = self.metrics.lock().unwrap();
+        let mut metrics = self.metrics.lock().unwrap_or_else(|e| e.into_inner());
         let entry = metrics.entry(name.to_string()).or_insert(MetricValue {
             metric_type: MetricType::Counter,
             value: 0.0,
@@ -73,7 +73,7 @@ impl PrometheusExporter {
 
     /// Record a gauge metric
     pub fn record_gauge(&mut self, name: &str, value: f64, help: &str) {
-        let mut metrics = self.metrics.lock().unwrap();
+        let mut metrics = self.metrics.lock().unwrap_or_else(|e| e.into_inner());
         metrics.insert(
             name.to_string(),
             MetricValue {
@@ -86,7 +86,7 @@ impl PrometheusExporter {
 
     /// Add labels to a metric
     pub fn add_labels(&mut self, name: &str, labels: HashMap<String, String>) {
-        let mut all_labels = self.labels.lock().unwrap();
+        let mut all_labels = self.labels.lock().unwrap_or_else(|e| e.into_inner());
         all_labels.insert(name.to_string(), labels);
     }
 
@@ -240,8 +240,8 @@ impl PrometheusExporter {
 
     /// Export metrics in Prometheus text format
     pub fn export(&self) -> String {
-        let metrics = self.metrics.lock().unwrap();
-        let labels = self.labels.lock().unwrap();
+        let metrics = self.metrics.lock().unwrap_or_else(|e| e.into_inner());
+        let labels = self.labels.lock().unwrap_or_else(|e| e.into_inner());
 
         let mut output = String::new();
 
@@ -283,15 +283,15 @@ impl PrometheusExporter {
 
     /// Reset all metrics
     pub fn reset(&mut self) {
-        let mut metrics = self.metrics.lock().unwrap();
-        let mut labels = self.labels.lock().unwrap();
+        let mut metrics = self.metrics.lock().unwrap_or_else(|e| e.into_inner());
+        let mut labels = self.labels.lock().unwrap_or_else(|e| e.into_inner());
         metrics.clear();
         labels.clear();
     }
 
     /// Get metric count
     pub fn metric_count(&self) -> usize {
-        let metrics = self.metrics.lock().unwrap();
+        let metrics = self.metrics.lock().unwrap_or_else(|e| e.into_inner());
         metrics.len()
     }
 }

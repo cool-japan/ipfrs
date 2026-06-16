@@ -8,6 +8,7 @@
 //!
 //! - [`commands`] - Command handler implementations (modular refactoring)
 //! - [`config`] - Configuration file management and settings (with caching)
+//! - [`connectivity`] - Fast offline/daemon detection (< 2 s)
 //! - [`output`] - Output formatting with colors and tables
 //! - [`plugin`] - Plugin system for extending CLI with custom commands
 //! - [`progress`] - Progress indicators for long-running operations
@@ -44,15 +45,16 @@
 //! use ipfrs_cli::config::Config;
 //!
 //! // Load config with caching (fast on subsequent calls)
-//! let config = Config::load().unwrap();
+//! let config = Config::load().expect("config should load successfully");
 //! assert_eq!(config.general.log_level, "info");
 //!
 //! // Force fresh load without cache
-//! let fresh_config = Config::load_uncached().unwrap();
+//! let fresh_config = Config::load_uncached().expect("config should load successfully");
 //! ```
 
 pub mod commands;
 pub mod config;
+pub mod connectivity;
 pub mod output;
 pub mod plugin;
 pub mod progress;

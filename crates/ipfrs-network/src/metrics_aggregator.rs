@@ -337,7 +337,7 @@ impl MetricsAggregator {
         // Calculate percentiles if enabled
         let (p50, p95, p99) = if self.config.enable_percentiles {
             let mut sorted = values.clone();
-            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             (
                 percentile(&sorted, 0.50),
                 percentile(&sorted, 0.95),

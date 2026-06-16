@@ -533,14 +533,16 @@ mod tests {
         for i in 0..100 {
             let cid = Cid::default();
             let embedding = vec![i as f32 / 100.0, 0.5, 0.5, 0.5];
-            index.add(cid, embedding).unwrap();
+            index
+                .add(cid, embedding)
+                .expect("test: add embedding to learned index");
         }
 
         assert_eq!(index.size(), 100);
 
         // Search
         let query = vec![0.5, 0.5, 0.5, 0.5];
-        let results = index.search(&query, 5).unwrap();
+        let results = index.search(&query, 5).expect("test: search learned index");
         assert_eq!(results.len(), 5);
     }
 
@@ -573,7 +575,9 @@ mod tests {
         let mut index = LearnedIndex::new(RMIConfig::default());
 
         let cid1 = Cid::default();
-        index.add(cid1, vec![1.0, 2.0, 3.0]).unwrap();
+        index
+            .add(cid1, vec![1.0, 2.0, 3.0])
+            .expect("test: add first embedding");
 
         let cid2 = Cid::default();
         let result = index.add(cid2, vec![1.0, 2.0]);
@@ -587,13 +591,15 @@ mod tests {
         for i in 0..50 {
             let cid = Cid::default();
             let embedding = vec![i as f32, 0.0, 0.0];
-            index.add(cid, embedding).unwrap();
+            index
+                .add(cid, embedding)
+                .expect("test: add embedding for rebuild");
         }
 
-        index.rebuild().unwrap();
+        index.rebuild().expect("test: rebuild index");
 
         let query = vec![25.0, 0.0, 0.0];
-        let results = index.search(&query, 3).unwrap();
+        let results = index.search(&query, 3).expect("test: search after rebuild");
         assert_eq!(results.len(), 3);
     }
 
@@ -603,11 +609,13 @@ mod tests {
 
         for i in 0..10 {
             let cid = Cid::default();
-            index.add(cid, vec![i as f32, 0.0]).unwrap();
+            index
+                .add(cid, vec![i as f32, 0.0])
+                .expect("test: add embedding for stats");
         }
 
         let query = vec![5.0, 0.0];
-        let _ = index.search(&query, 3).unwrap();
+        let _ = index.search(&query, 3).expect("test: search for stats");
 
         let stats = index.stats();
         assert_eq!(stats.data_points, 10);
@@ -619,7 +627,9 @@ mod tests {
         let mut index = LearnedIndex::new(RMIConfig::default());
 
         let cid = Cid::default();
-        index.add(cid, vec![1.0, 2.0, 3.0]).unwrap();
+        index
+            .add(cid, vec![1.0, 2.0, 3.0])
+            .expect("test: add embedding for clear");
         assert_eq!(index.size(), 1);
 
         index.clear();
@@ -647,11 +657,15 @@ mod tests {
             let mut index = LearnedIndex::new(config);
             for i in 0..20 {
                 let cid = Cid::default();
-                index.add(cid, vec![i as f32, 0.0, 0.0]).unwrap();
+                index
+                    .add(cid, vec![i as f32, 0.0, 0.0])
+                    .expect("test: add embedding for config variant");
             }
 
             let query = vec![10.0, 0.0, 0.0];
-            let results = index.search(&query, 5).unwrap();
+            let results = index
+                .search(&query, 5)
+                .expect("test: search for config variant");
             assert!(!results.is_empty());
         }
     }

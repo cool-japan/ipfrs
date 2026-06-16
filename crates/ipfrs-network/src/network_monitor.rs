@@ -373,7 +373,9 @@ mod tests {
             "wlan0".to_string(),
             NetworkInterface {
                 name: "wlan0".to_string(),
-                addresses: vec!["192.168.1.100".parse().unwrap()],
+                addresses: vec!["192.168.1.100"
+                    .parse()
+                    .expect("test: valid IP address literal should parse")],
                 interface_type: InterfaceType::WiFi,
                 is_active: true,
             },
@@ -384,7 +386,9 @@ mod tests {
             "wwan0".to_string(),
             NetworkInterface {
                 name: "wwan0".to_string(),
-                addresses: vec!["10.0.0.100".parse().unwrap()],
+                addresses: vec!["10.0.0.100"
+                    .parse()
+                    .expect("test: valid IP address literal should parse")],
                 interface_type: InterfaceType::Cellular,
                 is_active: true,
             },
@@ -393,7 +397,12 @@ mod tests {
         let primary = monitor.select_primary_interface(&interfaces);
         assert!(primary.is_some());
         // WiFi should be preferred over cellular
-        assert_eq!(primary.unwrap().interface_type, InterfaceType::WiFi);
+        assert_eq!(
+            primary
+                .expect("test: primary interface should be Some for active interfaces")
+                .interface_type,
+            InterfaceType::WiFi
+        );
     }
 
     #[test]
@@ -405,7 +414,9 @@ mod tests {
             "eth0".to_string(),
             NetworkInterface {
                 name: "eth0".to_string(),
-                addresses: vec!["192.168.1.50".parse().unwrap()],
+                addresses: vec!["192.168.1.50"
+                    .parse()
+                    .expect("test: valid IP address literal should parse")],
                 interface_type: InterfaceType::Ethernet,
                 is_active: true,
             },
@@ -415,7 +426,9 @@ mod tests {
             "wlan0".to_string(),
             NetworkInterface {
                 name: "wlan0".to_string(),
-                addresses: vec!["192.168.1.100".parse().unwrap()],
+                addresses: vec!["192.168.1.100"
+                    .parse()
+                    .expect("test: valid IP address literal should parse")],
                 interface_type: InterfaceType::WiFi,
                 is_active: true,
             },
@@ -423,7 +436,12 @@ mod tests {
 
         let primary = monitor.select_primary_interface(&interfaces);
         assert!(primary.is_some());
-        assert_eq!(primary.unwrap().interface_type, InterfaceType::Ethernet);
+        assert_eq!(
+            primary
+                .expect("test: primary interface should be Some when ethernet is active")
+                .interface_type,
+            InterfaceType::Ethernet
+        );
     }
 
     #[test]
@@ -435,7 +453,9 @@ mod tests {
             "wlan0".to_string(),
             NetworkInterface {
                 name: "wlan0".to_string(),
-                addresses: vec!["192.168.1.100".parse().unwrap()],
+                addresses: vec!["192.168.1.100"
+                    .parse()
+                    .expect("test: valid IP address literal should parse")],
                 interface_type: InterfaceType::WiFi,
                 is_active: false, // Inactive
             },
@@ -477,7 +497,9 @@ mod tests {
             "lo".to_string(),
             NetworkInterface {
                 name: "lo".to_string(),
-                addresses: vec!["127.0.0.1".parse().unwrap()],
+                addresses: vec!["127.0.0.1"
+                    .parse()
+                    .expect("test: valid loopback IP literal should parse")],
                 interface_type: InterfaceType::Loopback,
                 is_active: true,
             },

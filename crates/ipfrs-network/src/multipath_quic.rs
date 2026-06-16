@@ -821,10 +821,16 @@ mod tests {
         let config = MultipathConfig::default();
         let manager = MultipathQuicManager::new(config);
 
-        let local = "127.0.0.1:8080".parse().unwrap();
-        let remote = "192.168.1.1:9090".parse().unwrap();
+        let local = "127.0.0.1:8080"
+            .parse()
+            .expect("test: failed to parse local addr");
+        let remote = "192.168.1.1:9090"
+            .parse()
+            .expect("test: failed to parse remote addr");
 
-        let path_id = manager.add_path(local, remote).unwrap();
+        let path_id = manager
+            .add_path(local, remote)
+            .expect("test: failed to add path");
 
         assert_eq!(path_id, 0);
 
@@ -836,7 +842,7 @@ mod tests {
         // Activate the path
         manager
             .update_path_state(path_id, PathState::Active)
-            .unwrap();
+            .expect("test: failed to update path state to Active");
 
         // Now it should be counted as active
         let stats = manager.stats();
@@ -851,12 +857,20 @@ mod tests {
         };
         let manager = MultipathQuicManager::new(config);
 
-        let local = "127.0.0.1:8080".parse().unwrap();
-        let remote = "192.168.1.1:9090".parse().unwrap();
+        let local = "127.0.0.1:8080"
+            .parse()
+            .expect("test: failed to parse local addr");
+        let remote = "192.168.1.1:9090"
+            .parse()
+            .expect("test: failed to parse remote addr");
 
         // Add 2 paths (should succeed)
-        manager.add_path(local, remote).unwrap();
-        manager.add_path(local, remote).unwrap();
+        manager
+            .add_path(local, remote)
+            .expect("test: failed to add path 1");
+        manager
+            .add_path(local, remote)
+            .expect("test: failed to add path 2");
 
         // Try to add 3rd path (should fail)
         let result = manager.add_path(local, remote);
@@ -869,11 +883,19 @@ mod tests {
         let config = MultipathConfig::default();
         let manager = MultipathQuicManager::new(config);
 
-        let local = "127.0.0.1:8080".parse().unwrap();
-        let remote = "192.168.1.1:9090".parse().unwrap();
+        let local = "127.0.0.1:8080"
+            .parse()
+            .expect("test: failed to parse local addr");
+        let remote = "192.168.1.1:9090"
+            .parse()
+            .expect("test: failed to parse remote addr");
 
-        let path_id = manager.add_path(local, remote).unwrap();
-        manager.remove_path(path_id).unwrap();
+        let path_id = manager
+            .add_path(local, remote)
+            .expect("test: failed to add path");
+        manager
+            .remove_path(path_id)
+            .expect("test: failed to remove path");
 
         let stats = manager.stats();
         assert_eq!(stats.active_paths, 0);
@@ -884,16 +906,22 @@ mod tests {
         let config = MultipathConfig::default();
         let manager = MultipathQuicManager::new(config);
 
-        let local = "127.0.0.1:8080".parse().unwrap();
-        let remote = "192.168.1.1:9090".parse().unwrap();
+        let local = "127.0.0.1:8080"
+            .parse()
+            .expect("test: failed to parse local addr");
+        let remote = "192.168.1.1:9090"
+            .parse()
+            .expect("test: failed to parse remote addr");
 
-        let path_id = manager.add_path(local, remote).unwrap();
+        let path_id = manager
+            .add_path(local, remote)
+            .expect("test: failed to add path");
 
         manager
             .update_path_state(path_id, PathState::Active)
-            .unwrap();
+            .expect("test: failed to update path state to Active");
 
-        let path = manager.get_path(path_id).unwrap();
+        let path = manager.get_path(path_id).expect("test: path should exist");
         assert_eq!(path.state, PathState::Active);
     }
 
@@ -905,17 +933,33 @@ mod tests {
         };
         let manager = MultipathQuicManager::new(config);
 
-        let local = "127.0.0.1:8080".parse().unwrap();
-        let remote = "192.168.1.1:9090".parse().unwrap();
+        let local = "127.0.0.1:8080"
+            .parse()
+            .expect("test: failed to parse local addr");
+        let remote = "192.168.1.1:9090"
+            .parse()
+            .expect("test: failed to parse remote addr");
 
-        let path1 = manager.add_path(local, remote).unwrap();
-        let path2 = manager.add_path(local, remote).unwrap();
+        let path1 = manager
+            .add_path(local, remote)
+            .expect("test: failed to add path 1");
+        let path2 = manager
+            .add_path(local, remote)
+            .expect("test: failed to add path 2");
 
-        manager.update_path_state(path1, PathState::Active).unwrap();
-        manager.update_path_state(path2, PathState::Active).unwrap();
+        manager
+            .update_path_state(path1, PathState::Active)
+            .expect("test: failed to activate path1");
+        manager
+            .update_path_state(path2, PathState::Active)
+            .expect("test: failed to activate path2");
 
-        let selected1 = manager.select_path().unwrap();
-        let selected2 = manager.select_path().unwrap();
+        let selected1 = manager
+            .select_path()
+            .expect("test: failed to select path (first)");
+        let selected2 = manager
+            .select_path()
+            .expect("test: failed to select path (second)");
 
         assert_ne!(selected1, selected2, "Round robin should alternate paths");
     }
@@ -928,24 +972,36 @@ mod tests {
         };
         let manager = MultipathQuicManager::new(config);
 
-        let local = "127.0.0.1:8080".parse().unwrap();
-        let remote = "192.168.1.1:9090".parse().unwrap();
+        let local = "127.0.0.1:8080"
+            .parse()
+            .expect("test: failed to parse local addr");
+        let remote = "192.168.1.1:9090"
+            .parse()
+            .expect("test: failed to parse remote addr");
 
-        let path1 = manager.add_path(local, remote).unwrap();
-        let path2 = manager.add_path(local, remote).unwrap();
+        let path1 = manager
+            .add_path(local, remote)
+            .expect("test: failed to add path 1");
+        let path2 = manager
+            .add_path(local, remote)
+            .expect("test: failed to add path 2");
 
-        manager.update_path_state(path1, PathState::Active).unwrap();
-        manager.update_path_state(path2, PathState::Active).unwrap();
+        manager
+            .update_path_state(path1, PathState::Active)
+            .expect("test: failed to activate path1");
+        manager
+            .update_path_state(path2, PathState::Active)
+            .expect("test: failed to activate path2");
 
         // Give path2 better quality
         manager
             .update_path_quality(path1, 100.0, 1_000_000, 0.1, 10.0)
-            .unwrap();
+            .expect("test: failed to update path1 quality");
         manager
             .update_path_quality(path2, 10.0, 10_000_000, 0.01, 2.0)
-            .unwrap();
+            .expect("test: failed to update path2 quality");
 
-        let selected = manager.select_path().unwrap();
+        let selected = manager.select_path().expect("test: failed to select path");
         assert_eq!(selected, path2, "Should select higher quality path");
     }
 
@@ -957,24 +1013,36 @@ mod tests {
         };
         let manager = MultipathQuicManager::new(config);
 
-        let local = "127.0.0.1:8080".parse().unwrap();
-        let remote = "192.168.1.1:9090".parse().unwrap();
+        let local = "127.0.0.1:8080"
+            .parse()
+            .expect("test: failed to parse local addr");
+        let remote = "192.168.1.1:9090"
+            .parse()
+            .expect("test: failed to parse remote addr");
 
-        let path1 = manager.add_path(local, remote).unwrap();
-        let path2 = manager.add_path(local, remote).unwrap();
+        let path1 = manager
+            .add_path(local, remote)
+            .expect("test: failed to add path 1");
+        let path2 = manager
+            .add_path(local, remote)
+            .expect("test: failed to add path 2");
 
-        manager.update_path_state(path1, PathState::Active).unwrap();
-        manager.update_path_state(path2, PathState::Active).unwrap();
+        manager
+            .update_path_state(path1, PathState::Active)
+            .expect("test: failed to activate path1");
+        manager
+            .update_path_state(path2, PathState::Active)
+            .expect("test: failed to activate path2");
 
         // path1 has lower latency
         manager
             .update_path_quality(path1, 10.0, 1_000_000, 0.1, 5.0)
-            .unwrap();
+            .expect("test: failed to update path1 quality");
         manager
             .update_path_quality(path2, 100.0, 10_000_000, 0.01, 2.0)
-            .unwrap();
+            .expect("test: failed to update path2 quality");
 
-        let selected = manager.select_path().unwrap();
+        let selected = manager.select_path().expect("test: failed to select path");
         assert_eq!(selected, path1, "Should select lowest latency path");
     }
 
@@ -983,15 +1051,23 @@ mod tests {
         let config = MultipathConfig::default();
         let manager = MultipathQuicManager::new(config);
 
-        let local = "127.0.0.1:8080".parse().unwrap();
-        let remote = "192.168.1.1:9090".parse().unwrap();
+        let local = "127.0.0.1:8080"
+            .parse()
+            .expect("test: failed to parse local addr");
+        let remote = "192.168.1.1:9090"
+            .parse()
+            .expect("test: failed to parse remote addr");
 
-        let path_id = manager.add_path(local, remote).unwrap();
+        let path_id = manager
+            .add_path(local, remote)
+            .expect("test: failed to add path");
 
         manager.record_sent(path_id, 1000);
         manager.record_received(path_id, 500);
 
-        let path = manager.get_path(path_id).unwrap();
+        let path = manager
+            .get_path(path_id)
+            .expect("test: path should exist after recording");
         assert_eq!(path.bytes_sent, 1000);
         assert_eq!(path.bytes_received, 500);
 
@@ -1009,22 +1085,34 @@ mod tests {
         };
         let manager = MultipathQuicManager::new(config);
 
-        let local = "127.0.0.1:8080".parse().unwrap();
-        let remote = "192.168.1.1:9090".parse().unwrap();
+        let local = "127.0.0.1:8080"
+            .parse()
+            .expect("test: failed to parse local addr");
+        let remote = "192.168.1.1:9090"
+            .parse()
+            .expect("test: failed to parse remote addr");
 
-        let path1 = manager.add_path(local, remote).unwrap();
-        let path2 = manager.add_path(local, remote).unwrap();
+        let path1 = manager
+            .add_path(local, remote)
+            .expect("test: failed to add path 1");
+        let path2 = manager
+            .add_path(local, remote)
+            .expect("test: failed to add path 2");
 
-        manager.update_path_state(path1, PathState::Active).unwrap();
-        manager.update_path_state(path2, PathState::Active).unwrap();
+        manager
+            .update_path_state(path1, PathState::Active)
+            .expect("test: failed to activate path1");
+        manager
+            .update_path_state(path2, PathState::Active)
+            .expect("test: failed to activate path2");
 
         // path1 has poor quality, path2 has good quality
         manager
             .update_path_quality(path1, 200.0, 500_000, 0.2, 20.0)
-            .unwrap();
+            .expect("test: failed to update path1 quality");
         manager
             .update_path_quality(path2, 10.0, 10_000_000, 0.01, 2.0)
-            .unwrap();
+            .expect("test: failed to update path2 quality");
 
         let migration = manager.should_migrate(path1);
         assert_eq!(migration, Some(path2), "Should recommend migration");
@@ -1059,14 +1147,26 @@ mod tests {
         let config = MultipathConfig::default();
         let manager = MultipathQuicManager::new(config);
 
-        let local = "127.0.0.1:8080".parse().unwrap();
-        let remote = "192.168.1.1:9090".parse().unwrap();
+        let local = "127.0.0.1:8080"
+            .parse()
+            .expect("test: failed to parse local addr");
+        let remote = "192.168.1.1:9090"
+            .parse()
+            .expect("test: failed to parse remote addr");
 
-        let path1 = manager.add_path(local, remote).unwrap();
-        let path2 = manager.add_path(local, remote).unwrap();
+        let path1 = manager
+            .add_path(local, remote)
+            .expect("test: failed to add path 1");
+        let path2 = manager
+            .add_path(local, remote)
+            .expect("test: failed to add path 2");
 
-        manager.update_path_state(path1, PathState::Active).unwrap();
-        manager.update_path_state(path2, PathState::Active).unwrap();
+        manager
+            .update_path_state(path1, PathState::Active)
+            .expect("test: failed to activate path1");
+        manager
+            .update_path_state(path2, PathState::Active)
+            .expect("test: failed to activate path2");
 
         let all_paths = manager.select_all_paths();
         assert_eq!(all_paths.len(), 2);
@@ -1082,20 +1182,28 @@ mod tests {
         };
         let manager = MultipathQuicManager::new(config);
 
-        let local = "127.0.0.1:8080".parse().unwrap();
-        let remote = "192.168.1.1:9090".parse().unwrap();
+        let local = "127.0.0.1:8080"
+            .parse()
+            .expect("test: failed to parse local addr");
+        let remote = "192.168.1.1:9090"
+            .parse()
+            .expect("test: failed to parse remote addr");
 
-        let path_id = manager.add_path(local, remote).unwrap();
+        let path_id = manager
+            .add_path(local, remote)
+            .expect("test: failed to add path");
         manager
             .update_path_state(path_id, PathState::Active)
-            .unwrap();
+            .expect("test: failed to activate path");
 
         // Update with poor quality
         manager
             .update_path_quality(path_id, 300.0, 100_000, 0.5, 50.0)
-            .unwrap();
+            .expect("test: failed to update path quality");
 
-        let path = manager.get_path(path_id).unwrap();
+        let path = manager
+            .get_path(path_id)
+            .expect("test: path should exist after quality update");
         assert_eq!(
             path.state,
             PathState::Degraded,

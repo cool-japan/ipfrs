@@ -149,7 +149,7 @@ impl Connection for WebSocketConnection {
                             let mut metrics = self.metrics.write();
                             metrics.bytes_received += data.len() as u64;
                         }
-                        return Ok(Bytes::from(data));
+                        return Ok(data);
                     }
                     Message::Text(text) => {
                         // Convert Utf8Bytes to bytes::Bytes
@@ -301,7 +301,7 @@ impl Connection for WebSocketServerConnection {
                             let mut metrics = self.metrics.write();
                             metrics.bytes_received += data.len() as u64;
                         }
-                        return Ok(Bytes::from(data));
+                        return Ok(data);
                     }
                     Message::Text(text) => {
                         // Convert Utf8Bytes to bytes::Bytes
@@ -539,12 +539,16 @@ mod tests {
         let transport = Arc::new(WebSocketTransport::default_config());
 
         // Bind to localhost
-        let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-        transport.listen(addr).await.unwrap();
+        let addr: SocketAddr = "127.0.0.1:0".parse().expect("test: valid socket addr");
+        transport.listen(addr).await.expect("test: listen");
 
         // Get the actual bound address
         let listener = transport.listener.lock().await;
-        let bound_addr = listener.as_ref().unwrap().local_addr().unwrap();
+        let bound_addr = listener
+            .as_ref()
+            .expect("test: listener exists")
+            .local_addr()
+            .expect("test: get local addr");
         drop(listener);
 
         // Spawn accept task
@@ -555,14 +559,20 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // Connect
-        let mut client_conn = transport.connect(bound_addr).await.unwrap();
-        let mut server_conn = accept_handle.await.unwrap().unwrap();
+        let mut client_conn = transport.connect(bound_addr).await.expect("test: connect");
+        let mut server_conn = accept_handle
+            .await
+            .expect("test: join accept")
+            .expect("test: accept connection");
 
         // Test send/receive
         let test_data = Bytes::from("Hello, WebSocket!");
-        client_conn.send(test_data.clone()).await.unwrap();
+        client_conn
+            .send(test_data.clone())
+            .await
+            .expect("test: send");
 
-        let received = server_conn.receive().await.unwrap();
+        let received = server_conn.receive().await.expect("test: receive");
         assert_eq!(received, test_data);
 
         // Check metrics
@@ -573,7 +583,7 @@ mod tests {
         assert!(server_metrics.bytes_received > 0);
 
         // Close connections
-        client_conn.close().await.unwrap();
-        server_conn.close().await.unwrap();
+        client_conn.close().await.expect("test: close client");
+        server_conn.close().await.expect("test: close server");
     }
 }

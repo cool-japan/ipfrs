@@ -387,14 +387,17 @@ mod tests {
     use multihash_codetable::{Code, MultihashDigest};
 
     fn create_test_index() -> VectorIndex {
-        let mut index = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200).unwrap();
+        let mut index = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200)
+            .expect("test: create 768-dim cosine index");
 
         for i in 0..10 {
             let data = format!("test_vector_{}", i);
             let hash = Code::Sha2_256.digest(data.as_bytes());
             let cid = Cid::new_v1(0x55, hash);
             let embedding = vec![i as f32 * 0.1; 768];
-            index.insert(&cid, &embedding).unwrap();
+            index
+                .insert(&cid, &embedding)
+                .expect("test: insert test vector");
         }
 
         index
@@ -462,7 +465,7 @@ mod tests {
         let entries = migration.export_entries(&source);
         let imported = migration
             .import_entries(&entries, 768, DistanceMetric::Cosine, 16, 200)
-            .unwrap();
+            .expect("test: import entries");
 
         assert_eq!(imported.len(), source.len());
     }
@@ -478,7 +481,7 @@ mod tests {
 
         let target = migration
             .migrate_with_transform(&source, 768, DistanceMetric::Cosine, 16, 200, transform)
-            .unwrap();
+            .expect("test: migrate with transform");
 
         assert_eq!(target.len(), source.len());
     }
@@ -486,7 +489,8 @@ mod tests {
     #[test]
     fn test_config_migration_upgrade() {
         let source = create_test_index();
-        let upgraded = ConfigMigration::upgrade_quality(&source).unwrap();
+        let upgraded =
+            ConfigMigration::upgrade_quality(&source).expect("test: upgrade quality migration");
 
         assert_eq!(upgraded.len(), source.len());
     }
@@ -494,7 +498,8 @@ mod tests {
     #[test]
     fn test_config_migration_speed() {
         let source = create_test_index();
-        let optimized = ConfigMigration::optimize_speed(&source).unwrap();
+        let optimized =
+            ConfigMigration::optimize_speed(&source).expect("test: optimize speed migration");
 
         assert_eq!(optimized.len(), source.len());
     }
@@ -502,7 +507,7 @@ mod tests {
     #[test]
     fn test_config_migration_balance() {
         let source = create_test_index();
-        let balanced = ConfigMigration::balance(&source).unwrap();
+        let balanced = ConfigMigration::balance(&source).expect("test: balance migration");
 
         assert_eq!(balanced.len(), source.len());
     }
@@ -510,7 +515,8 @@ mod tests {
     #[test]
     fn test_dimension_reduction() {
         let source = create_test_index();
-        let reduced = DimensionMigration::reduce_dimension(&source, 384).unwrap();
+        let reduced =
+            DimensionMigration::reduce_dimension(&source, 384).expect("test: dimension reduction");
 
         assert_eq!(reduced.len(), source.len());
     }
@@ -518,7 +524,8 @@ mod tests {
     #[test]
     fn test_metric_change() {
         let source = create_test_index();
-        let changed = MetricMigration::change_metric(&source, DistanceMetric::L2).unwrap();
+        let changed = MetricMigration::change_metric(&source, DistanceMetric::L2)
+            .expect("test: metric change to L2");
 
         assert_eq!(changed.len(), source.len());
     }
@@ -526,7 +533,8 @@ mod tests {
     #[test]
     fn test_normalize_for_cosine() {
         let source = create_test_index();
-        let normalized = MetricMigration::normalize_for_cosine(&source).unwrap();
+        let normalized =
+            MetricMigration::normalize_for_cosine(&source).expect("test: normalize for cosine");
 
         assert_eq!(normalized.len(), source.len());
     }
@@ -534,7 +542,8 @@ mod tests {
     #[test]
     fn test_batch_migration() {
         let source = create_test_index();
-        let mut target = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200).unwrap();
+        let mut target = VectorIndex::new(768, DistanceMetric::Cosine, 16, 200)
+            .expect("test: create target index for batch");
 
         let mut batch_migration = BatchMigration::new(5);
         let mut callback_count = 0;
@@ -544,7 +553,7 @@ mod tests {
                 callback_count += 1;
                 assert!(migrated <= total);
             })
-            .unwrap();
+            .expect("test: batch migration with callback");
 
         assert_eq!(target.len(), source.len());
         assert!(callback_count > 0);

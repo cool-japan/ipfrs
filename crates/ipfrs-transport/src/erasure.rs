@@ -375,12 +375,13 @@ mod tests {
     fn test_cid() -> Cid {
         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"
             .parse()
-            .unwrap()
+            .expect("test: valid CID string should parse")
     }
 
     #[test]
     fn test_erasure_config() {
-        let config = ErasureConfig::new(4, 2).unwrap();
+        let config =
+            ErasureConfig::new(4, 2).expect("test: valid ErasureConfig(4,2) should be created");
         assert_eq!(config.data_shards, 4);
         assert_eq!(config.parity_shards, 2);
         assert_eq!(config.total_shards(), 6);
@@ -406,13 +407,16 @@ mod tests {
 
     #[test]
     fn test_encode_decode() {
-        let config = ErasureConfig::new(3, 2).unwrap();
+        let config =
+            ErasureConfig::new(3, 2).expect("test: valid ErasureConfig(3,2) should be created");
         let encoder = SimpleErasureEncoder::new(config);
 
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
         let original_size = data.len();
 
-        let shards = encoder.encode(&data).unwrap();
+        let shards = encoder
+            .encode(&data)
+            .expect("test: encoding data into shards should succeed");
         assert_eq!(shards.len(), 5); // 3 data + 2 parity
 
         // Verify shard properties
@@ -426,27 +430,35 @@ mod tests {
         }
 
         // Decode with all shards
-        let decoded = encoder.decode(&shards[..3], original_size).unwrap();
+        let decoded = encoder
+            .decode(&shards[..3], original_size)
+            .expect("test: decoding data shards should succeed");
         assert_eq!(decoded, data);
     }
 
     #[test]
     fn test_encode_empty_data() {
-        let config = ErasureConfig::new(2, 1).unwrap();
+        let config =
+            ErasureConfig::new(2, 1).expect("test: valid ErasureConfig(2,1) should be created");
         let encoder = SimpleErasureEncoder::new(config);
 
         let data = vec![];
-        let shards = encoder.encode(&data).unwrap();
+        let shards = encoder
+            .encode(&data)
+            .expect("test: encoding empty data should succeed");
         assert_eq!(shards.len(), 3);
     }
 
     #[test]
     fn test_decode_insufficient_shards() {
-        let config = ErasureConfig::new(4, 2).unwrap();
+        let config =
+            ErasureConfig::new(4, 2).expect("test: valid ErasureConfig(4,2) should be created");
         let encoder = SimpleErasureEncoder::new(config);
 
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8];
-        let shards = encoder.encode(&data).unwrap();
+        let shards = encoder
+            .encode(&data)
+            .expect("test: encoding data into shards should succeed");
 
         // Try to decode with only 2 shards (need 4)
         let result = encoder.decode(&shards[..2], data.len());
@@ -456,7 +468,8 @@ mod tests {
     #[test]
     fn test_erasure_metadata() {
         let cid = test_cid();
-        let config = ErasureConfig::new(3, 2).unwrap();
+        let config =
+            ErasureConfig::new(3, 2).expect("test: valid ErasureConfig(3,2) should be created");
         let shard_cids = vec![test_cid(); 5];
 
         let metadata = ErasureMetadata::new(cid, 1000, config, 350, shard_cids);
@@ -469,22 +482,28 @@ mod tests {
 
     #[test]
     fn test_erasure_manager() {
-        let config = ErasureConfig::new(3, 2).unwrap();
+        let config =
+            ErasureConfig::new(3, 2).expect("test: valid ErasureConfig(3,2) should be created");
         let mut manager = ErasureManager::new(config);
 
         let cid = test_cid();
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-        let shards = manager.encode_block(cid, &data).unwrap();
+        let shards = manager
+            .encode_block(cid, &data)
+            .expect("test: encoding block into shards should succeed");
         assert_eq!(shards.len(), 5);
 
-        let decoded = manager.decode_shards(&shards[..3], data.len()).unwrap();
+        let decoded = manager
+            .decode_shards(&shards[..3], data.len())
+            .expect("test: decoding shards back to original data should succeed");
         assert_eq!(decoded, data);
     }
 
     #[test]
     fn test_metadata_caching() {
-        let config = ErasureConfig::new(3, 2).unwrap();
+        let config =
+            ErasureConfig::new(3, 2).expect("test: valid ErasureConfig(3,2) should be created");
         let mut manager = ErasureManager::new(config.clone());
 
         let cid = test_cid();
@@ -495,12 +514,18 @@ mod tests {
 
         let retrieved = manager.get_metadata(&cid);
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().original_size, 1000);
+        assert_eq!(
+            retrieved
+                .expect("test: stored metadata should be retrievable by CID")
+                .original_size,
+            1000
+        );
     }
 
     #[test]
     fn test_can_recover() {
-        let config = ErasureConfig::new(4, 2).unwrap();
+        let config =
+            ErasureConfig::new(4, 2).expect("test: valid ErasureConfig(4,2) should be created");
         let mut manager = ErasureManager::new(config.clone());
 
         let cid = test_cid();

@@ -60,9 +60,9 @@ async fn main() -> ipfrs::Result<()> {
     let cid3 = node.add_bytes(&content3[..]).await?;
 
     // Check and retrieve blocks individually
-    let cids = vec![cid1, cid2, cid3];
+    let cids = [cid1, cid2, cid3];
 
-    for (_i, cid) in cids.iter().enumerate() {
+    for cid in cids.iter() {
         let exists = node.has_block(cid).await?;
         println!("Block {}: exists={}", cid, exists);
 

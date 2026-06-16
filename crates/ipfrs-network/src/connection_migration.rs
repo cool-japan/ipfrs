@@ -448,11 +448,11 @@ mod tests {
     }
 
     fn test_addr() -> Multiaddr {
-        Multiaddr::from_str("/ip4/127.0.0.1/tcp/4001").unwrap()
+        Multiaddr::from_str("/ip4/127.0.0.1/tcp/4001").expect("test: valid multiaddr literal")
     }
 
     fn test_addr2() -> Multiaddr {
-        Multiaddr::from_str("/ip4/192.168.1.1/tcp/4001").unwrap()
+        Multiaddr::from_str("/ip4/192.168.1.1/tcp/4001").expect("test: valid multiaddr literal")
     }
 
     #[test]
@@ -503,7 +503,7 @@ mod tests {
 
         manager
             .initiate_migration(peer, old_addr.clone(), new_addr.clone())
-            .unwrap();
+            .expect("test: first migration initiation should succeed");
 
         let result = manager.initiate_migration(peer, old_addr, new_addr);
         assert!(matches!(result, Err(MigrationError::MigrationInProgress)));
@@ -516,7 +516,7 @@ mod tests {
 
         manager
             .initiate_migration(peer, test_addr(), test_addr2())
-            .unwrap();
+            .expect("test: migration initiation should succeed");
         let result = manager.complete_migration(&peer);
 
         assert!(result.is_ok());
@@ -533,7 +533,7 @@ mod tests {
 
         manager
             .initiate_migration(peer, test_addr(), test_addr2())
-            .unwrap();
+            .expect("test: migration initiation should succeed");
         let result = manager.fail_migration(&peer, "Test error".to_string());
 
         assert!(result.is_ok());
@@ -550,12 +550,15 @@ mod tests {
 
         manager
             .initiate_migration(peer, test_addr(), test_addr2())
-            .unwrap();
+            .expect("test: migration initiation should succeed");
 
         let result = manager.retry_migration(&peer);
         assert!(result.is_ok());
 
-        let attempt = manager.active_migrations.get(&peer).unwrap();
+        let attempt = manager
+            .active_migrations
+            .get(&peer)
+            .expect("test: active migration entry should exist");
         assert_eq!(attempt.retry_count, 1);
     }
 
@@ -570,7 +573,7 @@ mod tests {
 
         manager
             .initiate_migration(peer, test_addr(), test_addr2())
-            .unwrap();
+            .expect("test: migration initiation should succeed");
 
         // First retry should succeed
         assert!(manager.retry_migration(&peer).is_ok());
@@ -592,10 +595,12 @@ mod tests {
 
         manager
             .initiate_migration(peer, test_addr(), test_addr2())
-            .unwrap();
+            .expect("test: migration initiation should succeed");
         assert!(manager.is_migrating(&peer));
 
-        manager.complete_migration(&peer).unwrap();
+        manager
+            .complete_migration(&peer)
+            .expect("test: complete_migration should succeed");
         assert!(!manager.is_migrating(&peer));
     }
 
@@ -606,7 +611,7 @@ mod tests {
 
         manager
             .initiate_migration(peer, test_addr(), test_addr2())
-            .unwrap();
+            .expect("test: migration initiation should succeed");
 
         assert_eq!(
             manager.get_migration_state(&peer),
@@ -615,7 +620,7 @@ mod tests {
 
         manager
             .update_migration_state(&peer, MigrationState::Validating)
-            .unwrap();
+            .expect("test: update_migration_state to Validating should succeed");
         assert_eq!(
             manager.get_migration_state(&peer),
             Some(MigrationState::Validating)
@@ -623,7 +628,7 @@ mod tests {
 
         manager
             .update_migration_state(&peer, MigrationState::Migrating)
-            .unwrap();
+            .expect("test: update_migration_state to Migrating should succeed");
         assert_eq!(
             manager.get_migration_state(&peer),
             Some(MigrationState::Migrating)
@@ -643,10 +648,12 @@ mod tests {
 
         manager
             .initiate_migration(peer, test_addr(), test_addr2())
-            .unwrap();
+            .expect("test: migration initiation should succeed");
         assert!(!manager.can_migrate(&peer));
 
-        manager.complete_migration(&peer).unwrap();
+        manager
+            .complete_migration(&peer)
+            .expect("test: complete_migration should succeed");
         assert!(!manager.can_migrate(&peer)); // Cooldown active
 
         std::thread::sleep(Duration::from_millis(150));
@@ -661,10 +668,10 @@ mod tests {
 
         manager
             .initiate_migration(peer1, test_addr(), test_addr2())
-            .unwrap();
+            .expect("test: peer1 migration initiation should succeed");
         manager
             .initiate_migration(peer2, test_addr(), test_addr2())
-            .unwrap();
+            .expect("test: peer2 migration initiation should succeed");
 
         let active = manager.get_active_migrations();
         assert_eq!(active.len(), 2);
@@ -678,15 +685,19 @@ mod tests {
 
         manager
             .initiate_migration(peer1, test_addr(), test_addr2())
-            .unwrap();
+            .expect("test: peer1 migration initiation should succeed");
         std::thread::sleep(Duration::from_millis(10));
-        manager.complete_migration(&peer1).unwrap();
+        manager
+            .complete_migration(&peer1)
+            .expect("test: peer1 complete_migration should succeed");
 
         manager
             .initiate_migration(peer2, test_addr(), test_addr2())
-            .unwrap();
+            .expect("test: peer2 migration initiation should succeed");
         std::thread::sleep(Duration::from_millis(10));
-        manager.complete_migration(&peer2).unwrap();
+        manager
+            .complete_migration(&peer2)
+            .expect("test: peer2 complete_migration should succeed");
 
         let stats = manager.stats();
         assert!(stats.avg_duration_ms > 0);

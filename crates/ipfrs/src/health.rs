@@ -227,7 +227,7 @@ mod tests {
             .components
             .iter()
             .find(|c| c.name == "storage")
-            .unwrap();
+            .expect("test: storage component should be present");
         assert_eq!(storage.status, HealthStatus::Unhealthy);
     }
 
@@ -240,7 +240,7 @@ mod tests {
             .components
             .iter()
             .find(|c| c.name == "network")
-            .unwrap();
+            .expect("test: network component should be present");
         assert_eq!(network.status, HealthStatus::Degraded);
     }
 }

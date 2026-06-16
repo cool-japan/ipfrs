@@ -95,11 +95,12 @@ impl ArmPerfCounter {
     /// Get average time per operation
     pub fn avg_time(&self) -> Duration {
         let count = self.count();
-        if count == 0 {
-            Duration::from_nanos(0)
-        } else {
-            Duration::from_nanos(self.total_time_ns.load(Ordering::Relaxed) / count)
-        }
+        Duration::from_nanos(
+            self.total_time_ns
+                .load(Ordering::Relaxed)
+                .checked_div(count)
+                .unwrap_or(0),
+        )
     }
 
     /// Reset counter
@@ -189,6 +190,11 @@ pub mod neon_hash {
     ///
     /// This is a simplified example - real implementations would use
     /// more sophisticated hash algorithms optimized for NEON.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure the target CPU supports NEON (AArch64 SIMD) instructions.
+    /// This function is only valid on AArch64 targets with NEON support enabled.
     #[target_feature(enable = "neon")]
     pub unsafe fn hash_block_neon(data: &[u8]) -> u64 {
         let mut hash = 0xcbf29ce484222325u64; // FNV offset basis
@@ -315,7 +321,7 @@ impl<T> LowPowerBatcher<T> {
     ///
     /// Returns the current batch if it's ready to be processed
     pub fn push(&self, item: T) -> Option<Vec<T>> {
-        let mut buffer = self.buffer.lock().unwrap();
+        let mut buffer = self.buffer.lock().unwrap_or_else(|e| e.into_inner());
         buffer.push(item);
 
         if buffer.len() >= self.profile.batch_size() {
@@ -327,7 +333,7 @@ impl<T> LowPowerBatcher<T> {
 
     /// Flush the current batch (returns all pending items)
     pub fn flush(&self) -> Vec<T> {
-        let mut buffer = self.buffer.lock().unwrap();
+        let mut buffer = self.buffer.lock().unwrap_or_else(|e| e.into_inner());
         std::mem::take(&mut *buffer)
     }
 
@@ -338,7 +344,7 @@ impl<T> LowPowerBatcher<T> {
 
     /// Get the number of pending items
     pub fn pending(&self) -> usize {
-        self.buffer.lock().unwrap().len()
+        self.buffer.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 }
 

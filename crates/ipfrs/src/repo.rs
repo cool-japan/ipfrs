@@ -200,7 +200,7 @@ impl<S: BlockStoreTrait> RepoAnalyzer<S> {
         }
 
         // Sort by size descending
-        blocks_with_sizes.sort_by(|a, b| b.1.cmp(&a.1));
+        blocks_with_sizes.sort_by_key(|a| std::cmp::Reverse(a.1));
 
         // Take top N
         blocks_with_sizes.truncate(limit);
@@ -251,79 +251,125 @@ mod tests {
 
     #[tokio::test]
     async fn test_repo_analyzer_empty() {
+        let path =
+            std::env::temp_dir().join(format!("ipfrs_repo_test_empty_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs_repo_test_empty"),
+            path: path.clone(),
             ..Default::default()
         };
-        let storage = Arc::new(SledBlockStore::new(config).unwrap());
+        let storage = Arc::new(
+            SledBlockStore::new(config).expect("test: block store creation should succeed"),
+        );
         let pin_manager = Arc::new(PinManager::new());
         let analyzer = RepoAnalyzer::new(storage.clone(), pin_manager.clone());
 
-        let stats = analyzer.analyze().await.unwrap();
+        let stats = analyzer
+            .analyze()
+            .await
+            .expect("test: analyze should succeed");
         assert_eq!(stats.num_blocks, 0);
         assert_eq!(stats.repo_size, 0);
 
         // Cleanup
-        let _ = std::fs::remove_dir_all("/tmp/ipfrs_repo_test_empty");
+        let _ = std::fs::remove_dir_all(&path);
     }
 
     #[tokio::test]
     async fn test_repo_analyzer_basic() {
+        let path =
+            std::env::temp_dir().join(format!("ipfrs_repo_test_basic_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs_repo_test_basic"),
+            path: path.clone(),
             ..Default::default()
         };
-        let storage = Arc::new(SledBlockStore::new(config).unwrap());
+        let storage = Arc::new(
+            SledBlockStore::new(config).expect("test: block store creation should succeed"),
+        );
         let pin_manager = Arc::new(PinManager::new());
         let analyzer = RepoAnalyzer::new(storage.clone(), pin_manager.clone());
 
         // Add some blocks
-        let block1 = Block::new(Bytes::from(vec![0u8; 100])).unwrap();
-        let block2 = Block::new(Bytes::from(vec![1u8; 200])).unwrap();
+        let block1 =
+            Block::new(Bytes::from(vec![0u8; 100])).expect("test: block creation should succeed");
+        let block2 =
+            Block::new(Bytes::from(vec![1u8; 200])).expect("test: block creation should succeed");
         let cid1 = *block1.cid();
 
-        storage.put(&block1).await.unwrap();
-        storage.put(&block2).await.unwrap();
+        storage
+            .put(&block1)
+            .await
+            .expect("test: put block1 should succeed");
+        storage
+            .put(&block2)
+            .await
+            .expect("test: put block2 should succeed");
 
         // Pin one block
-        pin_manager.pin(cid1, PinType::Direct, None).unwrap();
+        pin_manager
+            .pin(cid1, PinType::Direct, None)
+            .expect("test: pin should succeed");
 
-        let stats = analyzer.analyze().await.unwrap();
+        let stats = analyzer
+            .analyze()
+            .await
+            .expect("test: analyze should succeed");
         assert_eq!(stats.num_blocks, 2);
         assert_eq!(stats.num_pinned, 1);
         assert_eq!(stats.num_unpinned, 1);
         assert_eq!(stats.repo_size, 300);
 
         // Cleanup
-        let _ = std::fs::remove_dir_all("/tmp/ipfrs_repo_test_basic");
+        let _ = std::fs::remove_dir_all(&path);
     }
 
     #[tokio::test]
     async fn test_block_distribution() {
+        let path =
+            std::env::temp_dir().join(format!("ipfrs_repo_test_dist_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
         let config = BlockStoreConfig {
-            path: std::path::PathBuf::from("/tmp/ipfrs_repo_test_dist"),
+            path: path.clone(),
             ..Default::default()
         };
-        let storage = Arc::new(SledBlockStore::new(config).unwrap());
+        let storage = Arc::new(
+            SledBlockStore::new(config).expect("test: block store creation should succeed"),
+        );
         let pin_manager = Arc::new(PinManager::new());
         let analyzer = RepoAnalyzer::new(storage.clone(), pin_manager.clone());
 
         // Add blocks of different sizes
-        let tiny = Block::new(Bytes::from(vec![0u8; 100])).unwrap();
-        let small = Block::new(Bytes::from(vec![1u8; 5000])).unwrap();
-        let medium = Block::new(Bytes::from(vec![2u8; 50000])).unwrap();
+        let tiny =
+            Block::new(Bytes::from(vec![0u8; 100])).expect("test: block creation should succeed");
+        let small =
+            Block::new(Bytes::from(vec![1u8; 5000])).expect("test: block creation should succeed");
+        let medium =
+            Block::new(Bytes::from(vec![2u8; 50000])).expect("test: block creation should succeed");
 
-        storage.put(&tiny).await.unwrap();
-        storage.put(&small).await.unwrap();
-        storage.put(&medium).await.unwrap();
+        storage
+            .put(&tiny)
+            .await
+            .expect("test: put tiny should succeed");
+        storage
+            .put(&small)
+            .await
+            .expect("test: put small should succeed");
+        storage
+            .put(&medium)
+            .await
+            .expect("test: put medium should succeed");
 
-        let dist = analyzer.block_distribution().await.unwrap();
+        let dist = analyzer
+            .block_distribution()
+            .await
+            .expect("test: block_distribution should succeed");
         assert_eq!(dist.tiny, 1);
         assert_eq!(dist.small, 1);
         assert_eq!(dist.medium, 1);
 
         // Cleanup
-        let _ = std::fs::remove_dir_all("/tmp/ipfrs_repo_test_dist");
+        let _ = std::fs::remove_dir_all(&path);
     }
 
     #[test]

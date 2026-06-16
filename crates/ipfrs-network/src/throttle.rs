@@ -358,7 +358,8 @@ mod tests {
     #[test]
     fn test_throttle_disabled() {
         let config = ThrottleConfig::default();
-        let throttle = BandwidthThrottle::new(config).unwrap();
+        let throttle =
+            BandwidthThrottle::new(config).expect("test: default config should create throttle");
 
         // Should fail when disabled
         let result = throttle.check_and_consume(TrafficDirection::Upload, 1000);
@@ -374,7 +375,8 @@ mod tests {
             ..Default::default()
         };
 
-        let throttle = BandwidthThrottle::new(config).unwrap();
+        let throttle = BandwidthThrottle::new(config)
+            .expect("test: upload within limit config should create throttle");
 
         // Should succeed within burst limit
         let result = throttle.check_and_consume(TrafficDirection::Upload, 1500);
@@ -390,7 +392,8 @@ mod tests {
             ..Default::default()
         };
 
-        let throttle = BandwidthThrottle::new(config).unwrap();
+        let throttle = BandwidthThrottle::new(config)
+            .expect("test: upload exceeds limit config should create throttle");
 
         // Consume all burst
         let _ = throttle.check_and_consume(TrafficDirection::Upload, 2000);
@@ -409,7 +412,8 @@ mod tests {
             ..Default::default()
         };
 
-        let throttle = BandwidthThrottle::new(config).unwrap();
+        let throttle = BandwidthThrottle::new(config)
+            .expect("test: download within limit config should create throttle");
 
         // Should succeed within burst limit
         let result = throttle.check_and_consume(TrafficDirection::Download, 8000);
@@ -426,7 +430,8 @@ mod tests {
             ..Default::default()
         };
 
-        let throttle = BandwidthThrottle::new(config).unwrap();
+        let throttle =
+            BandwidthThrottle::new(config).expect("test: refill config should create throttle");
 
         // Consume all tokens
         let _ = throttle.check_and_consume(TrafficDirection::Upload, 1000);
@@ -437,7 +442,7 @@ mod tests {
         // Should have some tokens available now
         let available = throttle.available_bandwidth(TrafficDirection::Upload);
         assert!(available.is_some());
-        assert!(available.unwrap() > 0);
+        assert!(available.expect("test: bandwidth should be available after refill") > 0);
     }
 
     #[test]
@@ -449,7 +454,8 @@ mod tests {
             ..Default::default()
         };
 
-        let throttle = BandwidthThrottle::new(config).unwrap();
+        let throttle = BandwidthThrottle::new(config)
+            .expect("test: available bandwidth config should create throttle");
 
         let available = throttle.available_bandwidth(TrafficDirection::Upload);
         assert_eq!(available, Some(2000)); // Should equal burst size initially
@@ -465,7 +471,8 @@ mod tests {
             ..Default::default()
         };
 
-        let throttle = BandwidthThrottle::new(config).unwrap();
+        let throttle = BandwidthThrottle::new(config)
+            .expect("test: independent directions config should create throttle");
 
         // Consume upload tokens
         let _ = throttle.check_and_consume(TrafficDirection::Upload, 2000);
@@ -483,7 +490,8 @@ mod tests {
             ..Default::default()
         };
 
-        let mut throttle = BandwidthThrottle::new(config).unwrap();
+        let mut throttle = BandwidthThrottle::new(config)
+            .expect("test: update config initial config should create throttle");
 
         // Update to higher limit
         let new_config = ThrottleConfig {
@@ -493,7 +501,9 @@ mod tests {
             ..Default::default()
         };
 
-        throttle.update_config(new_config).unwrap();
+        throttle
+            .update_config(new_config)
+            .expect("test: update_config with valid new config should succeed");
 
         // Should have more bandwidth available
         let available = throttle.available_bandwidth(TrafficDirection::Upload);
@@ -520,7 +530,8 @@ mod tests {
             ..Default::default()
         };
 
-        let throttle = BandwidthThrottle::new(config).unwrap();
+        let throttle = BandwidthThrottle::new(config)
+            .expect("test: no limit direction config should create throttle");
 
         // Download should succeed without limit
         let result = throttle.check_and_consume(TrafficDirection::Download, 1_000_000);

@@ -394,10 +394,8 @@ fn find_paths_recursive(
     paths: &mut Vec<Vec<String>>,
 ) {
     match ipld {
-        Ipld::Link(SerializableCid(cid)) => {
-            if cid == target_cid {
-                paths.push(current_path.clone());
-            }
+        Ipld::Link(SerializableCid(cid)) if cid == target_cid => {
+            paths.push(current_path.clone());
         }
         Ipld::List(items) => {
             for (i, item) in items.iter().enumerate() {

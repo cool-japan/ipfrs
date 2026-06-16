@@ -435,7 +435,9 @@ impl PyTorchCheckpoint {
                         .data
                         .chunks_exact(4)
                         .map(|chunk| {
-                            let bytes: [u8; 4] = chunk.try_into().unwrap();
+                            let bytes: [u8; 4] = chunk
+                                .try_into()
+                                .expect("chunks_exact(4) guarantees exactly 4 bytes");
                             f32::from_le_bytes(bytes)
                         })
                         .collect();
@@ -451,7 +453,9 @@ impl PyTorchCheckpoint {
                         .data
                         .chunks_exact(8)
                         .map(|chunk| {
-                            let bytes: [u8; 8] = chunk.try_into().unwrap();
+                            let bytes: [u8; 8] = chunk
+                                .try_into()
+                                .expect("chunks_exact(8) guarantees exactly 8 bytes");
                             f64::from_le_bytes(bytes)
                         })
                         .collect();
@@ -637,7 +641,9 @@ impl TensorData {
             .data
             .chunks_exact(4)
             .map(|chunk| {
-                let bytes: [u8; 4] = chunk.try_into().unwrap();
+                let bytes: [u8; 4] = chunk
+                    .try_into()
+                    .expect("chunks_exact(4) guarantees exactly 4 bytes");
                 f32::from_le_bytes(bytes)
             })
             .collect())
@@ -657,7 +663,9 @@ impl TensorData {
             .data
             .chunks_exact(8)
             .map(|chunk| {
-                let bytes: [u8; 8] = chunk.try_into().unwrap();
+                let bytes: [u8; 8] = chunk
+                    .try_into()
+                    .expect("chunks_exact(8) guarantees exactly 8 bytes");
                 f64::from_le_bytes(bytes)
             })
             .collect())
@@ -686,7 +694,13 @@ mod tests {
 
         assert_eq!(checkpoint.state_dict().len(), 1);
         assert_eq!(checkpoint.epoch, Some(10));
-        assert_eq!(checkpoint.metadata.get("model_type").unwrap(), "CNN");
+        assert_eq!(
+            checkpoint
+                .metadata
+                .get("model_type")
+                .expect("test: should succeed"),
+            "CNN"
+        );
     }
 
     #[test]
@@ -698,7 +712,7 @@ mod tests {
         assert_eq!(tensor.dtype, "float32");
         assert_eq!(tensor.num_elements(), 4);
 
-        let recovered = tensor.as_f32().unwrap();
+        let recovered = tensor.as_f32().expect("test: should succeed");
         assert_eq!(recovered, data);
     }
 
@@ -710,7 +724,7 @@ mod tests {
         assert_eq!(tensor.shape, vec![2, 2]);
         assert_eq!(tensor.dtype, "float64");
 
-        let recovered = tensor.as_f64().unwrap();
+        let recovered = tensor.as_f64().expect("test: should succeed");
         assert_eq!(recovered, data);
     }
 
@@ -750,7 +764,7 @@ mod tests {
         assert_eq!(state_dict.len(), 1);
         assert!(!state_dict.is_empty());
 
-        let retrieved = state_dict.get("test").unwrap();
+        let retrieved = state_dict.get("test").expect("test: should succeed");
         assert_eq!(retrieved.shape, vec![3]);
     }
 

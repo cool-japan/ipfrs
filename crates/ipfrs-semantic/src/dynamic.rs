@@ -159,7 +159,10 @@ impl DynamicIndex {
 
     /// Get the current active version
     pub fn active_version(&self) -> ModelVersion {
-        self.active_version.read().unwrap().clone()
+        self.active_version
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// Add a new version with optional transform from previous version
@@ -168,7 +171,7 @@ impl DynamicIndex {
         version: ModelVersion,
         transform: Option<EmbeddingTransform>,
     ) -> Result<()> {
-        let mut indices = self.indices.write().unwrap();
+        let mut indices = self.indices.write().unwrap_or_else(|e| e.into_inner());
 
         if indices.contains_key(&version) {
             return Err(Error::InvalidInput(format!(
@@ -182,7 +185,7 @@ impl DynamicIndex {
 
         // Add transform if provided
         if let Some(t) = transform {
-            let mut transforms = self.transforms.write().unwrap();
+            let mut transforms = self.transforms.write().unwrap_or_else(|e| e.into_inner());
             transforms.insert((t.from_version.clone(), t.to_version.clone()), t);
         }
 
@@ -191,7 +194,7 @@ impl DynamicIndex {
 
     /// Set the active version
     pub fn set_active_version(&self, version: ModelVersion) -> Result<()> {
-        let indices = self.indices.read().unwrap();
+        let indices = self.indices.read().unwrap_or_else(|e| e.into_inner());
 
         if !indices.contains_key(&version) {
             return Err(Error::InvalidInput(format!(
@@ -200,7 +203,10 @@ impl DynamicIndex {
             )));
         }
 
-        let mut active = self.active_version.write().unwrap();
+        let mut active = self
+            .active_version
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
         *active = version;
 
         Ok(())
@@ -215,7 +221,7 @@ impl DynamicIndex {
     ) -> Result<()> {
         let version = version.unwrap_or_else(|| self.active_version());
 
-        let mut indices = self.indices.write().unwrap();
+        let mut indices = self.indices.write().unwrap_or_else(|e| e.into_inner());
         let index = indices
             .get_mut(&version)
             .ok_or_else(|| Error::InvalidInput(format!("Version {} does not exist", version)))?;
@@ -233,7 +239,7 @@ impl DynamicIndex {
     ) -> Result<()> {
         let version = version.unwrap_or_else(|| self.active_version());
 
-        let mut indices = self.indices.write().unwrap();
+        let mut indices = self.indices.write().unwrap_or_else(|e| e.into_inner());
         let index = indices
             .get_mut(&version)
             .ok_or_else(|| Error::InvalidInput(format!("Version {} does not exist", version)))?;
@@ -248,7 +254,7 @@ impl DynamicIndex {
 
     /// Migrate embeddings from one version to another
     pub fn migrate(&self, from: &ModelVersion, to: &ModelVersion) -> Result<usize> {
-        let transforms = self.transforms.read().unwrap();
+        let transforms = self.transforms.read().unwrap_or_else(|e| e.into_inner());
         let transform = transforms
             .get(&(from.clone(), to.clone()))
             .ok_or_else(|| Error::InvalidInput(format!("No transform from {} to {}", from, to)))?
@@ -256,7 +262,7 @@ impl DynamicIndex {
         drop(transforms);
 
         // Get all embeddings from source version
-        let indices = self.indices.read().unwrap();
+        let indices = self.indices.read().unwrap_or_else(|e| e.into_inner());
         let source_index = indices.get(from).ok_or_else(|| {
             Error::InvalidInput(format!("Source version {} does not exist", from))
         })?;
@@ -280,7 +286,7 @@ impl DynamicIndex {
             let transformed = transform.apply(&embedding);
 
             // Insert into target index
-            let mut indices = self.indices.write().unwrap();
+            let mut indices = self.indices.write().unwrap_or_else(|e| e.into_inner());
             if let Some(target_index) = indices.get_mut(to) {
                 // Only insert if not already present
                 if !target_index.contains(&cid) {
@@ -296,7 +302,7 @@ impl DynamicIndex {
 
     /// Get statistics for all versions
     pub fn version_stats(&self) -> HashMap<ModelVersion, VersionStats> {
-        let indices = self.indices.read().unwrap();
+        let indices = self.indices.read().unwrap_or_else(|e| e.into_inner());
 
         indices
             .iter()
@@ -345,7 +351,7 @@ impl OnlineUpdater {
 
     /// Update an embedding with a gradient
     pub fn update(&self, cid: &Cid, embedding: &[f32], gradient: &[f32]) -> Vec<f32> {
-        let mut velocity = self.velocity.write().unwrap();
+        let mut velocity = self.velocity.write().unwrap_or_else(|e| e.into_inner());
 
         // Get or initialize velocity for this CID
         let v = velocity
@@ -367,13 +373,13 @@ impl OnlineUpdater {
 
     /// Clear velocity history
     pub fn reset(&self) {
-        let mut velocity = self.velocity.write().unwrap();
+        let mut velocity = self.velocity.write().unwrap_or_else(|e| e.into_inner());
         velocity.clear();
     }
 
     /// Get statistics
     pub fn stats(&self) -> OnlineUpdaterStats {
-        let velocity = self.velocity.read().unwrap();
+        let velocity = self.velocity.read().unwrap_or_else(|e| e.into_inner());
 
         OnlineUpdaterStats {
             learning_rate: self.learning_rate,
@@ -433,7 +439,8 @@ mod tests {
     #[test]
     fn test_dynamic_index_creation() {
         let version = ModelVersion::new(1, 0, 0);
-        let index = DynamicIndex::new(version.clone(), 128).unwrap();
+        let index = DynamicIndex::new(version.clone(), 128)
+            .expect("test: DynamicIndex creation should succeed");
 
         assert_eq!(index.active_version(), version);
     }
@@ -443,8 +450,11 @@ mod tests {
         let v1 = ModelVersion::new(1, 0, 0);
         let v2 = ModelVersion::new(1, 1, 0);
 
-        let index = DynamicIndex::new(v1.clone(), 128).unwrap();
-        index.add_version(v2.clone(), None).unwrap();
+        let index =
+            DynamicIndex::new(v1.clone(), 128).expect("test: DynamicIndex creation should succeed");
+        index
+            .add_version(v2.clone(), None)
+            .expect("test: add_version should succeed");
 
         let stats = index.version_stats();
         assert_eq!(stats.len(), 2);
@@ -457,12 +467,17 @@ mod tests {
         let v1 = ModelVersion::new(1, 0, 0);
         let v2 = ModelVersion::new(1, 1, 0);
 
-        let index = DynamicIndex::new(v1.clone(), 128).unwrap();
-        index.add_version(v2.clone(), None).unwrap();
+        let index =
+            DynamicIndex::new(v1.clone(), 128).expect("test: DynamicIndex creation should succeed");
+        index
+            .add_version(v2.clone(), None)
+            .expect("test: add_version should succeed");
 
         assert_eq!(index.active_version(), v1);
 
-        index.set_active_version(v2.clone()).unwrap();
+        index
+            .set_active_version(v2.clone())
+            .expect("test: set_active_version should succeed");
         assert_eq!(index.active_version(), v2);
     }
 
@@ -471,24 +486,43 @@ mod tests {
         use multihash_codetable::{Code, MultihashDigest};
 
         let version = ModelVersion::new(1, 0, 0);
-        let index = DynamicIndex::new(version, 3).unwrap();
+        let index =
+            DynamicIndex::new(version, 3).expect("test: DynamicIndex creation should succeed");
 
         let data = "test_embedding";
         let hash = Code::Sha2_256.digest(data.as_bytes());
         let cid = Cid::new_v1(0x55, hash);
 
         let embedding = vec![1.0, 2.0, 3.0];
-        index.insert(&cid, &embedding, None).unwrap();
+        index
+            .insert(&cid, &embedding, None)
+            .expect("test: insert should succeed");
 
         let stats = index.version_stats();
-        assert_eq!(stats.values().next().unwrap().num_embeddings, 1);
+        assert_eq!(
+            stats
+                .values()
+                .next()
+                .expect("test: stats should have at least one entry")
+                .num_embeddings,
+            1
+        );
 
         // Update the embedding
         let new_embedding = vec![4.0, 5.0, 6.0];
-        index.update(&cid, &new_embedding, None).unwrap();
+        index
+            .update(&cid, &new_embedding, None)
+            .expect("test: update should succeed");
 
         let stats = index.version_stats();
-        assert_eq!(stats.values().next().unwrap().num_embeddings, 1);
+        assert_eq!(
+            stats
+                .values()
+                .next()
+                .expect("test: stats should have at least one entry")
+                .num_embeddings,
+            1
+        );
     }
 
     #[test]

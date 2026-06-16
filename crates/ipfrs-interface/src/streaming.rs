@@ -572,7 +572,7 @@ pub async fn stream_download(
         .header("X-Chunk-Size", chunk_size.to_string())
         .header("Accept-Ranges", "bytes")
         .body(stream)
-        .unwrap())
+        .expect("building streaming response with valid headers and body is infallible"))
 }
 
 // ============================================================================
@@ -1117,7 +1117,7 @@ pub async fn progress_stream(
         yield Ok(Event::default()
             .event("progress")
             .json_data(initial)
-            .unwrap());
+            .expect("serializing ProgressEvent to JSON is infallible"));
 
         // Stream progress updates
         loop {
@@ -1127,7 +1127,7 @@ pub async fn progress_stream(
                     yield Ok(Event::default()
                         .event("progress")
                         .json_data(event)
-                        .unwrap());
+                        .expect("serializing ProgressEvent to JSON is infallible"));
 
                     if is_complete {
                         break;
@@ -1293,7 +1293,8 @@ mod tests {
             status: ProgressStatus::InProgress,
         };
 
-        let json = serde_json::to_string(&event).unwrap();
+        let json =
+            serde_json::to_string(&event).expect("test: progress event should serialize to JSON");
         assert!(json.contains("test-123"));
         assert!(json.contains("1024"));
         assert!(json.contains("inprogress"));
@@ -1321,7 +1322,8 @@ mod tests {
     #[test]
     fn test_batch_request_deserialization() {
         let json = r#"{"cids": ["QmTest1", "QmTest2"]}"#;
-        let req: BatchGetRequest = serde_json::from_str(json).unwrap();
+        let req: BatchGetRequest = serde_json::from_str(json)
+            .expect("test: valid JSON should deserialize to BatchGetRequest");
         assert_eq!(req.cids.len(), 2);
         assert_eq!(req.cids[0], "QmTest1");
     }
@@ -1329,7 +1331,8 @@ mod tests {
     #[test]
     fn test_batch_put_request_deserialization() {
         let json = r#"{"blocks": [{"data": "SGVsbG8="}]}"#;
-        let req: BatchPutRequest = serde_json::from_str(json).unwrap();
+        let req: BatchPutRequest = serde_json::from_str(json)
+            .expect("test: valid JSON should deserialize to BatchPutRequest");
         assert_eq!(req.blocks.len(), 1);
         assert_eq!(req.blocks[0].data, "SGVsbG8=");
         assert_eq!(req.transaction_mode, TransactionMode::BestEffort); // Default
@@ -1338,7 +1341,8 @@ mod tests {
     #[test]
     fn test_batch_put_request_atomic_mode() {
         let json = r#"{"blocks": [{"data": "SGVsbG8="}], "transaction_mode": "atomic"}"#;
-        let req: BatchPutRequest = serde_json::from_str(json).unwrap();
+        let req: BatchPutRequest = serde_json::from_str(json)
+            .expect("test: valid JSON with atomic mode should deserialize");
         assert_eq!(req.transaction_mode, TransactionMode::Atomic);
     }
 
@@ -1351,11 +1355,13 @@ mod tests {
     #[test]
     fn test_transaction_status_serialization() {
         let status = TransactionStatus::Committed;
-        let json = serde_json::to_string(&status).unwrap();
+        let json = serde_json::to_string(&status)
+            .expect("test: TransactionStatus::Committed should serialize");
         assert_eq!(json, r#""committed""#);
 
         let status = TransactionStatus::RolledBack;
-        let json = serde_json::to_string(&status).unwrap();
+        let json = serde_json::to_string(&status)
+            .expect("test: TransactionStatus::RolledBack should serialize");
         assert_eq!(json, r#""rolledback""#);
     }
 
@@ -1368,7 +1374,8 @@ mod tests {
             transaction_status: TransactionStatus::Committed,
         };
 
-        let json = serde_json::to_string(&response).unwrap();
+        let json = serde_json::to_string(&response)
+            .expect("test: BatchPutResponse should serialize to JSON");
         assert!(json.contains("test-txn-123"));
         assert!(json.contains("committed"));
     }
@@ -1466,11 +1473,14 @@ mod tests {
         let token = ResumeToken::new("op-123".to_string(), 4096, Some("QmTest123".to_string()));
 
         // Encode
-        let encoded = token.encode().unwrap();
+        let encoded = token
+            .encode()
+            .expect("test: resume token should encode successfully");
         assert!(!encoded.is_empty());
 
         // Decode
-        let decoded = ResumeToken::decode(&encoded).unwrap();
+        let decoded =
+            ResumeToken::decode(&encoded).expect("test: valid encoded token should decode");
         assert_eq!(decoded.operation_id, "op-123");
         assert_eq!(decoded.offset, 4096);
         assert_eq!(decoded.cid, Some("QmTest123".to_string()));
@@ -1494,22 +1504,26 @@ mod tests {
     #[test]
     fn test_operation_type_serialization() {
         let upload = OperationType::Upload;
-        let json = serde_json::to_string(&upload).unwrap();
+        let json =
+            serde_json::to_string(&upload).expect("test: OperationType::Upload should serialize");
         assert_eq!(json, r#""upload""#);
 
         let download = OperationType::Download;
-        let json = serde_json::to_string(&download).unwrap();
+        let json = serde_json::to_string(&download)
+            .expect("test: OperationType::Download should serialize");
         assert_eq!(json, r#""download""#);
     }
 
     #[test]
     fn test_operation_status_serialization() {
         let status = OperationStatus::InProgress;
-        let json = serde_json::to_string(&status).unwrap();
+        let json = serde_json::to_string(&status)
+            .expect("test: OperationStatus::InProgress should serialize");
         assert_eq!(json, r#""inprogress""#);
 
         let status = OperationStatus::Cancelled;
-        let json = serde_json::to_string(&status).unwrap();
+        let json = serde_json::to_string(&status)
+            .expect("test: OperationStatus::Cancelled should serialize");
         assert_eq!(json, r#""cancelled""#);
     }
 
@@ -1521,7 +1535,8 @@ mod tests {
             resume_token: Some("token123".to_string()),
         };
 
-        let json = serde_json::to_string(&response).unwrap();
+        let json = serde_json::to_string(&response)
+            .expect("test: CancelResponse should serialize to JSON");
         assert!(json.contains("op-456"));
         assert!(json.contains("true"));
         assert!(json.contains("token123"));

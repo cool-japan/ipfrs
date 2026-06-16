@@ -1,12 +1,13 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use ipfrs::{Node, NodeConfig};
 use ipfrs_tensorlogic::ir::{Constant, Predicate, Rule, Term};
+use std::hint::black_box;
 use std::path::PathBuf;
 use tokio::runtime::Runtime;
 
 fn create_test_node() -> Node {
     let path = "/tmp/ipfrs-bench-logic";
-    let _ = std::fs::remove_dir_all(&path);
+    let _ = std::fs::remove_dir_all(path);
 
     let mut config = NodeConfig::default();
     config.storage.path = PathBuf::from(path);
@@ -101,7 +102,7 @@ fn bench_complex_inference(c: &mut Criterion) {
     rt.block_on(node.start()).unwrap();
 
     // Add facts for family relationships
-    let people = vec!["Alice", "Bob", "Charlie", "Diana", "Eve"];
+    let people = ["Alice", "Bob", "Charlie", "Diana", "Eve"];
     for i in 0..people.len() - 1 {
         let fact = Predicate::new(
             "parent".to_string(),

@@ -182,8 +182,8 @@ impl HybridIndex {
             config.ef_construction,
         )?;
 
-        let cache_size =
-            NonZeroUsize::new(config.cache_size).unwrap_or(NonZeroUsize::new(1000).unwrap());
+        let cache_size = NonZeroUsize::new(config.cache_size)
+            .unwrap_or(NonZeroUsize::new(1000).expect("1000 > 0"));
 
         Ok(Self {
             vector_index: Arc::new(RwLock::new(vector_index)),
@@ -204,7 +204,10 @@ impl HybridIndex {
         let timer = PerfTimer::start();
 
         // Insert into vector index
-        self.vector_index.write().unwrap().insert(cid, vector)?;
+        self.vector_index
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(cid, vector)?;
 
         // Insert metadata if provided
         if let Some(meta) = metadata {
@@ -219,7 +222,10 @@ impl HybridIndex {
         }
 
         // Invalidate cache
-        self.cache.write().unwrap().clear();
+        self.cache
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
 
         Ok(())
     }
@@ -234,7 +240,10 @@ impl HybridIndex {
 
     /// Delete a vector and its metadata
     pub fn delete(&self, cid: &Cid) -> Result<()> {
-        self.vector_index.write().unwrap().delete(cid)?;
+        self.vector_index
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .delete(cid)?;
         self.metadata_store.remove(cid)?;
 
         if self.config.collect_stats {
@@ -242,7 +251,10 @@ impl HybridIndex {
         }
 
         // Invalidate cache
-        self.cache.write().unwrap().clear();
+        self.cache
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
 
         Ok(())
     }
@@ -316,11 +328,11 @@ impl HybridIndex {
         let ef_search = query.ef_search.unwrap_or(self.config.ef_search);
         let fetch_k = (query.k * 3).max(100); // Fetch more to account for filtering
 
-        let search_results =
-            self.vector_index
-                .read()
-                .unwrap()
-                .search(&query.vector, fetch_k, ef_search)?;
+        let search_results = self
+            .vector_index
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .search(&query.vector, fetch_k, ef_search)?;
 
         // Filter results to candidates
         let mut results: Vec<HybridResult> = search_results
@@ -377,11 +389,11 @@ impl HybridIndex {
             query.k
         };
 
-        let search_results =
-            self.vector_index
-                .read()
-                .unwrap()
-                .search(&query.vector, fetch_k, ef_search)?;
+        let search_results = self
+            .vector_index
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .search(&query.vector, fetch_k, ef_search)?;
 
         *total_evaluated = search_results.len();
 
@@ -487,7 +499,10 @@ impl HybridIndex {
 
     /// Get the number of indexed vectors
     pub fn len(&self) -> usize {
-        self.vector_index.read().unwrap().len()
+        self.vector_index
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .len()
     }
 
     /// Check if the index is empty
@@ -497,7 +512,10 @@ impl HybridIndex {
 
     /// Check if a CID exists
     pub fn contains(&self, cid: &Cid) -> bool {
-        self.vector_index.read().unwrap().contains(cid)
+        self.vector_index
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(cid)
     }
 
     /// Get metadata for a CID
@@ -542,7 +560,10 @@ impl HybridIndex {
 
     /// Clear the search cache
     pub fn clear_cache(&self) {
-        self.cache.write().unwrap().clear();
+        self.cache
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 
     /// Reset statistics
@@ -552,7 +573,10 @@ impl HybridIndex {
 
     /// Save the index to a path
     pub async fn save(&self, path: impl AsRef<std::path::Path>) -> Result<()> {
-        self.vector_index.read().unwrap().save(path)
+        self.vector_index
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .save(path)
     }
 
     /// Clear all data
@@ -565,9 +589,12 @@ impl HybridIndex {
             self.config.ef_construction,
         )?;
 
-        *self.vector_index.write().unwrap() = new_index;
+        *self.vector_index.write().unwrap_or_else(|e| e.into_inner()) = new_index;
         self.metadata_store.clear();
-        self.cache.write().unwrap().clear();
+        self.cache
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
         self.stats.reset();
 
         Ok(())
@@ -619,12 +646,19 @@ impl HybridIndex {
 
         // Remove from both indexes
         for cid in &cids_to_remove {
-            let _ = self.vector_index.write().unwrap().delete(cid);
+            let _ = self
+                .vector_index
+                .write()
+                .unwrap_or_else(|e| e.into_inner())
+                .delete(cid);
             let _ = self.metadata_store.remove(cid);
         }
 
         // Clear cache since data has changed
-        self.cache.write().unwrap().clear();
+        self.cache
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
 
         Ok(count)
     }
@@ -658,12 +692,19 @@ impl HybridIndex {
 
         // Remove the oldest entries
         for (cid, _) in entries.iter().take(to_remove) {
-            let _ = self.vector_index.write().unwrap().delete(cid);
+            let _ = self
+                .vector_index
+                .write()
+                .unwrap_or_else(|e| e.into_inner())
+                .delete(cid);
             let _ = self.metadata_store.remove(cid);
         }
 
         // Clear cache
-        self.cache.write().unwrap().clear();
+        self.cache
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
 
         Ok(to_remove)
     }
@@ -700,12 +741,19 @@ impl HybridIndex {
 
         // Remove the least recently updated entries
         for (cid, _) in entries.iter().take(to_remove) {
-            let _ = self.vector_index.write().unwrap().delete(cid);
+            let _ = self
+                .vector_index
+                .write()
+                .unwrap_or_else(|e| e.into_inner())
+                .delete(cid);
             let _ = self.metadata_store.remove(cid);
         }
 
         // Clear cache
-        self.cache.write().unwrap().clear();
+        self.cache
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
 
         Ok(to_remove)
     }
@@ -814,7 +862,9 @@ mod tests {
             "bafybeiczsscdsbs7ffqz55asqdf3smv6klcw3gofszvwlyarci47bgf354",
             "bafybeibvfkifsqbapirjrj7zbfwddz5qz5awvbftjgktpcqcxjkzstszlm",
         ];
-        cids[n as usize % cids.len()].parse().unwrap()
+        cids[n as usize % cids.len()]
+            .parse()
+            .expect("test: parse test cid")
     }
 
     #[tokio::test]
@@ -824,13 +874,15 @@ mod tests {
             ..Default::default()
         };
 
-        let index = HybridIndex::new(config).unwrap();
+        let index = HybridIndex::new(config).expect("test: create hybrid index basic");
 
         let cid1 = test_cid(0);
         let vec1 = vec![1.0, 0.0, 0.0, 0.0];
         let meta1 = Metadata::new().with_string("type", "image");
 
-        index.insert(&cid1, &vec1, Some(meta1)).unwrap();
+        index
+            .insert(&cid1, &vec1, Some(meta1))
+            .expect("test: insert cid1 basic");
 
         assert_eq!(index.len(), 1);
         assert!(index.contains(&cid1));
@@ -843,7 +895,7 @@ mod tests {
             ..Default::default()
         };
 
-        let index = HybridIndex::new(config).unwrap();
+        let index = HybridIndex::new(config).expect("test: create hybrid index for search");
 
         // Insert some vectors with metadata (more vectors for better HNSW graph connectivity)
         let cid1 = test_cid(0);
@@ -864,14 +916,20 @@ mod tests {
             .with_string("type", "audio")
             .with_integer("size", 512);
 
-        index.insert(&cid1, &vec1, Some(meta1)).unwrap();
-        index.insert(&cid2, &vec2, Some(meta2)).unwrap();
-        index.insert(&cid3, &vec3, Some(meta3)).unwrap();
+        index
+            .insert(&cid1, &vec1, Some(meta1))
+            .expect("test: insert cid1 for search");
+        index
+            .insert(&cid2, &vec2, Some(meta2))
+            .expect("test: insert cid2 for search");
+        index
+            .insert(&cid3, &vec3, Some(meta3))
+            .expect("test: insert cid3 for search");
 
         // Simple k-NN search with explicit ef_search to ensure results are found
         let mut query = HybridQuery::knn(vec![1.0, 0.0, 0.0, 0.0], 2);
         query.ef_search = Some(50); // Ensure we search enough candidates
-        let response = index.search(query).await.unwrap();
+        let response = index.search(query).await.expect("test: hybrid search");
 
         assert!(
             !response.results.is_empty(),
@@ -880,7 +938,7 @@ mod tests {
         );
         // With 3 vectors and k=2, we should get 2 results
         assert!(
-            response.results.len() >= 1 && response.results.len() <= 2,
+            !response.results.is_empty() && response.results.len() <= 2,
             "Expected 1-2 results, got {}",
             response.results.len()
         );
@@ -895,7 +953,8 @@ mod tests {
             ..Default::default()
         };
 
-        let index = HybridIndex::new(config).unwrap();
+        let index =
+            HybridIndex::new(config).expect("test: create hybrid index for filtered search");
 
         let cid1 = test_cid(0);
         let vec1 = vec![1.0, 0.0, 0.0, 0.0];
@@ -905,13 +964,17 @@ mod tests {
         let vec2 = vec![0.9, 0.1, 0.0, 0.0];
         let meta2 = Metadata::new().with_string("category", "science");
 
-        index.insert(&cid1, &vec1, Some(meta1)).unwrap();
-        index.insert(&cid2, &vec2, Some(meta2)).unwrap();
+        index
+            .insert(&cid1, &vec1, Some(meta1))
+            .expect("test: insert cid1 filtered");
+        index
+            .insert(&cid2, &vec2, Some(meta2))
+            .expect("test: insert cid2 filtered");
 
         // Search with filter
         let filter = MetadataFilter::eq("category", MetadataValue::String("tech".to_string()));
         let query = HybridQuery::knn(vec![0.9, 0.1, 0.0, 0.0], 10).with_filter(filter);
-        let response = index.search(query).await.unwrap();
+        let response = index.search(query).await.expect("test: filtered search");
 
         // Should only return tech category
         assert_eq!(response.results.len(), 1);
@@ -925,21 +988,29 @@ mod tests {
             ..Default::default()
         };
 
-        let index = HybridIndex::new(config).unwrap();
+        let index = HybridIndex::new(config).expect("test: create hybrid index with metadata");
 
         let cid1 = test_cid(0);
         let vec1 = vec![1.0, 0.0, 0.0, 0.0];
         let meta1 = Metadata::new().with_string("title", "Test Document");
 
-        index.insert(&cid1, &vec1, Some(meta1)).unwrap();
+        index
+            .insert(&cid1, &vec1, Some(meta1))
+            .expect("test: insert cid1 with metadata");
 
         let query = HybridQuery::knn(vec![1.0, 0.0, 0.0, 0.0], 1).with_metadata();
-        let response = index.search(query).await.unwrap();
+        let response = index
+            .search(query)
+            .await
+            .expect("test: search with metadata");
 
         assert_eq!(response.results.len(), 1);
         assert!(response.results[0].metadata.is_some());
 
-        let meta = response.results[0].metadata.as_ref().unwrap();
+        let meta = response.results[0]
+            .metadata
+            .as_ref()
+            .expect("test: result should have metadata");
         assert_eq!(
             meta.get("title"),
             Some(&MetadataValue::String("Test Document".to_string()))
@@ -953,7 +1024,7 @@ mod tests {
             ..Default::default()
         };
 
-        let index = HybridIndex::new(config).unwrap();
+        let index = HybridIndex::new(config).expect("test: create hybrid index for health stats");
 
         let health = index.health();
         assert_eq!(health.size, 0);
@@ -969,20 +1040,24 @@ mod tests {
             ..Default::default()
         };
 
-        let index = HybridIndex::new(config).unwrap();
+        let index = HybridIndex::new(config).expect("test: create hybrid index for pruning");
 
         // Insert 3 entries
         for i in 0..3 {
             let cid = test_cid(i);
             let vec = vec![i as f32, 0.0, 0.0, 0.0];
             let meta = Metadata::new().with_integer("order", i as i64);
-            index.insert(&cid, &vec, Some(meta)).unwrap();
+            index
+                .insert(&cid, &vec, Some(meta))
+                .expect("test: insert vector for pruning");
         }
 
         assert_eq!(index.len(), 3);
 
         // Prune to max 2 entries
-        let pruned = index.prune_to_max_entries(2).unwrap();
+        let pruned = index
+            .prune_to_max_entries(2)
+            .expect("test: prune to max entries");
         assert_eq!(pruned, 1);
         assert_eq!(index.len(), 2);
     }
@@ -994,13 +1069,15 @@ mod tests {
             ..Default::default()
         };
 
-        let index = HybridIndex::new(config).unwrap();
+        let index = HybridIndex::new(config).expect("test: create hybrid index for pruning stats");
 
         // Insert some entries
         for i in 0..3 {
             let cid = test_cid(i);
             let vec = vec![i as f32, 0.0, 0.0, 0.0];
-            index.insert(&cid, &vec, None).unwrap();
+            index
+                .insert(&cid, &vec, None)
+                .expect("test: insert vector for pruning stats");
         }
 
         let stats = index.pruning_stats();

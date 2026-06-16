@@ -381,7 +381,7 @@ fn json_value_to_ipld(value: &serde_json::Value) -> Result<Ipld> {
         serde_json::Value::Object(obj) => {
             // Check if it's a special IPLD object
             if obj.len() == 1 && obj.contains_key("/") {
-                let special = obj.get("/").unwrap();
+                let special = obj.get("/").expect("just confirmed key '/' is present");
 
                 // Check if it's bytes: {"/": {"bytes": "<base64>"}}
                 if let Some(bytes_obj) = special.as_object() {
@@ -438,7 +438,7 @@ fn base64_encode(data: &[u8]) -> String {
         ];
 
         for c in &chars {
-            write!(&mut result, "{}", c).unwrap();
+            write!(&mut result, "{}", c).expect("write to String is infallible");
         }
     }
     result

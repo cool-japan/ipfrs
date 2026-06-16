@@ -339,7 +339,7 @@ mod tests {
     fn test_peer_memory() {
         let manager = MultiTransportManager::new(MultiTransportConfig::default());
 
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "127.0.0.1:8080".parse().expect("test: valid socket addr");
         manager.peer_transports.insert(addr, TransportType::Quic);
 
         let stats = manager.transport_usage_stats();

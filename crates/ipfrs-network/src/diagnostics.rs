@@ -536,7 +536,12 @@ mod tests {
 
         let latest = diag.latest_result(DiagnosticTest::DhtHealth);
         assert!(latest.is_some());
-        assert_eq!(latest.unwrap().test_name, "DHT Health");
+        assert_eq!(
+            latest
+                .expect("test: latest DHT Health result should be present")
+                .test_name,
+            "DHT Health"
+        );
     }
 
     #[test]
@@ -568,14 +573,21 @@ mod tests {
 
         let latest = diag.latest_metrics();
         assert!(latest.is_some());
-        assert_eq!(latest.unwrap().connected_peers, 10);
+        assert_eq!(
+            latest
+                .expect("test: latest metrics should be present after record_metrics")
+                .connected_peers,
+            10
+        );
     }
 
     #[test]
     fn test_troubleshooting_guide() {
         let advice = TroubleshootingGuide::get_advice("no_peers");
         assert!(advice.is_some());
-        assert!(advice.unwrap().contains("bootstrap"));
+        assert!(advice
+            .expect("test: advice for no_peers should be Some")
+            .contains("bootstrap"));
 
         let topics = TroubleshootingGuide::list_topics();
         assert!(topics.contains(&"no_peers"));

@@ -346,7 +346,9 @@ mod tests {
     #[test]
     fn test_bootstrap_manager_add_peer() {
         let manager = BootstrapManager::default();
-        let addr: Multiaddr = "/ip4/127.0.0.1/tcp/4001".parse().unwrap();
+        let addr: Multiaddr = "/ip4/127.0.0.1/tcp/4001"
+            .parse()
+            .expect("test: valid multiaddr should parse");
 
         manager.add_peer(addr.clone());
         let peers = manager.get_peers_to_dial();
@@ -363,7 +365,9 @@ mod tests {
             ..Default::default()
         };
         let manager = BootstrapManager::new(config);
-        let addr: Multiaddr = "/ip4/127.0.0.1/tcp/4001".parse().unwrap();
+        let addr: Multiaddr = "/ip4/127.0.0.1/tcp/4001"
+            .parse()
+            .expect("test: valid multiaddr should parse");
 
         manager.add_peer(addr.clone());
         manager.record_dial_attempt(&addr);
@@ -388,7 +392,9 @@ mod tests {
             ..Default::default()
         };
         let manager = BootstrapManager::new(config);
-        let addr: Multiaddr = "/ip4/127.0.0.1/tcp/4001".parse().unwrap();
+        let addr: Multiaddr = "/ip4/127.0.0.1/tcp/4001"
+            .parse()
+            .expect("test: valid multiaddr should parse");
 
         manager.add_peer(addr.clone());
 
@@ -417,7 +423,9 @@ mod tests {
             ..Default::default()
         };
         let manager = BootstrapManager::new(config);
-        let addr: Multiaddr = "/ip4/127.0.0.1/tcp/4001".parse().unwrap();
+        let addr: Multiaddr = "/ip4/127.0.0.1/tcp/4001"
+            .parse()
+            .expect("test: valid multiaddr should parse");
         let peer_id = PeerId::random();
 
         manager.add_peer(addr.clone());

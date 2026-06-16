@@ -353,7 +353,7 @@ impl FederatedQueryExecutor {
 
     /// Apply differential privacy noise to query embedding
     fn apply_privacy_noise(&self, embedding: &[f32]) -> Vec<f32> {
-        use rand::Rng;
+        use rand::RngExt;
         let mut rng = rand::rng();
 
         embedding
@@ -401,7 +401,11 @@ impl FederatedQueryExecutor {
             .collect();
 
         // Sort by score and take top k
-        federated.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
+        federated.sort_by(|a, b| {
+            a.score
+                .partial_cmp(&b.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         federated.truncate(k);
 
         Ok(federated)
@@ -439,7 +443,11 @@ impl FederatedQueryExecutor {
             .collect();
 
         // Sort by RRF score (higher is better)
-        federated.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+        federated.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         federated.truncate(k);
 
         Ok(federated)
@@ -493,7 +501,11 @@ impl FederatedQueryExecutor {
         }
 
         // Sort by normalized score and take top k
-        normalized.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
+        normalized.sort_by(|a, b| {
+            a.score
+                .partial_cmp(&b.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         normalized.truncate(k);
 
         Ok(normalized)
@@ -537,7 +549,11 @@ impl FederatedQueryExecutor {
             .collect();
 
         // Sort by Borda score (higher is better)
-        federated.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+        federated.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         federated.truncate(k);
 
         Ok(federated)
@@ -592,14 +608,19 @@ mod tests {
     async fn test_register_and_unregister_index() {
         let executor = FederatedQueryExecutor::new(FederatedConfig::default());
 
-        let index = VectorIndex::new(128, DistanceMetric::Cosine, 16, 200).unwrap();
+        let index = VectorIndex::new(128, DistanceMetric::Cosine, 16, 200)
+            .expect("test: create cosine index");
         let adapter =
             LocalIndexAdapter::new(Arc::new(RwLock::new(index)), "test_index".to_string());
 
-        executor.register_index(Arc::new(adapter)).unwrap();
+        executor
+            .register_index(Arc::new(adapter))
+            .expect("test: register test index");
         assert_eq!(executor.registered_indices().len(), 1);
 
-        executor.unregister_index("test_index").unwrap();
+        executor
+            .unregister_index("test_index")
+            .expect("test: unregister test index");
         assert_eq!(executor.registered_indices().len(), 0);
     }
 
@@ -608,7 +629,8 @@ mod tests {
         let executor = FederatedQueryExecutor::new(FederatedConfig::default());
 
         // Create and populate an index
-        let index = VectorIndex::new(128, DistanceMetric::Cosine, 16, 200).unwrap();
+        let index = VectorIndex::new(128, DistanceMetric::Cosine, 16, 200)
+            .expect("test: create cosine index for single query");
         let index_lock = Arc::new(RwLock::new(index));
 
         // Insert some vectors
@@ -617,15 +639,23 @@ mod tests {
             let hash = Code::Sha2_256.digest(data.as_bytes());
             let cid = Cid::new_v1(0x55, hash);
             let embedding: Vec<f32> = (0..128).map(|j| (i + j) as f32 * 0.01).collect();
-            index_lock.write().insert(&cid, &embedding).unwrap();
+            index_lock
+                .write()
+                .insert(&cid, &embedding)
+                .expect("test: insert vector into index");
         }
 
         let adapter = LocalIndexAdapter::new(Arc::clone(&index_lock), "index1".to_string());
-        executor.register_index(Arc::new(adapter)).unwrap();
+        executor
+            .register_index(Arc::new(adapter))
+            .expect("test: register index1");
 
         // Query
         let query_emb: Vec<f32> = (0..128).map(|i| i as f32 * 0.01).collect();
-        let results = executor.query(&query_emb, 10).await.unwrap();
+        let results = executor
+            .query(&query_emb, 10)
+            .await
+            .expect("test: federated query single index");
 
         assert!(!results.is_empty());
         assert!(results.len() <= 10);
@@ -640,8 +670,10 @@ mod tests {
         let executor = FederatedQueryExecutor::new(config);
 
         // Create two indices with different metrics
-        let index1 = VectorIndex::new(128, DistanceMetric::Cosine, 16, 200).unwrap();
-        let index2 = VectorIndex::new(128, DistanceMetric::L2, 16, 200).unwrap();
+        let index1 = VectorIndex::new(128, DistanceMetric::Cosine, 16, 200)
+            .expect("test: create cosine index1");
+        let index2 =
+            VectorIndex::new(128, DistanceMetric::L2, 16, 200).expect("test: create l2 index2");
 
         let lock1 = Arc::new(RwLock::new(index1));
         let lock2 = Arc::new(RwLock::new(index2));
@@ -652,7 +684,10 @@ mod tests {
             let hash = Code::Sha2_256.digest(data.as_bytes());
             let cid = Cid::new_v1(0x55, hash);
             let embedding: Vec<f32> = (0..128).map(|j| (i + j) as f32 * 0.01).collect();
-            lock1.write().insert(&cid, &embedding).unwrap();
+            lock1
+                .write()
+                .insert(&cid, &embedding)
+                .expect("test: insert into index1");
         }
 
         for i in 25..75 {
@@ -661,7 +696,10 @@ mod tests {
             let hash = Code::Sha2_256.digest(data.as_bytes());
             let cid = Cid::new_v1(0x55, hash);
             let embedding: Vec<f32> = (0..128).map(|j| (i + j) as f32 * 0.01).collect();
-            lock2.write().insert(&cid, &embedding).unwrap();
+            lock2
+                .write()
+                .insert(&cid, &embedding)
+                .expect("test: insert into index2");
         }
 
         executor
@@ -669,17 +707,20 @@ mod tests {
                 Arc::clone(&lock1),
                 "index1".to_string(),
             )))
-            .unwrap();
+            .expect("test: register index1 for multi");
         executor
             .register_index(Arc::new(LocalIndexAdapter::new(
                 Arc::clone(&lock2),
                 "index2".to_string(),
             )))
-            .unwrap();
+            .expect("test: register index2 for multi");
 
         // Query
         let query_emb: Vec<f32> = (0..128).map(|i| i as f32 * 0.02).collect();
-        let results = executor.query(&query_emb, 10).await.unwrap();
+        let results = executor
+            .query(&query_emb, 10)
+            .await
+            .expect("test: federated query multiple indices");
 
         assert!(!results.is_empty());
         assert!(results.len() <= 10);
@@ -704,7 +745,8 @@ mod tests {
             };
             let executor = FederatedQueryExecutor::new(config);
 
-            let index = VectorIndex::new(128, DistanceMetric::Cosine, 16, 200).unwrap();
+            let index = VectorIndex::new(128, DistanceMetric::Cosine, 16, 200)
+                .expect("test: create index for strategy test");
             let lock = Arc::new(RwLock::new(index));
 
             // Populate
@@ -713,7 +755,9 @@ mod tests {
                 let hash = Code::Sha2_256.digest(data.as_bytes());
                 let cid = Cid::new_v1(0x55, hash);
                 let embedding: Vec<f32> = (0..128).map(|j| (i + j) as f32 * 0.01).collect();
-                lock.write().insert(&cid, &embedding).unwrap();
+                lock.write()
+                    .insert(&cid, &embedding)
+                    .expect("test: insert vector for strategy test");
             }
 
             executor
@@ -721,10 +765,13 @@ mod tests {
                     lock,
                     format!("index_{:?}", strategy),
                 )))
-                .unwrap();
+                .expect("test: register index for strategy");
 
             let query_emb: Vec<f32> = (0..128).map(|i| i as f32 * 0.01).collect();
-            let results = executor.query(&query_emb, 5).await.unwrap();
+            let results = executor
+                .query(&query_emb, 5)
+                .await
+                .expect("test: strategy query");
 
             assert!(!results.is_empty(), "Strategy {:?} failed", strategy);
         }
@@ -740,7 +787,8 @@ mod tests {
 
         let executor = FederatedQueryExecutor::new(config);
 
-        let index = VectorIndex::new(128, DistanceMetric::Cosine, 16, 200).unwrap();
+        let index = VectorIndex::new(128, DistanceMetric::Cosine, 16, 200)
+            .expect("test: create cosine index for privacy test");
         let lock = Arc::new(RwLock::new(index));
 
         for i in 0..30 {
@@ -748,7 +796,9 @@ mod tests {
             let hash = Code::Sha2_256.digest(data.as_bytes());
             let cid = Cid::new_v1(0x55, hash);
             let embedding: Vec<f32> = (0..128).map(|j| (i + j) as f32 * 0.01).collect();
-            lock.write().insert(&cid, &embedding).unwrap();
+            lock.write()
+                .insert(&cid, &embedding)
+                .expect("test: insert private vector");
         }
 
         executor
@@ -756,10 +806,13 @@ mod tests {
                 lock,
                 "private_index".to_string(),
             )))
-            .unwrap();
+            .expect("test: register private index");
 
         let query_emb: Vec<f32> = (0..128).map(|i| i as f32 * 0.01).collect();
-        let results = executor.query(&query_emb, 5).await.unwrap();
+        let results = executor
+            .query(&query_emb, 5)
+            .await
+            .expect("test: privacy preserving query");
 
         // Results should still be returned (with noise applied to query)
         assert!(!results.is_empty());
@@ -771,7 +824,8 @@ mod tests {
 
         // Register three indices
         for idx_num in 0..3 {
-            let index = VectorIndex::new(128, DistanceMetric::Cosine, 16, 200).unwrap();
+            let index = VectorIndex::new(128, DistanceMetric::Cosine, 16, 200)
+                .expect("test: create cosine index for specific indices test");
             let lock = Arc::new(RwLock::new(index));
 
             for i in 0..20 {
@@ -780,7 +834,9 @@ mod tests {
                 let cid = Cid::new_v1(0x55, hash);
                 let embedding: Vec<f32> =
                     (0..128).map(|j| (i + j + idx_num) as f32 * 0.01).collect();
-                lock.write().insert(&cid, &embedding).unwrap();
+                lock.write()
+                    .insert(&cid, &embedding)
+                    .expect("test: insert vector into specific index");
             }
 
             executor
@@ -788,7 +844,7 @@ mod tests {
                     lock,
                     format!("index_{}", idx_num),
                 )))
-                .unwrap();
+                .expect("test: register specific index");
         }
 
         // Query only specific indices
@@ -800,7 +856,7 @@ mod tests {
                 &["index_0".to_string(), "index_2".to_string()],
             )
             .await
-            .unwrap();
+            .expect("test: query specific indices");
 
         assert!(!results.is_empty());
 

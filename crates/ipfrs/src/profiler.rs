@@ -31,13 +31,13 @@ impl Profiler {
 
     /// Record a duration for an operation
     fn record(&self, operation: String, duration: Duration) {
-        let mut measurements = self.measurements.lock().unwrap();
+        let mut measurements = self.measurements.lock().unwrap_or_else(|e| e.into_inner());
         measurements.entry(operation).or_default().push(duration);
     }
 
     /// Get statistics for an operation
     pub fn stats(&self, operation: &str) -> Option<OperationStats> {
-        let measurements = self.measurements.lock().unwrap();
+        let measurements = self.measurements.lock().unwrap_or_else(|e| e.into_inner());
         let durations = measurements.get(operation)?;
 
         if durations.is_empty() {
@@ -71,7 +71,7 @@ impl Profiler {
 
     /// Get all recorded operations
     pub fn operations(&self) -> Vec<String> {
-        let measurements = self.measurements.lock().unwrap();
+        let measurements = self.measurements.lock().unwrap_or_else(|e| e.into_inner());
         measurements.keys().cloned().collect()
     }
 
@@ -106,7 +106,7 @@ impl Profiler {
 
     /// Clear all measurements
     pub fn clear(&self) {
-        let mut measurements = self.measurements.lock().unwrap();
+        let mut measurements = self.measurements.lock().unwrap_or_else(|e| e.into_inner());
         measurements.clear();
     }
 }
@@ -173,7 +173,9 @@ mod tests {
         }
 
         // Check stats
-        let stats = profiler.stats("test_op").unwrap();
+        let stats = profiler
+            .stats("test_op")
+            .expect("test: stats for test_op should exist");
         assert_eq!(stats.count, 2);
         assert!(stats.total >= Duration::from_millis(30));
         assert!(stats.avg >= Duration::from_millis(15));

@@ -10,7 +10,7 @@ use ipfrs_transport::{
     session::{Session, SessionConfig, SessionEvent, SessionState},
     want_list::{Priority, WantEntry, WantList, WantListConfig},
 };
-use rand::Rng;
+use rand::RngExt;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;

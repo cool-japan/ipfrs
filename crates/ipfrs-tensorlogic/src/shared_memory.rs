@@ -461,7 +461,7 @@ mod tests {
 
     #[test]
     fn test_shared_buffer_create_and_read() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("test: should succeed");
         let path = dir.path().join("test.shm");
 
         // Define tensors
@@ -483,7 +483,8 @@ mod tests {
         ];
 
         // Create buffer
-        let mut buffer = SharedTensorBuffer::create(&path, 36, &tensors).unwrap();
+        let mut buffer =
+            SharedTensorBuffer::create(&path, 36, &tensors).expect("test: should succeed");
 
         // Write data
         let weights: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
@@ -492,11 +493,11 @@ mod tests {
         buffer.write_tensor(&tensors[0], &weights);
         buffer.write_tensor(&tensors[1], &bias);
         buffer.update_checksum();
-        buffer.flush().unwrap();
+        buffer.flush().expect("test: should succeed");
 
         // Read back
-        let read_buffer = SharedTensorBuffer::open_readonly(&path).unwrap();
-        let metadata = read_buffer.tensor_metadata().unwrap();
+        let read_buffer = SharedTensorBuffer::open_readonly(&path).expect("test: should succeed");
+        let metadata = read_buffer.tensor_metadata().expect("test: should succeed");
 
         assert_eq!(metadata.len(), 2);
         assert_eq!(metadata[0].name, "weights");
@@ -511,7 +512,7 @@ mod tests {
 
     #[test]
     fn test_memory_pool() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("test: should succeed");
         let pool_dir = dir.path().join("pool");
 
         let mut pool = SharedMemoryPool::new(&pool_dir, 1024 * 1024);
@@ -526,11 +527,12 @@ mod tests {
             size: 16,
         }];
 
-        SharedTensorBuffer::create(&path, 16, &tensors).unwrap();
+        SharedTensorBuffer::create(&path, 16, &tensors).expect("test: should succeed");
 
         // Register in pool
-        let buffer = SharedTensorBuffer::open_readonly(&path).unwrap();
-        pool.register("test1", buffer).unwrap();
+        let buffer = SharedTensorBuffer::open_readonly(&path).expect("test: should succeed");
+        pool.register("test1", buffer)
+            .expect("test: should succeed");
 
         assert_eq!(pool.list().len(), 1);
         assert!(pool.get("test1").is_some());

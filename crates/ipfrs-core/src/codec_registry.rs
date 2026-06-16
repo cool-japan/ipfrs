@@ -157,25 +157,25 @@ impl CodecRegistry {
     /// If a codec with the same code already exists, it will be replaced.
     pub fn register(&self, codec: Arc<dyn Codec>) {
         let code = codec.code();
-        let mut codecs = self.codecs.write().unwrap();
+        let mut codecs = self.codecs.write().unwrap_or_else(|e| e.into_inner());
         codecs.insert(code, codec);
     }
 
     /// Get a codec by its code.
     pub fn get(&self, code: u64) -> Option<Arc<dyn Codec>> {
-        let codecs = self.codecs.read().unwrap();
+        let codecs = self.codecs.read().unwrap_or_else(|e| e.into_inner());
         codecs.get(&code).cloned()
     }
 
     /// Check if a codec is registered.
     pub fn has_codec(&self, code: u64) -> bool {
-        let codecs = self.codecs.read().unwrap();
+        let codecs = self.codecs.read().unwrap_or_else(|e| e.into_inner());
         codecs.contains_key(&code)
     }
 
     /// List all registered codec codes.
     pub fn list_codecs(&self) -> Vec<u64> {
-        let codecs = self.codecs.read().unwrap();
+        let codecs = self.codecs.read().unwrap_or_else(|e| e.into_inner());
         codecs.keys().copied().collect()
     }
 

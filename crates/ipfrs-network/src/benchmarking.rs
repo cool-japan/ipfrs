@@ -623,7 +623,10 @@ mod tests {
     #[tokio::test]
     async fn test_connection_benchmark() {
         let benchmark = PerformanceBenchmark::new(BenchmarkConfig::quick());
-        let result = benchmark.bench_connection_establishment(10).await.unwrap();
+        let result = benchmark
+            .bench_connection_establishment(10)
+            .await
+            .expect("test: bench_connection_establishment should succeed");
 
         assert_eq!(
             result.benchmark_type,
@@ -636,7 +639,10 @@ mod tests {
     #[tokio::test]
     async fn test_dht_query_benchmark() {
         let benchmark = PerformanceBenchmark::new(BenchmarkConfig::quick());
-        let result = benchmark.bench_dht_query(10).await.unwrap();
+        let result = benchmark
+            .bench_dht_query(10)
+            .await
+            .expect("test: bench_dht_query should succeed");
 
         assert_eq!(result.benchmark_type, BenchmarkType::DhtQuery);
         assert!(result.operations > 0);
@@ -646,7 +652,10 @@ mod tests {
     #[tokio::test]
     async fn test_throughput_benchmark() {
         let benchmark = PerformanceBenchmark::new(BenchmarkConfig::quick());
-        let result = benchmark.bench_throughput(20, 1024).await.unwrap();
+        let result = benchmark
+            .bench_throughput(20, 1024)
+            .await
+            .expect("test: bench_throughput should succeed");
 
         assert_eq!(result.benchmark_type, BenchmarkType::MessageThroughput);
         assert!(result.throughput_ops > 0.0);
@@ -662,7 +671,7 @@ mod tests {
                 true
             })
             .await
-            .unwrap();
+            .expect("test: bench_custom should succeed");
 
         assert_eq!(result.benchmark_type, BenchmarkType::Custom(1));
         assert_eq!(result.success_rate(), 100.0);
@@ -699,8 +708,14 @@ mod tests {
     async fn test_results_storage() {
         let benchmark = PerformanceBenchmark::new(BenchmarkConfig::quick());
 
-        benchmark.bench_connection_establishment(5).await.unwrap();
-        benchmark.bench_dht_query(5).await.unwrap();
+        benchmark
+            .bench_connection_establishment(5)
+            .await
+            .expect("test: bench_connection_establishment should succeed");
+        benchmark
+            .bench_dht_query(5)
+            .await
+            .expect("test: bench_dht_query should succeed");
 
         let results = benchmark.results();
         assert!(results.contains_key(&BenchmarkType::ConnectionEstablishment));
@@ -708,7 +723,7 @@ mod tests {
 
         let conn_results = benchmark
             .results_for(BenchmarkType::ConnectionEstablishment)
-            .unwrap();
+            .expect("test: results_for ConnectionEstablishment should return Some");
         assert_eq!(conn_results.len(), 1);
     }
 
@@ -716,7 +731,10 @@ mod tests {
     async fn test_clear_results() {
         let benchmark = PerformanceBenchmark::new(BenchmarkConfig::quick());
 
-        benchmark.bench_connection_establishment(5).await.unwrap();
+        benchmark
+            .bench_connection_establishment(5)
+            .await
+            .expect("test: bench_connection_establishment should succeed");
         assert!(!benchmark.results().is_empty());
 
         benchmark.clear_results();
@@ -727,8 +745,14 @@ mod tests {
     async fn test_summary_report() {
         let benchmark = PerformanceBenchmark::new(BenchmarkConfig::quick());
 
-        benchmark.bench_connection_establishment(5).await.unwrap();
-        benchmark.bench_dht_query(5).await.unwrap();
+        benchmark
+            .bench_connection_establishment(5)
+            .await
+            .expect("test: bench_connection_establishment should succeed");
+        benchmark
+            .bench_dht_query(5)
+            .await
+            .expect("test: bench_dht_query should succeed");
 
         let report = benchmark.summary_report();
         assert!(report.contains("Performance Benchmark Summary"));

@@ -464,7 +464,7 @@ mod tests {
         };
 
         let detector = PartitionDetector::new(config);
-        let peer: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let peer: SocketAddr = "127.0.0.1:8080".parse().expect("test: valid socket addr");
 
         assert_eq!(detector.state(), PartitionState::Healthy);
 
@@ -481,7 +481,7 @@ mod tests {
     #[test]
     fn test_queue_request() {
         let detector = PartitionDetector::new(PartitionConfig::default());
-        let peer: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let peer: SocketAddr = "127.0.0.1:8080".parse().expect("test: valid socket addr");
 
         let result = detector.queue_request(peer, vec![1, 2, 3]);
         assert!(result.is_ok());
@@ -498,10 +498,14 @@ mod tests {
         };
 
         let detector = PartitionDetector::new(config);
-        let peer: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let peer: SocketAddr = "127.0.0.1:8080".parse().expect("test: valid socket addr");
 
-        detector.queue_request(peer, vec![1]).unwrap();
-        detector.queue_request(peer, vec![2]).unwrap();
+        detector
+            .queue_request(peer, vec![1])
+            .expect("test: queue request");
+        detector
+            .queue_request(peer, vec![2])
+            .expect("test: queue request");
 
         // Third request should fail
         let result = detector.queue_request(peer, vec![3]);
@@ -511,10 +515,14 @@ mod tests {
     #[test]
     fn test_drain_queue() {
         let detector = PartitionDetector::new(PartitionConfig::default());
-        let peer: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let peer: SocketAddr = "127.0.0.1:8080".parse().expect("test: valid socket addr");
 
-        detector.queue_request(peer, vec![1, 2, 3]).unwrap();
-        detector.queue_request(peer, vec![4, 5, 6]).unwrap();
+        detector
+            .queue_request(peer, vec![1, 2, 3])
+            .expect("test: queue request");
+        detector
+            .queue_request(peer, vec![4, 5, 6])
+            .expect("test: queue request");
 
         let drained = detector.drain_queue();
         assert_eq!(drained.len(), 2);
@@ -529,7 +537,7 @@ mod tests {
         };
 
         let detector = PartitionDetector::new(config);
-        let peer: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let peer: SocketAddr = "127.0.0.1:8080".parse().expect("test: valid socket addr");
 
         // Start healthy
         assert_eq!(detector.state(), PartitionState::Healthy);

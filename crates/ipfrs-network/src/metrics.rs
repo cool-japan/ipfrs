@@ -608,7 +608,8 @@ mod tests {
 
         let stats = metrics.protocols.get_stats("/ipfs/kad/1.0.0");
         assert!(stats.is_some());
-        let (sent, received, bytes_sent, bytes_received) = stats.unwrap();
+        let (sent, received, bytes_sent, bytes_received) =
+            stats.expect("test: protocol stats should be present after recording messages");
         assert_eq!(sent, 1);
         assert_eq!(received, 1);
         assert_eq!(bytes_sent, 100);
