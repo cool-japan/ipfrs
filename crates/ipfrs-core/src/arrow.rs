@@ -25,7 +25,7 @@ use arrow_array::{
     Array, ArrayRef, BooleanArray, Float32Array, Float64Array, Int32Array, Int64Array, Int8Array,
     UInt32Array, UInt8Array,
 };
-use arrow_buffer::Buffer;
+use arrow_buffer::{Buffer, MutableBuffer};
 use arrow_schema::{DataType, Field, Schema};
 use bytes::Bytes;
 use std::sync::Arc;
@@ -49,37 +49,51 @@ impl TensorBlockArrowExt for TensorBlock {
 
         match metadata.dtype {
             TensorDtype::F32 => {
-                let buffer = Buffer::from(data.clone());
+                let mut mutable = MutableBuffer::with_capacity(data.len());
+                mutable.extend_from_slice(data);
+                let buffer: Buffer = mutable.into();
                 let array = Float32Array::new(buffer.into(), None);
                 Ok(Arc::new(array) as ArrayRef)
             }
             TensorDtype::F64 => {
-                let buffer = Buffer::from(data.clone());
+                let mut mutable = MutableBuffer::with_capacity(data.len());
+                mutable.extend_from_slice(data);
+                let buffer: Buffer = mutable.into();
                 let array = Float64Array::new(buffer.into(), None);
                 Ok(Arc::new(array) as ArrayRef)
             }
             TensorDtype::I8 => {
-                let buffer = Buffer::from(data.clone());
+                let mut mutable = MutableBuffer::with_capacity(data.len());
+                mutable.extend_from_slice(data);
+                let buffer: Buffer = mutable.into();
                 let array = Int8Array::new(buffer.into(), None);
                 Ok(Arc::new(array) as ArrayRef)
             }
             TensorDtype::I32 => {
-                let buffer = Buffer::from(data.clone());
+                let mut mutable = MutableBuffer::with_capacity(data.len());
+                mutable.extend_from_slice(data);
+                let buffer: Buffer = mutable.into();
                 let array = Int32Array::new(buffer.into(), None);
                 Ok(Arc::new(array) as ArrayRef)
             }
             TensorDtype::I64 => {
-                let buffer = Buffer::from(data.clone());
+                let mut mutable = MutableBuffer::with_capacity(data.len());
+                mutable.extend_from_slice(data);
+                let buffer: Buffer = mutable.into();
                 let array = Int64Array::new(buffer.into(), None);
                 Ok(Arc::new(array) as ArrayRef)
             }
             TensorDtype::U8 => {
-                let buffer = Buffer::from(data.clone());
+                let mut mutable = MutableBuffer::with_capacity(data.len());
+                mutable.extend_from_slice(data);
+                let buffer: Buffer = mutable.into();
                 let array = UInt8Array::new(buffer.into(), None);
                 Ok(Arc::new(array) as ArrayRef)
             }
             TensorDtype::U32 => {
-                let buffer = Buffer::from(data.clone());
+                let mut mutable = MutableBuffer::with_capacity(data.len());
+                mutable.extend_from_slice(data);
+                let buffer: Buffer = mutable.into();
                 let array = UInt32Array::new(buffer.into(), None);
                 Ok(Arc::new(array) as ArrayRef)
             }

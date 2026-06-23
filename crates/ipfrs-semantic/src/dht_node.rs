@@ -232,20 +232,35 @@ impl SemanticDHTNode {
 
     /// Update local peer's embedding based on stored vectors
     async fn update_local_embedding(&self) -> Result<()> {
-        let index = self.local_index.read();
         let dim = self.config.embedding_dim;
 
-        // Compute centroid of all local vectors
-        let mut centroid = vec![0.0; dim];
-        let _count = 0;
+        // Collect all stored embeddings while holding the index read-lock, then
+        // release the lock before doing arithmetic so other threads are not blocked.
+        let embeddings = {
+            let index = self.local_index.read();
+            index.get_all_embeddings()
+        };
 
-        // This is a simplified version - in practice, we'd iterate over actual vectors
-        // For now, just use a placeholder
-        drop(index);
+        let count = embeddings.len();
+        let mut centroid = vec![0.0_f32; dim];
 
-        // Normalize centroid
+        if count > 0 {
+            // Component-wise sum
+            for (_, emb) in &embeddings {
+                for (c, v) in centroid.iter_mut().zip(emb.iter()) {
+                    *c += v;
+                }
+            }
+            // Divide by count to get mean
+            let inv_count = 1.0_f32 / count as f32;
+            for c in &mut centroid {
+                *c *= inv_count;
+            }
+        }
+
+        // Normalize to unit length; leave as zero vector when norm is negligible
         let norm: f32 = centroid.iter().map(|x| x * x).sum::<f32>().sqrt();
-        if norm > 1e-6 {
+        if norm > 1e-10 {
             for x in &mut centroid {
                 *x /= norm;
             }
@@ -254,6 +269,11 @@ impl SemanticDHTNode {
         self.routing_table.update_local_embedding(centroid)?;
 
         Ok(())
+    }
+
+    /// Get a clone of the current local peer embedding (centroid of stored vectors)
+    pub fn local_embedding(&self) -> Vec<f32> {
+        self.routing_table.local_embedding()
     }
 
     /// Update query statistics
@@ -733,5 +753,93 @@ mod tests {
             result.is_none(),
             "query_peer stub should return None without a transport"
         );
+    }
+
+    #[tokio::test]
+    async fn test_centroid_computation() {
+        use multihash_codetable::{Code, MultihashDigest};
+
+        let config = SemanticDHTConfig {
+            embedding_dim: 2,
+            ..SemanticDHTConfig::default()
+        };
+
+        let peer_id = PeerId::random();
+        let index = VectorIndex::new(2, DistanceMetric::Cosine, 16, 200)
+            .expect("test: VectorIndex creation (dim=2) should succeed");
+        let node = SemanticDHTNode::new(config, peer_id, index);
+
+        // Insert 3 known 2-D vectors: [1,0], [0,1], [1,0]
+        // Mean = [2/3, 1/3]; normalized = [2/√5, 1/√5]
+        let vecs: [Vec<f32>; 3] = [
+            vec![1.0_f32, 0.0_f32],
+            vec![0.0_f32, 1.0_f32],
+            vec![1.0_f32, 0.0_f32],
+        ];
+        for (i, v) in vecs.iter().enumerate() {
+            let data = format!("centroid_test_{}", i);
+            let hash = Code::Sha2_256.digest(data.as_bytes());
+            let cid = Cid::new_v1(0x55, hash);
+            node.insert(&cid, v)
+                .await
+                .expect("test: insert should succeed");
+        }
+
+        let sqrt5 = 5.0_f32.sqrt();
+        let expected = [2.0_f32 / sqrt5, 1.0_f32 / sqrt5];
+
+        let centroid = node.local_embedding();
+        assert_eq!(
+            centroid.len(),
+            2,
+            "centroid dimension must match embedding_dim"
+        );
+        assert!(
+            (centroid[0] - expected[0]).abs() < 1e-5,
+            "centroid[0] expected ≈ {:.6}, got {:.6}",
+            expected[0],
+            centroid[0]
+        );
+        assert!(
+            (centroid[1] - expected[1]).abs() < 1e-5,
+            "centroid[1] expected ≈ {:.6}, got {:.6}",
+            expected[1],
+            centroid[1]
+        );
+        // Verify unit length
+        let norm: f32 = centroid.iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!(
+            (norm - 1.0).abs() < 1e-5,
+            "centroid must have unit L2 norm, got {:.6}",
+            norm
+        );
+    }
+
+    #[tokio::test]
+    async fn test_centroid_empty_index() {
+        let config = SemanticDHTConfig {
+            embedding_dim: 2,
+            ..SemanticDHTConfig::default()
+        };
+
+        let peer_id = PeerId::random();
+        let index = VectorIndex::new(2, DistanceMetric::Cosine, 16, 200)
+            .expect("test: VectorIndex creation (dim=2) should succeed");
+        let node = SemanticDHTNode::new(config, peer_id, index);
+
+        // With an empty index, update_local_embedding must not panic and must
+        // leave the centroid as the zero vector.
+        node.update_local_embedding()
+            .await
+            .expect("test: update_local_embedding on empty index should succeed");
+
+        let centroid = node.local_embedding();
+        assert_eq!(
+            centroid.len(),
+            2,
+            "centroid dimension must match embedding_dim"
+        );
+        assert_eq!(centroid[0], 0.0_f32, "empty index centroid[0] must be 0");
+        assert_eq!(centroid[1], 0.0_f32, "empty index centroid[1] must be 0");
     }
 }

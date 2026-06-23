@@ -164,9 +164,10 @@ impl ConnectionDrainer {
 
     /// Record the completion of one request on a connection.
     ///
-    /// If the connection is draining and pending drops to zero it transitions
-    /// to `Drained`.
-    pub fn complete_request(&mut self, conn_id: u64) -> Result<(), String> {
+    /// `now` is the current wall-clock time in milliseconds (caller-supplied,
+    /// wasm-safe). If the connection is draining and pending drops to zero it
+    /// transitions to `Drained` and the real drain elapsed time is recorded.
+    pub fn complete_request(&mut self, conn_id: u64, now: u64) -> Result<(), String> {
         let conn = self
             .connections
             .get_mut(&conn_id)
@@ -182,12 +183,15 @@ impl ConnectionDrainer {
             conn.state = DrainState::Drained;
             self.stats.currently_draining = self.stats.currently_draining.saturating_sub(1);
             self.stats.total_drained += 1;
-            // We don't know the real elapsed time without a clock; drain_started_at
-            // is set to 0 by start_drain and real timestamps come from check_timeouts.
             if let Some(start) = conn.drain_started_at {
                 if start > 0 {
-                    // Approximate: caller should supply wall-clock via check_timeouts.
-                    self.drain_duration_sum_ms += 0; // placeholder
+                    let elapsed = now.saturating_sub(start);
+                    self.drain_duration_sum_ms += elapsed;
+                    let total_completed = self.stats.total_drained + self.stats.total_timed_out;
+                    if total_completed > 0 {
+                        self.stats.avg_drain_time_ms =
+                            self.drain_duration_sum_ms as f64 / total_completed as f64;
+                    }
                 }
             }
         }
@@ -455,7 +459,7 @@ mod tests {
         let id = d.register_connection("peer-a");
         d.add_request(id).expect("ok");
         d.add_request(id).expect("ok");
-        d.complete_request(id).expect("ok");
+        d.complete_request(id, 0).expect("ok");
         let conn = d.get_connection(id).expect("exists");
         assert_eq!(conn.pending_requests, 1);
     }
@@ -467,7 +471,7 @@ mod tests {
         let id = d.register_connection("peer-a");
         d.add_request(id).expect("ok");
         d.start_drain(id).expect("ok");
-        d.complete_request(id).expect("ok");
+        d.complete_request(id, 0).expect("ok");
         let conn = d.get_connection(id).expect("exists");
         assert_eq!(conn.state, DrainState::Drained);
     }
@@ -477,14 +481,14 @@ mod tests {
     fn test_complete_request_zero_pending_error() {
         let mut d = ConnectionDrainer::new(default_config());
         let id = d.register_connection("peer-a");
-        assert!(d.complete_request(id).is_err());
+        assert!(d.complete_request(id, 0).is_err());
     }
 
     // 13. complete_request on nonexistent connection
     #[test]
     fn test_complete_request_nonexistent() {
         let mut d = ConnectionDrainer::new(default_config());
-        assert!(d.complete_request(999).is_err());
+        assert!(d.complete_request(999, 0).is_err());
     }
 
     // 14. check_drained transitions draining to drained
@@ -494,7 +498,7 @@ mod tests {
         let id = d.register_connection("peer-a");
         d.add_request(id).expect("ok");
         d.start_drain(id).expect("ok");
-        d.complete_request(id).expect("ok");
+        d.complete_request(id, 0).expect("ok");
         // pending is 0 but complete_request already transitioned it
         let state = d.check_drained(id);
         assert_eq!(state, Some(DrainState::Drained));
@@ -611,7 +615,7 @@ mod tests {
         d.add_request(a).expect("ok");
         d.start_drain(a).expect("ok");
         assert_eq!(d.stats().currently_draining, 1);
-        d.complete_request(a).expect("ok");
+        d.complete_request(a, 0).expect("ok");
         assert_eq!(d.stats().currently_draining, 0);
     }
 
@@ -652,11 +656,11 @@ mod tests {
         d.start_drain(id).expect("ok");
         assert_eq!(d.draining_count(), 1);
 
-        d.complete_request(id).expect("ok");
-        d.complete_request(id).expect("ok");
+        d.complete_request(id, 0).expect("ok");
+        d.complete_request(id, 0).expect("ok");
         assert_eq!(d.get_connection(id).expect("e").state, DrainState::Draining);
 
-        d.complete_request(id).expect("ok");
+        d.complete_request(id, 0).expect("ok");
         assert_eq!(d.get_connection(id).expect("e").state, DrainState::Drained);
         assert!(d.is_fully_drained());
 
@@ -740,5 +744,19 @@ mod tests {
         // Should remain None because connection is Active
         let conn = d.get_connection(id).expect("exists");
         assert!(conn.drain_started_at.is_none());
+    }
+
+    // 32. complete_request tracks real drain duration
+    #[test]
+    fn test_complete_request_tracks_drain_duration() {
+        let mut d = ConnectionDrainer::new(default_config());
+        let id = d.register_connection("peer");
+        d.add_request(id).expect("ok");
+        d.start_drain(id).expect("ok");
+        d.set_drain_start_time(id, 100); // inject real start
+        d.complete_request(id, 250).expect("ok"); // 250 - 100 = 150ms elapsed
+        let stats = d.stats();
+        assert_eq!(stats.total_drained, 1);
+        assert!((stats.avg_drain_time_ms - 150.0).abs() < f64::EPSILON);
     }
 }

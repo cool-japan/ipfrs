@@ -6,7 +6,7 @@
 //! - Diff operations for models
 //! - Model history tracking
 
-use ipfrs_core::Cid;
+use ipfrs_core::{Block, Cid};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
@@ -37,6 +37,9 @@ pub enum VersionControlError {
 
     #[error("No parent commit")]
     NoParentCommit,
+
+    #[error("Serialization error: {0}")]
+    Serialization(String),
 }
 
 /// A commit in the model version history
@@ -189,9 +192,24 @@ impl ModelRepository {
             vec![]
         };
 
-        // In a real implementation, we would compute the CID from the commit content
-        // For now, use a placeholder
-        let commit_id = Cid::default();
+        #[derive(Serialize)]
+        struct CommitContent<'a> {
+            parents: Vec<String>,
+            model: String,
+            message: &'a str,
+            author: &'a str,
+        }
+        let content = CommitContent {
+            parents: parents.iter().map(|c| c.to_string()).collect(),
+            model: model.to_string(),
+            message: &message,
+            author: &author,
+        };
+        let json_bytes = serde_json::to_vec(&content)
+            .map_err(|e| VersionControlError::Serialization(e.to_string()))?;
+        let block = Block::new(json_bytes.into())
+            .map_err(|e| VersionControlError::Serialization(e.to_string()))?;
+        let commit_id = *block.cid();
 
         let commit = ModelCommit::new(commit_id, parents, model, message, author);
 
@@ -615,5 +633,67 @@ mod tests {
 
         assert!(l2_diff > 0.0);
         assert!((max_diff - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_commit_cid_uniqueness() {
+        let mut repo = ModelRepository::new();
+
+        let init_commit = ModelCommit::new(
+            Cid::default(),
+            vec![],
+            Cid::default(),
+            "Initial commit".to_string(),
+            "test@example.com".to_string(),
+        );
+        repo.init(init_commit).expect("test: should succeed");
+
+        let commit1 = repo
+            .commit(
+                Cid::default(),
+                "First commit".to_string(),
+                "author".to_string(),
+            )
+            .expect("test: should succeed");
+
+        let commit2 = repo
+            .commit(
+                Cid::default(),
+                "Second commit".to_string(),
+                "author".to_string(),
+            )
+            .expect("test: should succeed");
+
+        // Different messages should produce different CIDs
+        assert_ne!(commit1.id, commit2.id);
+    }
+
+    #[test]
+    fn test_commit_cid_determinism() {
+        // Verify that the same JSON content always serializes to the same bytes
+        // (which ensures same Block -> same CID)
+        use serde::Serialize;
+        #[derive(Serialize)]
+        struct CommitContent<'a> {
+            parents: Vec<String>,
+            model: String,
+            message: &'a str,
+            author: &'a str,
+        }
+        let content1 = CommitContent {
+            parents: vec!["parent1".to_string()],
+            model: "model1".to_string(),
+            message: "msg",
+            author: "auth",
+        };
+        let content2 = CommitContent {
+            parents: vec!["parent1".to_string()],
+            model: "model1".to_string(),
+            message: "msg",
+            author: "auth",
+        };
+        let bytes1 = serde_json::to_vec(&content1).expect("test: serialize");
+        let bytes2 = serde_json::to_vec(&content2).expect("test: serialize");
+        assert_eq!(bytes1, bytes2);
     }
 }

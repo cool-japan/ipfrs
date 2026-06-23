@@ -6,7 +6,7 @@
 //! - Immutable audit trails
 //! - Explanation generation for search results
 
-use ipfrs_core::{Cid, Error, Result};
+use ipfrs_core::{Block, Cid, Error, Result};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -488,8 +488,19 @@ impl ProvenanceTracker {
             )
         };
 
+        // Derive a deterministic CID from the query embedding bytes.
+        // Serialisation of [f32] as little-endian bytes is infallible, so the
+        // Block::new fallback to Cid::default() is a genuine last-resort guard.
+        let query_bytes: Vec<u8> = query_embedding
+            .iter()
+            .flat_map(|f| f.to_le_bytes())
+            .collect();
+        let query_cid = Block::new(bytes::Bytes::from(query_bytes))
+            .map(|b| *b.cid())
+            .unwrap_or_default();
+
         SearchExplanation {
-            query_cid: Cid::default(), // Placeholder
+            query_cid,
             result_cid: *result_cid,
             score,
             attributions,
@@ -665,6 +676,46 @@ mod tests {
         assert_eq!(explanation.score, 0.95);
         assert!(!explanation.attributions.is_empty());
         assert!(!explanation.explanation.is_empty());
+    }
+
+    #[test]
+    fn test_explain_result_query_cid_differs_for_different_queries() {
+        let tracker = ProvenanceTracker::new();
+        let result_emb = vec![0.9_f32, 0.6_f32, 0.2_f32];
+        let result_cid = test_cid();
+
+        let query_emb1 = vec![1.0_f32, 0.5_f32, 0.3_f32];
+        let query_emb2 = vec![0.5_f32, 1.0_f32, 0.1_f32];
+
+        let exp1 = tracker.explain_result(&query_emb1, &result_cid, &result_emb, 0.9);
+        let exp2 = tracker.explain_result(&query_emb2, &result_cid, &result_emb, 0.9);
+
+        assert_ne!(
+            exp1.query_cid, exp2.query_cid,
+            "different query embeddings must produce different CIDs"
+        );
+    }
+
+    #[test]
+    fn test_explain_result_query_cid_deterministic() {
+        let tracker = ProvenanceTracker::new();
+        let result_emb = vec![0.9_f32, 0.6_f32, 0.2_f32];
+        let result_cid = test_cid();
+        let query_emb = vec![1.0_f32, 0.5_f32, 0.3_f32];
+
+        let exp1 = tracker.explain_result(&query_emb, &result_cid, &result_emb, 0.9);
+        let exp2 = tracker.explain_result(&query_emb, &result_cid, &result_emb, 0.9);
+
+        assert_eq!(
+            exp1.query_cid, exp2.query_cid,
+            "same query embedding must always produce the same CID"
+        );
+        // Guard against silent regression back to placeholder
+        assert_ne!(
+            exp1.query_cid,
+            Cid::default(),
+            "query_cid must not be the default placeholder"
+        );
     }
 
     #[test]

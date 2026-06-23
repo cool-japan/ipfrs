@@ -2,7 +2,7 @@
 //!
 //! This module provides Python bindings for IPFRS using PyO3.
 
-use ipfrs::{Node as RustNode, NodeConfig as RustNodeConfig, QueryFilter as RustQueryFilter};
+use ::ipfrs::{Node as RustNode, NodeConfig as RustNodeConfig, QueryFilter as RustQueryFilter};
 use ipfrs_core::{Block as RustBlock, Cid as RustCid, Error as RustError};
 use ipfrs_tensorlogic::ir::{
     Constant, Predicate as RustPredicate, Rule as RustRule, Term as RustTerm,
@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 /// Python module for IPFRS
 #[pymodule]
-fn ipfrs_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn ipfrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Node>()?;
     m.add_class::<NodeConfig>()?;
     m.add_class::<Block>()?;

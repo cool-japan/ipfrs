@@ -25,7 +25,7 @@
 
 use cid::Cid;
 use dashmap::DashMap;
-use libp2p::PeerId;
+use libp2p::{identity::Keypair, PeerId};
 use multihash_codetable::{Code, MultihashDigest};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -860,6 +860,12 @@ pub struct SemanticDht {
     /// Shard-load balancer: tracks per-peer vector counts and identifies
     /// hot-spot peers that should shed load via migration.
     pub shard_balancer: parking_lot::Mutex<ShardBalancer>,
+
+    /// The local peer's own `PeerId`.
+    ///
+    /// Stored so that results returned from local-index queries carry the
+    /// correct peer identity rather than a random placeholder.
+    local_peer_id: PeerId,
 }
 
 /// Statistics for semantic DHT
@@ -904,8 +910,21 @@ pub struct SemanticDhtStats {
 }
 
 impl SemanticDht {
-    /// Create a new semantic DHT
+    /// Create a new semantic DHT with an ephemerally generated local peer identity.
+    ///
+    /// A fresh Ed25519 keypair is generated for this instance.  Use
+    /// [`SemanticDht::new_with_peer_id`] when the caller already holds the
+    /// node's canonical `PeerId` (e.g. from a running libp2p swarm).
     pub fn new(config: SemanticDhtConfig) -> Self {
+        let local_peer_id = Keypair::generate_ed25519().public().to_peer_id();
+        Self::new_with_peer_id(config, local_peer_id)
+    }
+
+    /// Create a new semantic DHT bound to `local_peer_id`.
+    ///
+    /// Pass the swarm's own `PeerId` here so that local-index query results
+    /// carry the correct peer identity.
+    pub fn new_with_peer_id(config: SemanticDhtConfig, local_peer_id: PeerId) -> Self {
         Self {
             config,
             namespaces: Arc::new(DashMap::new()),
@@ -920,6 +939,7 @@ impl SemanticDht {
             shard_balancer: parking_lot::Mutex::new(ShardBalancer::new(
                 ShardBalancerConfig::default(),
             )),
+            local_peer_id,
         }
     }
 
@@ -1118,7 +1138,7 @@ impl SemanticDht {
             results.push(SemanticResult {
                 cid: *cid,
                 score,
-                peer: PeerId::random(), // Placeholder
+                peer: self.local_peer_id,
                 metadata: HashMap::new(),
             });
         }

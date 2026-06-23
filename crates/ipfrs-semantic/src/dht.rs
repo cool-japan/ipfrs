@@ -126,6 +126,11 @@ impl SemanticRoutingTable {
         Ok(())
     }
 
+    /// Get a clone of the current local peer embedding
+    pub fn local_embedding(&self) -> Vec<f32> {
+        self.local_embedding.read().clone()
+    }
+
     /// Add or update a peer in the routing table
     pub fn add_peer(&self, peer: SemanticPeer) -> Result<()> {
         if peer.embedding.len() != self.config.embedding_dim {

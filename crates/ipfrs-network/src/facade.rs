@@ -957,11 +957,13 @@ impl NetworkFacadeBuilder {
             registry
         }));
 
+        let local_peer_id = node.peer_id();
         Ok(NetworkFacade {
             node,
             semantic_dht: if self.enable_semantic_dht {
-                Some(Arc::new(RwLock::new(SemanticDht::new(
+                Some(Arc::new(RwLock::new(SemanticDht::new_with_peer_id(
                     self.semantic_dht_config.unwrap_or_default(),
+                    local_peer_id,
                 ))))
             } else {
                 None

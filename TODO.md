@@ -1092,7 +1092,38 @@ Verification (all green): `cargo build -p ipfrs-core` (default + `--all-features
   - Priority: P2 | Scope: small | Hint: none
 - [ ] `ipfrs-transport`: `crates/ipfrs-transport/tests/kubo_compat_tests.rs:96,112,126,139,152,165,179,193` — implement remaining Bitswap protocol tests (block exchange, Want-Have, cancellation, ledger, concurrent, DAG, stress, reconnect)
   - Priority: P2 | Scope: large | Hint: none
-- [ ] `ipfrs-network`: `crates/ipfrs-network/src/connection_drainer.rs:190` — replace placeholder `drain_duration_sum_ms += 0` with real elapsed time tracking
+- [x] `ipfrs-network`: `crates/ipfrs-network/src/connection_drainer.rs:190` — replace placeholder `drain_duration_sum_ms += 0` with real elapsed time tracking
   - Priority: P2 | Scope: trivial | Hint: none
-- [ ] `ipfrs-network`: `crates/ipfrs-network/src/dht.rs:671` — implement real ProviderReannouncer-backed `get_providers` instead of stub empty list
+- [x] `ipfrs-network`: `crates/ipfrs-network/src/dht.rs:671` — implement real ProviderReannouncer-backed `get_providers` instead of stub empty list
   - Priority: P2 | Scope: medium | Hint: none
+
+---
+
+## Stubs to implement (added 2026-06-22 by /cooljapan-stub-check)
+
+> Scope correction vs. prior runs: the `kubo_compat_tests.rs` skeletons were previously logged as plain P2 work, but every one of those test functions early-returns when `KUBO_API_URL` is unset, is annotated `#[ignore]`, and the module's helpers (`add_block_to_kubo`, `get_block_from_kubo`, `get_kubo_version`) issue HTTP calls against a live Kubo daemon (`/api/v0/block/put`, `/api/v0/block/get`, `/api/v0/version`). They genuinely require external infrastructure and are therefore recorded under the external-blocked subsection below — NOT as in-process work. The only in-process-actionable items in that file are the two pure-CID helpers, captured here.
+
+- [x] **ipfrs** `ipfrs-transport`: `crates/ipfrs-transport/tests/kubo_compat_tests.rs:208` — `TODO`: `Implement test block creation` (helper `create_test_block` returns empty `vec![]`)
+  - **Priority:** P2  **Scope:** small  **Cross-project:** none
+  - **Approach:** Build a real block in-process via `ipfrs_core::Block::new(Bytes::from(data))`, return its canonical CID bytes + block data; no Kubo needed.
+  - **Risk:** Helper signature returns `Vec<u8>`; may need to widen to `(Cid, Bytes)` to be useful to callers, touching the (currently dead) call sites.
+- [x] **ipfrs** `ipfrs-transport`: `crates/ipfrs-transport/tests/kubo_compat_tests.rs:216` — `TODO`: `Implement CID verification` (helper `verify_cid` hardcodes `false`)
+  - **Priority:** P2  **Scope:** small  **Cross-project:** none
+  - **Approach:** Hash `content` with the same multihash/codec used by `CidBuilder`, compare against the supplied CID bytes; reuse `Block::verify()` semantics. Pure in-process.
+  - **Risk:** Must agree on codec (raw vs dag-pb) and multibase with whatever produced the input CID, else false negatives.
+
+### Known external-blocked placeholders (not actionable — require a live Kubo daemon, gated on `KUBO_API_URL`, all `#[ignore]`)
+
+- `crates/ipfrs-transport/tests/kubo_compat_tests.rs:96` — `test_block_exchange_correctness` body empty — implement single/multi/parallel/large block exchange + CID integrity against Kubo. (SEED-named; in-process peer pairing is NOT what this file does — it talks to an external Kubo node.)
+- `crates/ipfrs-transport/tests/kubo_compat_tests.rs:35` — `test_kubo_connection` body empty — implement connect + version/Bitswap availability check.
+- `crates/ipfrs-transport/tests/kubo_compat_tests.rs:48` — `test_bitswap_interop` body empty — implement bidirectional block fetch with Kubo.
+- `crates/ipfrs-transport/tests/kubo_compat_tests.rs:65` — `test_protocol_version_negotiation` body empty — negotiate `/ipfs/bitswap/1.0.0|1.1.0|1.2.0`.
+- `crates/ipfrs-transport/tests/kubo_compat_tests.rs:79` — `test_message_format_compatibility` body empty — exchange WantList/Block/Cancel/Have/DontHave with Kubo.
+- `crates/ipfrs-transport/tests/kubo_compat_tests.rs:112` — `test_want_have_negotiation` body empty — `send_dont_have=true` Have/DontHave behaviour.
+- `crates/ipfrs-transport/tests/kubo_compat_tests.rs:126` — `test_cancellation_protocol` body empty — Want then Cancel before delivery.
+- `crates/ipfrs-transport/tests/kubo_compat_tests.rs:139` — `test_peer_ledger_accounting` body empty — bytes sent/received + debt-ratio parity with Kubo.
+- `crates/ipfrs-transport/tests/kubo_compat_tests.rs:152` — `test_concurrent_block_requests` body empty — 100+ concurrent fetches + throughput.
+- `crates/ipfrs-transport/tests/kubo_compat_tests.rs:165` — `test_large_dag_traversal` body empty — root-CID DAG traversal/completeness.
+- `crates/ipfrs-transport/tests/kubo_compat_tests.rs:179` — `test_stress_high_bandwidth` body empty — >1GB sustained transfer, leak watch.
+- `crates/ipfrs-transport/tests/kubo_compat_tests.rs:193` — `test_reconnection_handling` body empty — drop + auto-reconnect + resume.
+- `crates/ipfrs-transport/tests/kubo_compat_tests.rs:229,241,250` — helpers `add_block_to_kubo` / `get_block_from_kubo` / `get_kubo_version` are `Err("Not implemented")` HTTP stubs against `/api/v0/*`; implement alongside the live tests above.

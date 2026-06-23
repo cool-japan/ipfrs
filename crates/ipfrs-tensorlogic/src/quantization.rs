@@ -172,6 +172,16 @@ impl QuantizationConfig {
             calibration: CalibrationMethod::MinMax,
         }
     }
+
+    /// Create INT8 per-group quantization config
+    pub fn int8_per_group(group_size: usize) -> Self {
+        Self {
+            scheme: QuantizationScheme::Int8,
+            granularity: QuantizationGranularity::PerGroup { group_size },
+            symmetric: true,
+            calibration: CalibrationMethod::MinMax,
+        }
+    }
 }
 
 /// Calibration method for determining quantization parameters
@@ -364,8 +374,57 @@ impl QuantizedTensor {
         })
     }
 
+    /// Quantize a tensor with per-group quantization
+    pub fn quantize_per_group(
+        data: &[f32],
+        shape: Vec<usize>,
+        config: QuantizationConfig,
+    ) -> Result<Self, QuantizationError> {
+        if data.is_empty() {
+            return Err(QuantizationError::EmptyTensor);
+        }
+
+        let group_size = match config.granularity {
+            QuantizationGranularity::PerGroup { group_size } => group_size,
+            _ => {
+                return Err(QuantizationError::UnsupportedScheme(
+                    "Expected per-group granularity".to_string(),
+                ))
+            }
+        };
+
+        if group_size == 0 {
+            return Err(QuantizationError::InvalidShape(
+                "Group size must be non-zero".to_string(),
+            ));
+        }
+
+        let num_groups = data.len().div_ceil(group_size);
+        let mut params = Vec::with_capacity(num_groups);
+
+        for chunk in data.chunks(group_size) {
+            let (min_val, max_val) = Self::calculate_min_max(chunk, &config.calibration)?;
+            let group_params =
+                QuantizationParams::from_min_max(min_val, max_val, config.scheme, config.symmetric);
+            params.push(group_params);
+        }
+
+        let quantized_data: Vec<i32> = data
+            .iter()
+            .enumerate()
+            .map(|(i, &v)| params[i / group_size].quantize(v))
+            .collect();
+
+        Ok(Self {
+            data: quantized_data,
+            shape,
+            params,
+            config,
+        })
+    }
+
     /// Calculate min/max values based on calibration method
-    fn calculate_min_max(
+    pub(crate) fn calculate_min_max(
         data: &[f32],
         calibration: &CalibrationMethod,
     ) -> Result<(f32, f32), QuantizationError> {
@@ -386,11 +445,129 @@ impl QuantizedTensor {
                 let max_val = sorted[upper_idx.min(sorted.len() - 1)];
                 Ok((min_val, max_val))
             }
-            _ => {
-                // Entropy and MSE not yet implemented, fall back to MinMax
-                let min_val = data.iter().copied().fold(f32::INFINITY, f32::min);
-                let max_val = data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-                Ok((min_val, max_val))
+            CalibrationMethod::Entropy => {
+                // KL-divergence histogram calibration (TensorRT-style)
+                let global_min = data.iter().copied().fold(f32::INFINITY, f32::min);
+                let global_max = data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+
+                if (global_max - global_min).abs() < f32::EPSILON {
+                    return Ok((global_min, global_max));
+                }
+
+                const NUM_BINS: usize = 2048;
+                const NUM_QUANT_LEVELS: usize = 255;
+
+                let bin_width = (global_max - global_min) / NUM_BINS as f32;
+                let mut histogram = vec![0u64; NUM_BINS];
+                for &v in data.iter() {
+                    let bin = ((v - global_min) / bin_width) as usize;
+                    let bin = bin.min(NUM_BINS - 1);
+                    histogram[bin] += 1;
+                }
+
+                let mut best_kl = f64::INFINITY;
+                let mut best_threshold = global_min.abs().max(global_max.abs());
+
+                for t_bin in NUM_QUANT_LEVELS..NUM_BINS {
+                    let threshold = global_min + (t_bin + 1) as f32 * bin_width;
+                    if threshold <= 0.0 {
+                        continue;
+                    }
+
+                    let mut ref_probs = vec![0.0f64; NUM_BINS];
+                    let mut in_range_total = 0u64;
+                    for (i, &count) in histogram.iter().enumerate() {
+                        let bin_center = global_min + (i as f32 + 0.5) * bin_width;
+                        if bin_center >= -threshold && bin_center <= threshold {
+                            ref_probs[i] = count as f64;
+                            in_range_total += count;
+                        }
+                    }
+                    if in_range_total == 0 {
+                        continue;
+                    }
+                    for p in ref_probs.iter_mut() {
+                        *p /= in_range_total as f64;
+                    }
+
+                    let mut quant_probs = vec![0.0f64; NUM_QUANT_LEVELS];
+                    let level_width = 2.0 * threshold as f64 / NUM_QUANT_LEVELS as f64;
+                    for (i, &p) in ref_probs.iter().enumerate() {
+                        if p == 0.0 {
+                            continue;
+                        }
+                        let bin_center = global_min as f64 + (i as f64 + 0.5) * bin_width as f64;
+                        let clamped = bin_center.clamp(-(threshold as f64), threshold as f64);
+                        let level = ((clamped + threshold as f64) / level_width) as usize;
+                        let level = level.min(NUM_QUANT_LEVELS - 1);
+                        quant_probs[level] += ref_probs[i];
+                    }
+
+                    let mut kl = 0.0f64;
+                    for (i, &p) in ref_probs.iter().enumerate() {
+                        if p == 0.0 {
+                            continue;
+                        }
+                        let bin_center = global_min as f64 + (i as f64 + 0.5) * bin_width as f64;
+                        let clamped = bin_center.clamp(-(threshold as f64), threshold as f64);
+                        let level = ((clamped + threshold as f64) / level_width) as usize;
+                        let level = level.min(NUM_QUANT_LEVELS - 1);
+                        let q = quant_probs[level];
+                        if q > 0.0 {
+                            kl += p * (p / q).ln();
+                        }
+                    }
+
+                    if kl < best_kl {
+                        best_kl = kl;
+                        best_threshold = threshold;
+                    }
+                }
+
+                Ok((-best_threshold, best_threshold))
+            }
+            CalibrationMethod::Mse => {
+                let global_min = data.iter().copied().fold(f32::INFINITY, f32::min);
+                let global_max = data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+
+                if (global_max - global_min).abs() < f32::EPSILON {
+                    return Ok((global_min, global_max));
+                }
+
+                let abs_max = global_min.abs().max(global_max.abs());
+                const NUM_STEPS: usize = 100;
+                const NUM_LEVELS: usize = 255;
+
+                let mut best_mse = f32::INFINITY;
+                let mut best_alpha = abs_max;
+
+                for step in 1..=NUM_STEPS {
+                    let alpha = abs_max * step as f32 / NUM_STEPS as f32;
+                    if alpha <= 0.0 {
+                        continue;
+                    }
+
+                    let mse: f32 = data
+                        .iter()
+                        .map(|&v| {
+                            let clipped = v.clamp(-alpha, alpha);
+                            let scale = (2.0 * alpha) / NUM_LEVELS as f32;
+                            let q = ((clipped + alpha) / scale).round() as i32;
+                            let q = q.clamp(0, NUM_LEVELS as i32 - 1);
+                            let dequant = q as f32 * scale - alpha;
+                            let diff = v - dequant;
+                            diff * diff
+                        })
+                        .sum::<f32>()
+                        / data.len() as f32;
+
+                    if mse < best_mse {
+                        best_mse = mse;
+                        best_alpha = alpha;
+                    }
+                }
+
+                Ok((-best_alpha, best_alpha))
             }
         }
     }
@@ -413,10 +590,13 @@ impl QuantizedTensor {
                 }
                 result
             }
-            QuantizationGranularity::PerGroup { .. } => {
-                // Not yet implemented, fall back to per-tensor
-                let params = &self.params[0];
-                self.data.iter().map(|&q| params.dequantize(q)).collect()
+            QuantizationGranularity::PerGroup { group_size } => {
+                let mut result = Vec::with_capacity(self.data.len());
+                for (i, &q) in self.data.iter().enumerate() {
+                    let group_idx = i / group_size;
+                    result.push(self.params[group_idx].dequantize(q));
+                }
+                result
             }
         }
     }
@@ -723,5 +903,153 @@ mod tests {
         let config = QuantizationConfig::int8_per_channel(3); // Wrong number of channels
         let result = QuantizedTensor::quantize_per_channel(&data, vec![2, 4], config);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_per_group_round_trip() {
+        let data = vec![0.1f32; 16];
+        let config = QuantizationConfig::int8_per_group(4);
+        let quantized = QuantizedTensor::quantize_per_group(&data, vec![16], config)
+            .expect("test: should succeed");
+        let dequantized = quantized.dequantize();
+        for &v in &dequantized {
+            assert!((v - 0.1f32).abs() < 0.02, "Expected ~0.1, got {v}");
+        }
+    }
+
+    #[test]
+    fn test_per_group_param_count() {
+        let data: Vec<f32> = (0..16).map(|i| i as f32 * 0.1).collect();
+        let config = QuantizationConfig::int8_per_group(4);
+        let quantized = QuantizedTensor::quantize_per_group(&data, vec![16], config)
+            .expect("test: should succeed");
+        assert_eq!(quantized.params.len(), 4);
+    }
+
+    #[test]
+    fn test_per_group_vs_per_tensor_accuracy() {
+        // First 8 elements near 0.0, next 8 near 100.0
+        let mut original: Vec<f32> = (0..8).map(|_| 0.01f32).collect();
+        original.extend((0..8).map(|_| 100.0f32));
+
+        let config_group = QuantizationConfig::int8_per_group(8);
+        let quantized_group =
+            QuantizedTensor::quantize_per_group(&original, vec![16], config_group)
+                .expect("test: should succeed");
+        let mse_group = quantized_group.quantization_error(&original);
+
+        let config_tensor = QuantizationConfig::int8_symmetric();
+        let quantized_tensor =
+            QuantizedTensor::quantize_per_tensor(&original, vec![16], config_tensor)
+                .expect("test: should succeed");
+        let mse_tensor = quantized_tensor.quantization_error(&original);
+
+        assert!(
+            mse_group < mse_tensor,
+            "Per-group MSE ({mse_group}) should be less than per-tensor MSE ({mse_tensor})"
+        );
+    }
+
+    #[test]
+    fn test_entropy_calibration_tighter_than_minmax() {
+        let mut state = 42u64;
+        let mut data: Vec<f32> = (0..1000)
+            .map(|_| {
+                state = state.wrapping_mul(1664525).wrapping_add(1013904223) & 0xFFFF_FFFF;
+                (state as f32 / u32::MAX as f32) * 6.0 - 3.0
+            })
+            .collect();
+        data[0] = 10.0;
+        data[999] = -10.0;
+
+        let (_, max_e) = QuantizedTensor::calculate_min_max(&data, &CalibrationMethod::Entropy)
+            .expect("test: should succeed");
+        assert!(
+            max_e < 10.0,
+            "Entropy calibration should be tighter than raw MinMax (got max_e={max_e})"
+        );
+    }
+
+    #[test]
+    fn test_mse_calibration_tighter_than_minmax() {
+        let mut state = 42u64;
+        let mut data: Vec<f32> = (0..1000)
+            .map(|_| {
+                state = state.wrapping_mul(1664525).wrapping_add(1013904223) & 0xFFFF_FFFF;
+                (state as f32 / u32::MAX as f32) * 6.0 - 3.0
+            })
+            .collect();
+        data[0] = 10.0;
+        data[999] = -10.0;
+
+        let (_, max_m) = QuantizedTensor::calculate_min_max(&data, &CalibrationMethod::Mse)
+            .expect("test: should succeed");
+        let (_, max_mm) = QuantizedTensor::calculate_min_max(&data, &CalibrationMethod::MinMax)
+            .expect("test: should succeed");
+
+        // MSE calibration minimizes quantization MSE on calibration data.
+        // Its achieved MSE must be ≤ MinMax's achieved MSE (by definition of minimization).
+        const N_LEVELS: f32 = 255.0;
+        let compute_mse = |alpha: f32| -> f32 {
+            data.iter()
+                .map(|&v| {
+                    let clipped = v.clamp(-alpha, alpha);
+                    let scale = (2.0 * alpha) / N_LEVELS;
+                    let q = ((clipped + alpha) / scale).round() as i32;
+                    let q = q.clamp(0, N_LEVELS as i32 - 1);
+                    let dequant = q as f32 * scale - alpha;
+                    let diff = v - dequant;
+                    diff * diff
+                })
+                .sum::<f32>()
+                / data.len() as f32
+        };
+        let mse_with_mse_cal = compute_mse(max_m);
+        let mse_with_minmax = compute_mse(max_mm);
+        assert!(
+            mse_with_mse_cal <= mse_with_minmax + 1e-6,
+            "MSE calibration MSE ({mse_with_mse_cal}) must be ≤ MinMax MSE ({mse_with_minmax})"
+        );
+        // MSE calibration range must be positive and symmetric
+        assert!(
+            max_m > 0.0,
+            "MSE calibration should return positive range (got {max_m})"
+        );
+    }
+
+    #[test]
+    fn test_entropy_deterministic() {
+        let data: Vec<f32> = (0..50).map(|i| i as f32 * 0.1 - 2.5).collect();
+        let result1 = QuantizedTensor::calculate_min_max(&data, &CalibrationMethod::Entropy)
+            .expect("test: should succeed");
+        let result2 = QuantizedTensor::calculate_min_max(&data, &CalibrationMethod::Entropy)
+            .expect("test: should succeed");
+        assert_eq!(result1, result2);
+    }
+
+    #[test]
+    fn test_mse_deterministic() {
+        let data: Vec<f32> = (0..50).map(|i| i as f32 * 0.1 - 2.5).collect();
+        let result1 = QuantizedTensor::calculate_min_max(&data, &CalibrationMethod::Mse)
+            .expect("test: should succeed");
+        let result2 = QuantizedTensor::calculate_min_max(&data, &CalibrationMethod::Mse)
+            .expect("test: should succeed");
+        assert_eq!(result1, result2);
+    }
+
+    #[test]
+    fn test_entropy_edge_case_all_same() {
+        let data = vec![5.0f32; 100];
+        let result = QuantizedTensor::calculate_min_max(&data, &CalibrationMethod::Entropy);
+        assert!(result.is_ok(), "Should not panic on all-same data");
+        let (min_v, max_v) = result.expect("test: should succeed");
+        assert!((min_v - 5.0).abs() < 0.01 && (max_v - 5.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_mse_edge_case_all_same() {
+        let data = vec![5.0f32; 100];
+        let result = QuantizedTensor::calculate_min_max(&data, &CalibrationMethod::Mse);
+        assert!(result.is_ok(), "Should not panic on all-same data");
     }
 }

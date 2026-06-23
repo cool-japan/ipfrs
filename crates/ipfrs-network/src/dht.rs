@@ -85,6 +85,8 @@ pub struct DhtManager {
     refresh_handle: Option<tokio::task::JoinHandle<()>>,
     /// Command sender for refresh task
     cmd_tx: Option<mpsc::Sender<DhtCommand>>,
+    /// Provider re-announcement tracker
+    reannouncer: Arc<RwLock<ProviderReannouncer>>,
 }
 
 /// DHT statistics
@@ -158,6 +160,7 @@ pub(crate) enum DhtCommand {
 impl DhtManager {
     /// Create a new DHT manager
     pub fn new(config: DhtConfig) -> Self {
+        let reannounce_interval = config.provider_refresh_interval;
         let manager = Self {
             config,
             query_cache: Arc::new(DashMap::new()),
@@ -166,6 +169,7 @@ impl DhtManager {
             stats: Arc::new(RwLock::new(DhtStats::default())),
             refresh_handle: None,
             cmd_tx: None,
+            reannouncer: Arc::new(RwLock::new(ProviderReannouncer::new(reannounce_interval))),
         };
 
         info!(
@@ -640,35 +644,18 @@ impl ProviderReannouncer {
 
 impl DhtManager {
     /// Record that this node is providing `cid` so it can be re-announced later.
-    ///
-    /// Delegates to an internal `ProviderReannouncer` stored in the DHT manager.
-    /// The reannouncer uses a 12-hour interval by default, safely below the 24-hour TTL.
     pub fn record_provide(&self, cid: &str) {
-        // We maintain a separate reannouncer inside a RwLock-wrapped provider_records map.
-        // For simplicity we reuse the existing `provider_records` field as the persistence
-        // layer and augment DhtManager with a standalone ProviderReannouncer lazily.
-        //
-        // Since DhtManager does not yet carry a ProviderReannouncer field we expose the
-        // three forwarding methods that operate on a thread-local cache so the public API
-        // is available without a breaking struct change.  Production usage should construct
-        // a standalone ProviderReannouncer and hold it alongside DhtManager.
-        let _ = cid; // forwarding only – see ProviderReannouncer
+        self.reannouncer.write().record_provide(cid);
     }
 
     /// Return the list of CIDs that are due for DHT re-announcement.
-    ///
-    /// Production usage: hold a `ProviderReannouncer` alongside `DhtManager` and call
-    /// `reannouncer.due_for_reannouncement()` directly.  This method is a convenience
-    /// stub that always returns an empty list when no external reannouncer is wired up.
     pub fn get_due_for_reannouncement(&self) -> Vec<String> {
-        Vec::new()
+        self.reannouncer.read().due_for_reannouncement()
     }
 
-    /// Mark `cids` as having been re-announced.
-    ///
-    /// Production usage: call `reannouncer.mark_reannounced(cids)` directly.
-    pub fn mark_reannounced(&self, _cids: &[String]) {
-        // stub – see ProviderReannouncer
+    /// Mark `cids` as having been re-announced, resetting their timers.
+    pub fn mark_reannounced(&self, cids: &[String]) {
+        self.reannouncer.write().mark_reannounced(cids);
     }
 }
 
@@ -1018,5 +1005,44 @@ mod tests {
 
         let health = manager.get_health();
         assert_eq!(health.cache_hit_rate, 0.5);
+    }
+}
+
+#[cfg(test)]
+mod dht_manager_reannounce_tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn manager_with_interval(interval: Duration) -> DhtManager {
+        DhtManager::new(DhtConfig {
+            provider_refresh_interval: interval,
+            ..DhtConfig::default()
+        })
+    }
+
+    #[test]
+    fn test_record_and_due_immediately() {
+        let mgr = manager_with_interval(Duration::ZERO);
+        mgr.record_provide("QmFoo");
+        let due = mgr.get_due_for_reannouncement();
+        assert!(due.contains(&"QmFoo".to_string()));
+    }
+
+    #[test]
+    fn test_mark_reannounced_resets_timer() {
+        let mgr = manager_with_interval(Duration::ZERO);
+        mgr.record_provide("QmBar");
+        mgr.mark_reannounced(&["QmBar".to_string()]);
+        let due = mgr.get_due_for_reannouncement();
+        // still due because interval is ZERO
+        assert!(due.contains(&"QmBar".to_string()));
+    }
+
+    #[test]
+    fn test_nothing_due_with_large_interval() {
+        let mgr = manager_with_interval(Duration::from_secs(86400 * 365));
+        mgr.record_provide("QmBaz");
+        let due = mgr.get_due_for_reannouncement();
+        assert!(due.is_empty());
     }
 }

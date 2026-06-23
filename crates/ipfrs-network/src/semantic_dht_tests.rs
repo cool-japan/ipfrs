@@ -968,3 +968,76 @@ mod partial_sync_v3_tests {
         assert_eq!(cfg.max_rounds, 100);
     }
 }
+
+// ---------------------------------------------------------------------------
+// local_peer_id_tests — verify that local-index query results carry the
+// correct peer identity rather than a random placeholder.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod local_peer_id_tests {
+    use super::*;
+    use cid::Cid;
+    use libp2p::identity::Keypair;
+
+    /// Build a DHT with a known, deterministic `local_peer_id` derived from a
+    /// freshly generated Ed25519 keypair, then verify that every result
+    /// returned from a local-index semantic query carries exactly that peer.
+    #[test]
+    fn test_local_query_results_carry_local_peer_id() {
+        // Generate a known keypair so we can assert the exact peer id.
+        let keypair = Keypair::generate_ed25519();
+        let expected_peer_id = keypair.public().to_peer_id();
+
+        let dht = SemanticDht::new_with_peer_id(
+            SemanticDhtConfig {
+                dimension: 4,
+                ..Default::default()
+            },
+            expected_peer_id,
+        );
+
+        // Register a namespace so the query path is exercised.
+        let ns = SemanticNamespace {
+            id: NamespaceId::new("local-peer-test"),
+            dimension: 4,
+            distance_metric: DistanceMetric::Cosine,
+            lsh_config: LshConfig::default(),
+        };
+        dht.register_namespace(ns)
+            .expect("test: register_namespace should succeed");
+
+        let ns_id = NamespaceId::new("local-peer-test");
+
+        // Index several local entries (use the default CID to keep it simple).
+        for _ in 0..5usize {
+            let v = vec![1.0f32, 0.0, 0.0, 0.0];
+            dht.index_content(Cid::default(), v, ns_id.clone())
+                .expect("test: index_content should succeed");
+        }
+
+        // Execute a local semantic query.
+        let query = SemanticQuery {
+            embedding: vec![1.0, 0.0, 0.0, 0.0],
+            namespace: ns_id,
+            top_k: 10,
+            metadata_filter: None,
+            timeout: Duration::from_secs(5),
+        };
+
+        let results = dht.query(query).expect("test: query should succeed");
+
+        assert!(
+            !results.is_empty(),
+            "expected at least one result from local index"
+        );
+
+        for result in &results {
+            assert_eq!(
+                result.peer, expected_peer_id,
+                "local-index result must carry local_peer_id, got {:?}",
+                result.peer
+            );
+        }
+    }
+}

@@ -457,6 +457,28 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+
+    /// Manage IPFRS configuration (show, export, import, edit)
+    #[command(long_about = "View and manage the IPFRS configuration file.\n\n\
+            The configuration is loaded from (in order):\n  \
+            .ipfrs/config.toml      (current directory)\n  \
+            ~/.ipfrs/config.toml    (user home)\n  \
+            /etc/ipfrs/config.toml  (system)\n\n\
+            Environment variable overrides:\n  \
+            IPFRS_PATH         Data directory\n  \
+            IPFRS_LOG_LEVEL    Log level\n  \
+            IPFRS_API_URL      Remote API URL\n  \
+            IPFRS_API_TOKEN    API authentication token\n\n\
+            Examples:\n  \
+            ipfrs config show               # Show current configuration\n  \
+            ipfrs config show --format json # Show configuration as JSON\n  \
+            ipfrs config export out.toml    # Export to file\n  \
+            ipfrs config import in.toml     # Import from file\n  \
+            ipfrs config edit               # Open config in $EDITOR")]
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommands,
+    },
 }
 
 /// Subcommands for `ipfrs identity`
@@ -485,6 +507,40 @@ enum IdentityCommands {
         #[arg(short, long, default_value = ".ipfrs")]
         data_dir: String,
     },
+}
+
+/// Subcommands for `ipfrs config`
+#[derive(Subcommand)]
+enum ConfigCommands {
+    /// Display the current configuration
+    Show {
+        /// Output format: text (default) or json
+        #[arg(long, default_value = "text", value_name = "FORMAT")]
+        format: String,
+    },
+
+    /// Export the current configuration to a file
+    Export {
+        /// Destination file path
+        #[arg(value_name = "FILE")]
+        output: String,
+        /// Export format: toml (default), json, or yaml
+        #[arg(long, default_value = "toml", value_name = "FORMAT")]
+        format: String,
+    },
+
+    /// Import a configuration file, replacing the current configuration
+    Import {
+        /// Source file path (format auto-detected by extension)
+        #[arg(value_name = "FILE")]
+        input: String,
+        /// Validate the file without writing (dry run)
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Open the configuration file in $EDITOR (or vi)
+    Edit,
 }
 
 /// Subcommands for `ipfrs metrics`
@@ -1712,6 +1768,20 @@ async fn main() -> Result<()> {
         Commands::Diag { json } => {
             handle_diag(json).await?;
         }
+        Commands::Config { command } => match command {
+            ConfigCommands::Show { format } => {
+                config_show(format).await?;
+            }
+            ConfigCommands::Export { output, format } => {
+                config_export(output, format).await?;
+            }
+            ConfigCommands::Import { input, dry_run } => {
+                config_import(input, dry_run).await?;
+            }
+            ConfigCommands::Edit => {
+                config_edit().await?;
+            }
+        },
     }
 
     Ok(())

@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "ipfrs"
-version = "0.2.0"
+version = "0.2.1"
 description = "Inter-Planetary File Rust System - Content-addressed storage with semantic search and logic programming"
 readme = "README.md"
 requires-python = ">=3.8"

@@ -203,21 +203,22 @@ mod helpers {
     //! Helper functions for Kubo compatibility testing
 
     /// Create a test block with given data
-    #[allow(dead_code)]
-    pub fn create_test_block(_data: &[u8]) -> Vec<u8> {
-        // TODO: Implement test block creation
-        // - Generate proper CID
-        // - Create block structure
-        vec![]
+    pub fn create_test_block(data: &[u8]) -> Vec<u8> {
+        match ipfrs_core::Block::new(bytes::Bytes::copy_from_slice(data)) {
+            Ok(block) => block.data().to_vec(),
+            Err(_) => data.to_vec(),
+        }
     }
 
     /// Verify CID matches content
-    #[allow(dead_code)]
-    pub fn verify_cid(_cid: &[u8], _content: &[u8]) -> bool {
-        // TODO: Implement CID verification
-        // - Hash content
-        // - Compare with CID
-        false
+    pub fn verify_cid(cid_bytes: &[u8], content: &[u8]) -> bool {
+        let Ok(parsed) = ipfrs_core::Cid::try_from(cid_bytes) else {
+            return false;
+        };
+        match ipfrs_core::CidBuilder::new().build(content) {
+            Ok(computed) => computed == parsed,
+            Err(_) => false,
+        }
     }
 
     /// Add a block to Kubo via HTTP API
@@ -256,3 +257,31 @@ mod helpers {
 
 // Note: These tests are stubs and need to be implemented when Kubo integration is ready.
 // They provide a framework for comprehensive compatibility testing.
+
+#[cfg(test)]
+mod cid_helper_tests {
+    use super::helpers::{create_test_block, verify_cid};
+
+    #[test]
+    fn test_create_block_roundtrip_verify() {
+        let data = b"ipfrs kubo compat test data";
+        let block_bytes = create_test_block(data);
+        // Block::new returns the same data back (raw codec)
+        assert!(!block_bytes.is_empty());
+        let cid = ipfrs_core::CidBuilder::new().build(data).expect("cid");
+        assert!(verify_cid(&cid.to_bytes(), data));
+    }
+
+    #[test]
+    fn test_verify_cid_mismatch() {
+        let data = b"correct content";
+        let wrong = b"wrong content";
+        let cid = ipfrs_core::CidBuilder::new().build(data).expect("cid");
+        assert!(!verify_cid(&cid.to_bytes(), wrong));
+    }
+
+    #[test]
+    fn test_verify_cid_garbage_bytes() {
+        assert!(!verify_cid(&[0xff, 0x00, 0xde, 0xad], b"anything"));
+    }
+}

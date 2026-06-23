@@ -5,11 +5,15 @@ All notable changes to IPFRS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.1] - Unreleased
+## [0.2.1] - 2026-06-23 "Semantic Release"
 
 ### Added
 
+- Semantic Versioning Tracker module directory (`src/semantic_versioning_tracker/`) containing sub-modules: `mod.rs`, `types.rs`, `type_aliases.rs`, `svterror_traits.rs`, `svttrackerconfig_traits.rs`, `functions.rs`, `constants.rs`, and `tests.rs`
+
 ### Changed
+
+- Refactored `semantic_versioning_tracker.rs` (2271 lines) into a module directory structure, bringing all files under the 2000-line policy limit
 
 ### Fixed
 
@@ -443,5 +447,6 @@ IPFRS follows [Semantic Versioning](https://semver.org/):
 
 For questions, issues, or contributions, visit our [GitHub repository](https://github.com/cool-japan/ipfrs).
 
+[0.2.1]: https://github.com/cool-japan/ipfrs/releases/tag/v0.2.1
 [0.2.0]: https://github.com/cool-japan/ipfrs/releases/tag/v0.2.0
 [0.1.0]: https://github.com/cool-japan/ipfrs/releases/tag/v0.1.0
