@@ -51,7 +51,7 @@ arrow-array = "59"
 arrow-buffer = "59"
 arrow-schema = "59"
 safetensors = "0.8"
-bytes = "1.11"
+bytes = "1.12"
 memmap2 = "0.9"
 rand = "0.10"
 
@@ -92,7 +92,7 @@ clap = { version = "4.6", features = ["derive"] }
 # Web server
 axum = { version = "0.8", features = ["multipart"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip"] }
+tower-http = { version = "0.7", features = ["cors", "trace", "compression-gzip"] }
 hyper = "1.10"
 
 # Serialization
@@ -161,8 +161,8 @@ oxiarc-snappy = "0.3.3"
 oxiarc-deflate = "0.3.3"
 
 # Encryption
-chacha20poly1305 = "0.10"
-aes-gcm = "0.10"
+chacha20poly1305 = "0.11"
+aes-gcm = "0.11"
 argon2 = "0.5"
 zeroize = { version = "1.9", features = ["derive"] }
 
@@ -173,7 +173,7 @@ crc32fast = "1.5"
 
 # AWS SDK
 aws-config = "1.8"
-aws-sdk-s3 = "1.136"
+aws-sdk-s3 = "1.137"
 
 # HTTP utilities
 url = "2.5"
@@ -226,7 +226,7 @@ rustls-pemfile = "2.2"
 md5 = "0.8"
 
 # Node.js bindings (NAPI-RS)
-napi = { version = "3.9", features = ["async", "napi8"] }
+napi = { version = "3.10", features = ["async", "napi8"] }
 napi-derive = "3.5"
 napi-build = "2.3"
 

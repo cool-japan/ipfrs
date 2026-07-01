@@ -12,10 +12,10 @@
 
 use crate::traits::BlockStore;
 use aes_gcm::{
-    aead::{Aead, KeyInit, OsRng},
+    aead::{Aead, KeyInit},
     Aes256Gcm, Nonce as AesNonce,
 };
-use argon2::password_hash::{PasswordHash, PasswordVerifier, SaltString};
+use argon2::password_hash::{rand_core::OsRng, PasswordHash, PasswordVerifier, SaltString};
 use argon2::{Argon2, PasswordHasher};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -161,17 +161,19 @@ impl EncryptionKey {
             Cipher::ChaCha20Poly1305 => {
                 let cipher = ChaCha20Poly1305::new_from_slice(&self.key_bytes)
                     .map_err(|e| Error::Encryption(format!("Cipher init failed: {e}")))?;
-                let nonce_array = ChachaNonce::from_slice(&nonce);
+                let nonce_array = ChachaNonce::try_from(nonce.as_slice())
+                    .map_err(|e| Error::Encryption(format!("Invalid nonce length: {e}")))?;
                 cipher
-                    .encrypt(nonce_array, plaintext)
+                    .encrypt(&nonce_array, plaintext)
                     .map_err(|e| Error::Encryption(format!("Encryption failed: {e}")))?
             }
             Cipher::Aes256Gcm => {
                 let cipher = Aes256Gcm::new_from_slice(&self.key_bytes)
                     .map_err(|e| Error::Encryption(format!("Cipher init failed: {e}")))?;
-                let nonce_array = AesNonce::from_slice(&nonce);
+                let nonce_array = AesNonce::try_from(nonce.as_slice())
+                    .map_err(|e| Error::Encryption(format!("Invalid nonce length: {e}")))?;
                 cipher
-                    .encrypt(nonce_array, plaintext)
+                    .encrypt(&nonce_array, plaintext)
                     .map_err(|e| Error::Encryption(format!("Encryption failed: {e}")))?
             }
         };
@@ -197,17 +199,19 @@ impl EncryptionKey {
             Cipher::ChaCha20Poly1305 => {
                 let cipher = ChaCha20Poly1305::new_from_slice(&self.key_bytes)
                     .map_err(|e| Error::Encryption(format!("Cipher init failed: {e}")))?;
-                let nonce_array = ChachaNonce::from_slice(nonce);
+                let nonce_array = ChachaNonce::try_from(nonce)
+                    .map_err(|e| Error::Encryption(format!("Invalid nonce length: {e}")))?;
                 cipher
-                    .decrypt(nonce_array, encrypted_data)
+                    .decrypt(&nonce_array, encrypted_data)
                     .map_err(|e| Error::Encryption(format!("Decryption failed: {e}")))?
             }
             Cipher::Aes256Gcm => {
                 let cipher = Aes256Gcm::new_from_slice(&self.key_bytes)
                     .map_err(|e| Error::Encryption(format!("Cipher init failed: {e}")))?;
-                let nonce_array = AesNonce::from_slice(nonce);
+                let nonce_array = AesNonce::try_from(nonce)
+                    .map_err(|e| Error::Encryption(format!("Invalid nonce length: {e}")))?;
                 cipher
-                    .decrypt(nonce_array, encrypted_data)
+                    .decrypt(&nonce_array, encrypted_data)
                     .map_err(|e| Error::Encryption(format!("Decryption failed: {e}")))?
             }
         };
