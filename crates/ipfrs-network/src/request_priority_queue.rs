@@ -178,7 +178,7 @@ impl PeerRequestQueue {
     ///
     /// Returns `true` if the request was found and removed.
     pub fn cancel(&mut self, request_id: u64) -> bool {
-        for (_, q) in self.queues.iter_mut() {
+        for q in self.queues.values_mut() {
             if let Some(pos) = q.iter().position(|r| r.id == request_id) {
                 q.remove(pos);
                 return true;

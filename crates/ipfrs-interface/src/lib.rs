@@ -131,6 +131,7 @@ pub mod auth;
 pub mod auth_handlers;
 pub mod backpressure;
 pub mod binary_protocol;
+pub mod compression;
 pub mod ffi;
 pub mod gateway;
 pub mod gradient_sync;
@@ -163,6 +164,9 @@ pub use backpressure::{
 pub use binary_protocol::{
     BinaryMessage, ErrorResponse, GetBlockRequest, HasBlockRequest, MessageType, ProtocolError,
     PutBlockRequest, SuccessResponse, PROTOCOL_VERSION,
+};
+pub use compression::{
+    accepts_gzip, compress_response, gzip_quality, is_incompressible_content_type, CompressionState,
 };
 pub use gateway::{Gateway, GatewayConfig};
 pub use gradient_sync::{GradientChunkResponse, GradientSyncRequest, GradientSyncService};

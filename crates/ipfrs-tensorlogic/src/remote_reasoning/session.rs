@@ -558,16 +558,21 @@ pub struct PartialResult {
 ///
 /// # Example
 ///
+/// A stream is obtained from `Node::infer_streaming` in the higher-level `ipfrs`
+/// crate (which depends on this one, so it cannot be constructed here); the
+/// snippet below shows how a caller drains one once they have it:
+///
 /// ```no_run
-/// # async fn example() {
 /// # use ipfrs_tensorlogic::InferenceResultStream;
-/// // (obtained from Node::infer_streaming)
-/// let mut stream: InferenceResultStream = todo!();
-/// while let Some(partial) = stream.next_partial().await {
-///     println!("peer {}: {} new bindings", partial.peer_id, partial.new_bindings.len());
-///     if partial.is_final { break; }
+/// # #[allow(dead_code)]
+/// async fn drain_stream(mut stream: InferenceResultStream) {
+///     while let Some(partial) = stream.next_partial().await {
+///         println!("peer {}: {} new bindings", partial.peer_id, partial.new_bindings.len());
+///         if partial.is_final {
+///             break;
+///         }
+///     }
 /// }
-/// # }
 /// ```
 pub struct InferenceResultStream {
     /// Session identifier for correlating with the originating request.

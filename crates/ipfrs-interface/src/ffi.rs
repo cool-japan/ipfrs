@@ -463,7 +463,7 @@ pub unsafe extern "C" fn ipfrs_data_free(data: *mut u8, len: usize) {
 #[no_mangle]
 pub extern "C" fn ipfrs_version() -> *const c_char {
     // Use a static string to avoid allocation
-    static VERSION: &[u8] = b"ipfrs-interface 0.2.0\0";
+    static VERSION: &[u8] = b"ipfrs-interface 0.3.0\0";
     VERSION.as_ptr() as *const c_char
 }
 

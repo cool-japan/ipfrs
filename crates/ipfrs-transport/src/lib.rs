@@ -108,8 +108,8 @@ pub use prefetch::{
     PrefetchStrategy,
 };
 pub use quic::{
-    AdaptiveBatchTuner, BlockStream, ParallelRequester, PipelineConfig, QuicConfig, QuicPoolStats,
-    QuicTransport, SequentialPipeline,
+    AdaptiveBatchTuner, BlockStream, CertPin, ParallelRequester, PinnedServerVerifier,
+    PipelineConfig, QuicConfig, QuicPoolStats, QuicTransport, SequentialPipeline,
 };
 pub use range_request::{ByteRange, RangeAssembler, RangeError, RangeRequest, RangeResponse};
 pub use recovery::{

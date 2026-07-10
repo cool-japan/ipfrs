@@ -83,6 +83,14 @@ pub struct GossipSubConfig {
 
     /// Enable message validation
     pub enable_validation: bool,
+
+    /// Total peer score (see [`PeerScore::total_score`]) below which a peer
+    /// is automatically added to the ban list by
+    /// [`GossipSubManager::handle_message`]. Once banned, every subsequent
+    /// message whose `source` is that peer is rejected by
+    /// [`GossipSubManager::validate_message`] until the peer is explicitly
+    /// unbanned via [`GossipSubManager::unban_peer`].
+    pub ban_score_threshold: f64,
 }
 
 impl Default for GossipSubConfig {
@@ -98,6 +106,7 @@ impl Default for GossipSubConfig {
             duplicate_cache_time: Duration::from_secs(120),
             max_duplicate_cache_size: 10000,
             enable_validation: true,
+            ban_score_threshold: -100.0,
         }
     }
 }
@@ -295,6 +304,13 @@ pub struct GossipSubManager {
 
     /// Statistics
     stats: Arc<RwLock<GossipSubStats>>,
+
+    /// Banned peers. Any message whose `source` is a key in this set is
+    /// rejected by [`Self::validate_message`], regardless of content.
+    /// Populated either explicitly via [`Self::ban_peer`] or automatically
+    /// by [`Self::handle_message`] when a peer's score falls below
+    /// `config.ban_score_threshold`.
+    banned: Arc<DashMap<PeerId, ()>>,
 }
 
 impl GossipSubManager {
@@ -307,6 +323,7 @@ impl GossipSubManager {
             seen_messages: Arc::new(DashMap::new()),
             sequence_counter: Arc::new(RwLock::new(0)),
             stats: Arc::new(RwLock::new(GossipSubStats::default())),
+            banned: Arc::new(DashMap::new()),
         }
     }
 
@@ -403,10 +420,16 @@ impl GossipSubManager {
             let mut stats = self.stats.write();
             stats.invalid_messages += 1;
 
-            // Update peer score
+            // Update peer score, auto-banning the peer if this pushes its
+            // total score below the configured ban threshold.
             if self.config.enable_scoring {
+                let mut should_ban = false;
                 if let Some(mut score) = self.peer_scores.get_mut(&message.source) {
                     score.record_message(false);
+                    should_ban = score.total_score < self.config.ban_score_threshold;
+                }
+                if should_ban {
+                    self.ban_peer(message.source);
                 }
             }
 
@@ -464,10 +487,65 @@ impl GossipSubManager {
             .retain(|_, entry| now.duration_since(entry.timestamp) < ttl);
     }
 
-    /// Validate message
-    fn validate_message(&self, _message: &GossipSubMessage) -> bool {
-        // Basic validation - can be extended
-        // Check if source peer is not banned, message format is correct, etc.
+    /// Validate an incoming message.
+    ///
+    /// This performs the structural and bookkeeping checks that are actually
+    /// possible from inside this in-process manager: non-empty payload, size
+    /// bound, known/subscribed topic, and ban-list membership of `source`.
+    fn validate_message(&self, message: &GossipSubMessage) -> bool {
+        // Structural: an empty payload is never a legitimate application
+        // message.
+        if message.data.is_empty() {
+            return false;
+        }
+
+        // Size bound: enforce the same ceiling `publish()` enforces on the
+        // send side, so `handle_message` cannot be used to smuggle in an
+        // oversized message that never went through `publish`.
+        if message.data.len() > self.config.max_message_size {
+            return false;
+        }
+
+        // Only accept messages for topics we are actually subscribed to.
+        if !self.subscriptions.contains_key(&message.topic) {
+            return false;
+        }
+
+        // Ban list: reject anything from a peer we have banned, whether
+        // banned manually via `ban_peer` or automatically because its score
+        // fell below `config.ban_score_threshold` in `handle_message`.
+        if self.is_banned(&message.source) {
+            return false;
+        }
+
+        // ---------------------------------------------------------------
+        // HONESTY NOTE — trust boundary of `source`:
+        //
+        // `message.source` is a caller-supplied `PeerId`. Nothing in this
+        // function (or anywhere else in this module) verifies that the peer
+        // identified by `source` actually authored or relayed this message:
+        // `GossipSubMessage` carries no cryptographic signature over its
+        // fields, so `source` is, today, purely a self-reported label. The
+        // checks above are real (they reject genuinely malformed, oversized,
+        // unsubscribed, or banned traffic), but they do NOT amount to origin
+        // authentication.
+        //
+        // This is currently a latent gap rather than a live one:
+        // `GossipSubManager` is in-process only — `IpfrsBehaviour` (see
+        // `node.rs`) does not yet include a libp2p gossipsub swarm behaviour,
+        // so no remote peer can drive `handle_message` today. Closing the
+        // gap for real requires one of:
+        //   (a) wiring an actual `libp2p::gossipsub::Behaviour` into
+        //       `IpfrsBehaviour` so `source` is populated from the
+        //       authenticated (Noise-encrypted) libp2p connection the
+        //       message arrived on, instead of being passed in by the
+        //       caller; or
+        //   (b) signing messages with the node's Ed25519 `Keypair` (see
+        //       `identity.rs::PeerIdentityManager`) and verifying that
+        //       signature here against the public key implied by `source`.
+        // Until one of those lands, callers MUST continue to treat `source`
+        // as untrusted input, not an authenticated identity.
+        // ---------------------------------------------------------------
         true
     }
 
@@ -563,6 +641,29 @@ impl GossipSubManager {
             })
             .cloned()
             .collect()
+    }
+
+    /// Ban a peer.
+    ///
+    /// After this call, [`Self::validate_message`] rejects every message
+    /// whose `source` is `peer`, regardless of content, until [`Self::unban_peer`]
+    /// is called for it. See the honesty note on [`Self::validate_message`]
+    /// for what banning does and does not guarantee: `source` is not an
+    /// authenticated identity, so this bans a self-reported label, not a
+    /// cryptographically verified peer.
+    pub fn ban_peer(&self, peer: PeerId) {
+        self.banned.insert(peer, ());
+    }
+
+    /// Remove a peer from the ban list, allowing its future messages to be
+    /// evaluated normally again by [`Self::validate_message`].
+    pub fn unban_peer(&self, peer: &PeerId) {
+        self.banned.remove(peer);
+    }
+
+    /// Check whether `peer` is currently on the ban list.
+    pub fn is_banned(&self, peer: &PeerId) -> bool {
+        self.banned.contains_key(peer)
     }
 
     /// Get statistics
@@ -1187,6 +1288,186 @@ mod tests {
         // Record invalid message
         score.record_message(false);
         assert!(score.total_score < 0.7); // Score should decrease
+    }
+
+    #[test]
+    fn validate_rejects_empty_payload() {
+        let manager = GossipSubManager::new(GossipSubConfig::default());
+        let topic = TopicId::content_announce();
+        let peer = test_peer_id(1);
+        manager
+            .subscribe(topic.clone())
+            .expect("test: subscribe should succeed");
+
+        let message = GossipSubMessage {
+            id: MessageId::new(&peer, 1),
+            source: peer,
+            topic,
+            data: Vec::new(),
+            sequence: 1,
+            timestamp: Instant::now(),
+        };
+
+        assert!(
+            !manager.validate_message(&message),
+            "empty payload must be rejected"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_oversized() {
+        let config = GossipSubConfig {
+            max_message_size: 16,
+            ..Default::default()
+        };
+        let manager = GossipSubManager::new(config);
+        let topic = TopicId::content_announce();
+        let peer = test_peer_id(1);
+        manager
+            .subscribe(topic.clone())
+            .expect("test: subscribe should succeed");
+
+        let message = GossipSubMessage {
+            id: MessageId::new(&peer, 1),
+            source: peer,
+            topic,
+            data: vec![0u8; 32], // larger than max_message_size = 16
+            sequence: 1,
+            timestamp: Instant::now(),
+        };
+
+        assert!(
+            !manager.validate_message(&message),
+            "oversized payload must be rejected"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_unsubscribed_topic() {
+        let manager = GossipSubManager::new(GossipSubConfig::default());
+        let topic = TopicId::content_announce(); // deliberately never subscribed
+        let peer = test_peer_id(1);
+
+        let message = GossipSubMessage {
+            id: MessageId::new(&peer, 1),
+            source: peer,
+            topic,
+            data: b"payload".to_vec(),
+            sequence: 1,
+            timestamp: Instant::now(),
+        };
+
+        assert!(
+            !manager.validate_message(&message),
+            "message for an unsubscribed topic must be rejected"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_banned_peer() {
+        let manager = GossipSubManager::new(GossipSubConfig::default());
+        let topic = TopicId::content_announce();
+        let peer = test_peer_id(1);
+        manager
+            .subscribe(topic.clone())
+            .expect("test: subscribe should succeed");
+        manager.ban_peer(peer);
+
+        let message = GossipSubMessage {
+            id: MessageId::new(&peer, 1),
+            source: peer,
+            topic,
+            data: b"payload".to_vec(),
+            sequence: 1,
+            timestamp: Instant::now(),
+        };
+
+        assert!(manager.is_banned(&peer));
+        assert!(
+            !manager.validate_message(&message),
+            "message from a banned peer must be rejected"
+        );
+    }
+
+    #[test]
+    fn ban_unban_flow() {
+        let manager = GossipSubManager::new(GossipSubConfig::default());
+        let peer = test_peer_id(1);
+
+        assert!(
+            !manager.is_banned(&peer),
+            "peer should not be banned initially"
+        );
+
+        manager.ban_peer(peer);
+        assert!(
+            manager.is_banned(&peer),
+            "peer should be banned after ban_peer"
+        );
+
+        manager.unban_peer(&peer);
+        assert!(
+            !manager.is_banned(&peer),
+            "peer should no longer be banned after unban_peer"
+        );
+    }
+
+    #[test]
+    fn test_handle_message_auto_bans_low_scoring_peer() {
+        // Use a threshold well above the default so the test is deterministic
+        // and doesn't depend on tuning the default value.
+        let config = GossipSubConfig {
+            ban_score_threshold: -40.0,
+            ..Default::default()
+        };
+        let manager = GossipSubManager::new(config);
+        let topic = TopicId::content_announce();
+        let peer = test_peer_id(1);
+        manager
+            .subscribe(topic.clone())
+            .expect("test: subscribe should succeed");
+
+        // Give the peer a very negative baseline topic score.
+        manager.update_peer_score(&peer, topic.clone(), -100.0);
+
+        // A valid message keeps invalid_ratio at 0, so total_score stays at
+        // the baseline (-100.0) and no ban should be triggered yet (the ban
+        // check only runs on the invalid-message path).
+        let valid_message = GossipSubMessage {
+            id: MessageId::new(&peer, 1),
+            source: peer,
+            topic: topic.clone(),
+            data: b"ok".to_vec(),
+            sequence: 1,
+            timestamp: Instant::now(),
+        };
+        manager
+            .handle_message(valid_message)
+            .expect("test: handle valid message should succeed");
+        assert!(
+            !manager.is_banned(&peer),
+            "peer should not be banned before any invalid messages"
+        );
+
+        // An invalid (empty-payload) message brings invalid_ratio to 0.5,
+        // dropping total_score to -100.0 * (1 - 0.5) = -50.0, which is below
+        // the configured -40.0 threshold and must trigger an auto-ban.
+        let invalid_message = GossipSubMessage {
+            id: MessageId::new(&peer, 2),
+            source: peer,
+            topic,
+            data: Vec::new(),
+            sequence: 2,
+            timestamp: Instant::now(),
+        };
+        manager
+            .handle_message(invalid_message)
+            .expect("test: handle invalid message should succeed");
+
+        assert!(
+            manager.is_banned(&peer),
+            "peer should be auto-banned once its score drops below ban_score_threshold"
+        );
     }
 }
 

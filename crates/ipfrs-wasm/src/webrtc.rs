@@ -81,8 +81,8 @@ pub enum WebRtcSignal {
 
 #[cfg(target_arch = "wasm32")]
 mod wasm_peer {
-    use super::{IceCandidate, WebRtcSignal};
-    use js_sys::{Object, Reflect};
+    use super::IceCandidate;
+    use js_sys::Reflect;
     use wasm_bindgen::prelude::*;
     use wasm_bindgen_futures::JsFuture;
     use web_sys::{
@@ -119,23 +119,21 @@ mod wasm_peer {
         let ice: IceCandidate = serde_json::from_str(candidate_json)
             .map_err(|e| JsValue::from_str(&format!("IceCandidate JSON parse error: {e}")))?;
 
-        let mut init = RtcIceCandidateInit::new(&ice.candidate);
+        let init = RtcIceCandidateInit::new(&ice.candidate);
         if let Some(mid) = &ice.sdp_mid {
-            init.sdp_mid(Some(mid.as_str()));
+            init.set_sdp_mid(Some(mid.as_str()));
         }
         if let Some(idx) = ice.sdp_m_line_index {
-            init.sdp_m_line_index(Some(idx));
+            init.set_sdp_m_line_index(Some(idx));
         }
 
         let rtc_ice = RtcIceCandidate::new(&init)
             .map_err(|e| JsValue::from_str(&format!("RtcIceCandidate::new failed: {e:?}")))?;
 
-        JsFuture::from(
-            pc.add_ice_candidate_with_opt_rtc_ice_candidate(Some(&rtc_ice))
-                .map_err(|e| JsValue::from_str(&format!("addIceCandidate failed: {e:?}")))?,
-        )
-        .await
-        .map(|_| ())
+        JsFuture::from(pc.add_ice_candidate_with_opt_rtc_ice_candidate(Some(&rtc_ice)))
+            .await
+            .map(|_| ())
+            .map_err(|e| JsValue::from_str(&format!("addIceCandidate failed: {e:?}")))
     }
 
     // -----------------------------------------------------------------------
@@ -167,11 +165,9 @@ mod wasm_peer {
     #[wasm_bindgen]
     pub struct IpfrsPeer {
         peer_id: String,
-        /// The underlying RTCPeerConnection.
-        #[wasm_bindgen(skip)]
+        /// The underlying RTCPeerConnection (private: not exposed to JS).
         inner: RtcPeerConnection,
-        /// The DataChannel created by the caller (negotiated in-band).
-        #[wasm_bindgen(skip)]
+        /// The DataChannel created by the caller (private: not exposed to JS).
         data_channel: Option<RtcDataChannel>,
     }
 
@@ -192,12 +188,10 @@ mod wasm_peer {
 
             // Create the data channel on the caller side; the answerer receives
             // it via the `ondatachannel` event.
-            let mut dc_init = RtcDataChannelInit::new();
-            dc_init.ordered(true);
+            let dc_init = RtcDataChannelInit::new();
+            dc_init.set_ordered(true);
 
-            let dc = pc
-                .create_data_channel_with_data_channel_dict("ipfrs-blocks", &dc_init)
-                .map_err(|e| JsValue::from_str(&format!("createDataChannel failed: {e:?}")))?;
+            let dc = pc.create_data_channel_with_data_channel_dict("ipfrs-blocks", &dc_init);
 
             Ok(IpfrsPeer {
                 peer_id: peer_id.to_string(),
@@ -211,12 +205,11 @@ mod wasm_peer {
         /// Returns the offer SDP string.  Forward this to the answerer peer via
         /// your signalling channel.
         pub async fn create_offer(&self) -> Result<String, JsValue> {
-            let offer_promise = self
-                .inner
-                .create_offer()
-                .map_err(|e| JsValue::from_str(&format!("createOffer() failed: {e:?}")))?;
+            let offer_promise = self.inner.create_offer();
 
-            let offer_value = JsFuture::from(offer_promise).await?;
+            let offer_value = JsFuture::from(offer_promise)
+                .await
+                .map_err(|e| JsValue::from_str(&format!("createOffer() failed: {e:?}")))?;
 
             // Extract the SDP string from the RTCSessionDescriptionInit object.
             let sdp = Reflect::get(&offer_value, &JsValue::from_str("sdp"))
@@ -226,12 +219,9 @@ mod wasm_peer {
 
             // Set local description.
             let local_desc = make_sdp_init(RtcSdpType::Offer, &sdp);
-            JsFuture::from(
-                self.inner.set_local_description(&local_desc).map_err(|e| {
-                    JsValue::from_str(&format!("setLocalDescription failed: {e:?}"))
-                })?,
-            )
-            .await?;
+            JsFuture::from(self.inner.set_local_description(&local_desc))
+                .await
+                .map_err(|e| JsValue::from_str(&format!("setLocalDescription failed: {e:?}")))?;
 
             Ok(sdp)
         }
@@ -242,15 +232,10 @@ mod wasm_peer {
         /// channel.  ICE candidate exchange may begin before or after this call.
         pub async fn set_answer(&self, answer_sdp: &str) -> Result<(), JsValue> {
             let remote_desc = make_sdp_init(RtcSdpType::Answer, answer_sdp);
-            JsFuture::from(
-                self.inner
-                    .set_remote_description(&remote_desc)
-                    .map_err(|e| {
-                        JsValue::from_str(&format!("setRemoteDescription failed: {e:?}"))
-                    })?,
-            )
-            .await
-            .map(|_| ())
+            JsFuture::from(self.inner.set_remote_description(&remote_desc))
+                .await
+                .map(|_| ())
+                .map_err(|e| JsValue::from_str(&format!("setRemoteDescription failed: {e:?}")))
         }
 
         /// Add an ICE candidate received from the remote peer.
@@ -261,24 +246,27 @@ mod wasm_peer {
             let ice: IceCandidate = serde_json::from_str(candidate_json)
                 .map_err(|e| JsValue::from_str(&format!("IceCandidate JSON parse error: {e}")))?;
 
-            let mut init = RtcIceCandidateInit::new(&ice.candidate);
+            let init = RtcIceCandidateInit::new(&ice.candidate);
             if let Some(mid) = &ice.sdp_mid {
-                init.sdp_mid(Some(mid.as_str()));
+                init.set_sdp_mid(Some(mid.as_str()));
             }
             if let Some(idx) = ice.sdp_m_line_index {
-                init.sdp_m_line_index(Some(idx));
+                init.set_sdp_m_line_index(Some(idx));
             }
 
             let rtc_ice = RtcIceCandidate::new(&init)
                 .map_err(|e| JsValue::from_str(&format!("RtcIceCandidate::new: {e:?}")))?;
 
-            // Fire-and-forget via wasm_bindgen_futures; errors are surfaced in
-            // the browser console.
+            // Fire-and-forget via wasm_bindgen_futures.  `addIceCandidate` returns
+            // a `Promise`, so we await it and surface any rejection to the browser
+            // console rather than propagating it (the caller has already returned).
             let pc = self.inner.clone();
             wasm_bindgen_futures::spawn_local(async move {
-                if let Ok(promise) = pc.add_ice_candidate_with_opt_rtc_ice_candidate(Some(&rtc_ice))
-                {
-                    let _ = JsFuture::from(promise).await;
+                let promise = pc.add_ice_candidate_with_opt_rtc_ice_candidate(Some(&rtc_ice));
+                if let Err(e) = JsFuture::from(promise).await {
+                    web_sys::console::error_1(&JsValue::from_str(&format!(
+                        "addIceCandidate failed: {e:?}"
+                    )));
                 }
             });
 
@@ -357,8 +345,7 @@ mod wasm_peer {
     /// ```
     #[wasm_bindgen]
     pub struct IpfrsPeerAnswerer {
-        /// The underlying RTCPeerConnection.
-        #[wasm_bindgen(skip)]
+        /// The underlying RTCPeerConnection (private: not exposed to JS).
         inner: RtcPeerConnection,
     }
 
@@ -372,10 +359,11 @@ mod wasm_peer {
             let pc = create_peer_connection()?;
 
             let remote_desc = make_sdp_init(RtcSdpType::Offer, offer_sdp);
-            JsFuture::from(pc.set_remote_description(&remote_desc).map_err(|e| {
-                JsValue::from_str(&format!("setRemoteDescription(offer) failed: {e:?}"))
-            })?)
-            .await?;
+            JsFuture::from(pc.set_remote_description(&remote_desc))
+                .await
+                .map_err(|e| {
+                    JsValue::from_str(&format!("setRemoteDescription(offer) failed: {e:?}"))
+                })?;
 
             Ok(IpfrsPeerAnswerer { inner: pc })
         }
@@ -385,12 +373,11 @@ mod wasm_peer {
         /// Returns the answer SDP string.  Forward this to the caller via your
         /// signalling channel.
         pub async fn create_answer(&self) -> Result<String, JsValue> {
-            let answer_promise = self
-                .inner
-                .create_answer()
-                .map_err(|e| JsValue::from_str(&format!("createAnswer() failed: {e:?}")))?;
+            let answer_promise = self.inner.create_answer();
 
-            let answer_value = JsFuture::from(answer_promise).await?;
+            let answer_value = JsFuture::from(answer_promise)
+                .await
+                .map_err(|e| JsValue::from_str(&format!("createAnswer() failed: {e:?}")))?;
 
             let sdp = Reflect::get(&answer_value, &JsValue::from_str("sdp"))
                 .map_err(|_| JsValue::from_str("answer missing 'sdp' field"))?
@@ -398,12 +385,9 @@ mod wasm_peer {
                 .ok_or_else(|| JsValue::from_str("answer 'sdp' is not a string"))?;
 
             let local_desc = make_sdp_init(RtcSdpType::Answer, &sdp);
-            JsFuture::from(
-                self.inner.set_local_description(&local_desc).map_err(|e| {
-                    JsValue::from_str(&format!("setLocalDescription failed: {e:?}"))
-                })?,
-            )
-            .await?;
+            JsFuture::from(self.inner.set_local_description(&local_desc))
+                .await
+                .map_err(|e| JsValue::from_str(&format!("setLocalDescription failed: {e:?}")))?;
 
             Ok(sdp)
         }
@@ -423,10 +407,6 @@ mod wasm_peer {
             state == RtcIceConnectionState::Connected || state == RtcIceConnectionState::Completed
         }
     }
-
-    // Re-export so they're accessible from the crate root under `webrtc::`.
-    pub use IpfrsPeer;
-    pub use IpfrsPeerAnswerer;
 }
 
 // ---------------------------------------------------------------------------

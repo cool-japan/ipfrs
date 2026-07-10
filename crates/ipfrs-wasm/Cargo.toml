@@ -30,12 +30,14 @@ web-sys = { workspace = true, features = [
     "Event",
     "EventTarget",
     "DomException",
+    "DomStringList",
     # IndexedDB
     "IdbFactory",
     "IdbDatabase",
     "IdbOpenDbRequest",
     "IdbRequest",
     "IdbTransaction",
+    "IdbTransactionMode",
     "IdbObjectStore",
     "IdbKeyRange",
     # WebRTC peer connection

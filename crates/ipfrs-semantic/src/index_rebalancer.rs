@@ -335,9 +335,7 @@ impl EmbeddingIndexRebalancer {
 
     /// Returns a reference to the most recent plan if it has not yet completed.
     pub fn active_plan(&self) -> Option<&RebalancePlan> {
-        self.plans
-            .last()
-            .and_then(|p| if p.is_complete() { None } else { Some(p) })
+        self.plans.last().filter(|&p| !p.is_complete())
     }
 
     /// Returns the number of plans that have reached a terminal state (i.e.

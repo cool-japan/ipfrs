@@ -365,15 +365,9 @@ impl<'a> ProofAssembler<'a> {
         let mut premises = Vec::new();
         for premise_ref in &fragment.premise_refs {
             // Try to find the premise fragment by CID
-            if let Some(premise_fragment) = self.store.get_by_cid(&premise_ref.cid) {
-                if let Some(premise_proof) = self.assemble(&premise_fragment.id) {
-                    premises.push(premise_proof);
-                } else {
-                    return None; // Missing premise
-                }
-            } else {
-                return None; // Missing premise fragment
-            }
+            let premise_fragment = self.store.get_by_cid(&premise_ref.cid)?; // Missing premise fragment
+            let premise_proof = self.assemble(&premise_fragment.id)?; // Missing premise
+            premises.push(premise_proof);
         }
 
         // Convert to proof

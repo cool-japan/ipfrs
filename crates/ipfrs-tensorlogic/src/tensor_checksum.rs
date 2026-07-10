@@ -509,7 +509,7 @@ mod tests {
     fn test_xor_fold_partial_chunk_zero_padded() {
         // 9 bytes → one full chunk XOR one partial chunk (zero-padded).
         let data = b"ABCDEFGHI"; // 9 bytes
-        let chunk1 = u64::from_le_bytes([b'A', b'B', b'C', b'D', b'E', b'F', b'G', b'H']);
+        let chunk1 = u64::from_le_bytes(*b"ABCDEFGH");
         let chunk2 = u64::from_le_bytes([b'I', 0, 0, 0, 0, 0, 0, 0]);
         assert_eq!(xor_fold(data), chunk1 ^ chunk2);
     }

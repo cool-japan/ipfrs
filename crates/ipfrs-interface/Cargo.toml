@@ -57,6 +57,9 @@ axum-server = { workspace = true }
 rustls = { workspace = true }
 rustls-pemfile = { workspace = true }
 
+# Compression (gzip response middleware) — COOLJAPAN Pure Rust via OxiARC
+oxiarc-deflate = { workspace = true }
+
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -85,7 +88,7 @@ lazy_static = { workspace = true }
 
 # gRPC
 tonic = { workspace = true }
-tonic-prost = { version = "0.14", optional = true }
+tonic-prost = { workspace = true, optional = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
 
@@ -96,13 +99,12 @@ pyo3 = { workspace = true, features = ["auto-initialize"], optional = true }
 
 [build-dependencies]
 tonic-build = { workspace = true }
-tonic-prost-build = "0.14"
+tonic-prost-build = { workspace = true }
 prost-build = { workspace = true }
 pyo3-build-config.workspace = true
 
 [dev-dependencies]
 criterion = { workspace = true }
-oxiarc-deflate = { workspace = true }
 tracing-subscriber = { workspace = true }
 reqwest = { workspace = true, features = ["multipart"] }
 tempfile = { workspace = true }

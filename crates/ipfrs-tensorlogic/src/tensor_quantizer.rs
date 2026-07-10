@@ -17,7 +17,7 @@
 //!     channel_dim: 0,
 //!     calibration_percentile: 99.9,
 //! };
-//! let quantizer = TensorQuantizer::new(config);
+//! let mut quantizer = TensorQuantizer::new(config);
 //! let values = vec![0.5_f64, -0.3, 0.8, -0.1, 1.0, -1.0];
 //! let dims = vec![6];
 //! let qt = quantizer.quantize(&values, &dims).expect("example: should succeed in docs");

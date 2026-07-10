@@ -262,6 +262,13 @@ impl GatewayConfig {
             ));
         }
 
+        // Fold in the compression config's own validation (e.g. the min_size
+        // upper bound). `enable_gzip == false` is legitimate and no longer
+        // rejected there — the middleware honors it by skipping compression.
+        self.compression_config
+            .validate()
+            .map_err(ipfrs_core::Error::Internal)?;
+
         Ok(())
     }
 }
@@ -382,11 +389,20 @@ impl Gateway {
                 );
         }
 
-        // TODO: integrate OxiARC-based HTTP compression when available.
-        // tower-http's CompressionLayer (C-backed brotli/deflate) is not used per COOLJAPAN policy.
-        // compression_config.enable_gzip is preserved for future OxiARC wiring.
+        // OxiARC-backed gzip response compression (pure Rust, COOLJAPAN policy).
+        // Implemented as an axum `from_fn_with_state` middleware in
+        // `crate::compression`; honors `compression_config.enable_gzip` and the
+        // full Accept-Encoding / streaming-safety semantics documented there.
+        let compression = axum::middleware::from_fn_with_state(
+            crate::compression::CompressionState {
+                config: self.config.compression_config.clone(),
+            },
+            crate::compression::compress_response,
+        );
+
         router
             .with_state(self.state.clone())
+            .layer(compression)
             .layer(TraceLayer::new_for_http())
     }
 

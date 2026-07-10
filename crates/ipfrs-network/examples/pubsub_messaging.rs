@@ -27,6 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         duplicate_cache_time: Duration::from_secs(120),
         max_duplicate_cache_size: 10000,
         enable_validation: true,
+        ..Default::default()
     };
 
     let manager = GossipSubManager::new(config);
@@ -169,8 +170,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!();
 
-    // 7. Display statistics
-    println!("7. GossipSub Statistics:");
+    // 7. Ban a misbehaving peer outright
+    println!("7. Banning a misbehaving peer...");
+    let misbehaving_peer = peers[2]; // already flagged with a low score above
+    println!(
+        "   Is {} banned yet? {}",
+        misbehaving_peer,
+        manager.is_banned(&misbehaving_peer)
+    );
+
+    manager.ban_peer(misbehaving_peer);
+    println!("   ✓ Banned {}", misbehaving_peer);
+
+    // Once banned, `handle_message` rejects every message from that peer
+    // during validation, regardless of payload — same as any other invalid
+    // message, it comes back as `Ok(false)` rather than an error.
+    let message_from_banned_peer = GossipSubMessage {
+        id: MessageId::new(&misbehaving_peer, 99),
+        source: misbehaving_peer,
+        topic: TopicId::content_announce(),
+        data: b"Trying to sneak a message through".to_vec(),
+        sequence: 99,
+        timestamp: Instant::now(),
+    };
+    let accepted = manager.handle_message(message_from_banned_peer)?;
+    println!(
+        "   Message from banned peer accepted? {} (expected: false)",
+        accepted
+    );
+
+    manager.unban_peer(&misbehaving_peer);
+    println!(
+        "   ✓ Unbanned {} (is_banned now: {})\n",
+        misbehaving_peer,
+        manager.is_banned(&misbehaving_peer)
+    );
+
+    // 8. Display statistics
+    println!("8. GossipSub Statistics:");
     let stats = manager.stats();
     println!("   Subscribed topics: {}", stats.subscribed_topics);
     println!("   Messages published: {}", stats.messages_published);
@@ -187,8 +224,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!();
 
-    // 8. List all subscribed topics
-    println!("8. Subscribed topics:");
+    // 9. List all subscribed topics
+    println!("9. Subscribed topics:");
     let topics = manager.list_topics();
     for topic in topics {
         let _is_subscribed = manager.is_subscribed(&topic);

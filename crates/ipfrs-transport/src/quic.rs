@@ -12,11 +12,34 @@ use ipfrs_core::error::{Error, Result};
 use quinn::{
     ClientConfig, Connection, Endpoint, RecvStream, SendStream, ServerConfig, TransportConfig,
 };
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::crypto::WebPkiSupportedAlgorithms;
+use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::{DigitallySignedStruct, SignatureScheme};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
+
+/// A certificate pin that the QUIC client will accept for a server.
+///
+/// IPFRS peers authenticate one another with *ephemeral, self-signed* certificates
+/// that chain to no public certificate authority. Instead of classic webpki path
+/// validation (which is meaningless for keys that no public root vouches for), the
+/// client authenticates a peer by matching a SHA-256 pin, in the same spirit as SSH
+/// `known_hosts` or HPKP-style key pinning. See [`PinnedServerVerifier`] for the full
+/// trust model.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CertPin {
+    /// SHA-256 of the end-entity certificate's `SubjectPublicKeyInfo` (DER).
+    ///
+    /// Survives certificate re-issuance as long as the key is unchanged. Preferred.
+    Spki([u8; 32]),
+    /// SHA-256 of the full end-entity certificate DER (exact-certificate match).
+    Cert([u8; 32]),
+}
 
 /// QUIC transport configuration
 #[derive(Debug, Clone)]
@@ -39,6 +62,19 @@ pub struct QuicConfig {
     pub initial_window: u32,
     /// Maximum congestion window (bytes)
     pub max_window: u32,
+    /// Certificate pins the outbound client will accept for the peers it dials.
+    ///
+    /// Each successful handshake must match at least one of these pins (see
+    /// [`PinnedServerVerifier`]). Defaults to an empty vector, which — unless
+    /// [`Self::dangerous_accept_any_cert`] is set — makes [`QuicTransport::new`]
+    /// **fail closed** rather than silently trust every peer.
+    pub server_pins: Vec<CertPin>,
+    /// Development-only escape hatch: when `true`, the client accepts **any**
+    /// server certificate and performs **no** authentication whatsoever.
+    ///
+    /// This re-enables full man-in-the-middle exposure and must never be set in
+    /// production. Defaults to `false`.
+    pub dangerous_accept_any_cert: bool,
 }
 
 impl Default for QuicConfig {
@@ -55,6 +91,11 @@ impl Default for QuicConfig {
             max_message_size: 16 * 1024 * 1024, // 16 MB
             initial_window: 10 * 1024 * 1024,   // 10 MB
             max_window: 100 * 1024 * 1024,      // 100 MB
+            // Secure by default: no pins configured and the dangerous escape hatch
+            // disabled, so `QuicTransport::new` fails closed until the caller supplies
+            // the expected peer's SPKI/cert pin.
+            server_pins: Vec::new(),
+            dangerous_accept_any_cert: false,
         }
     }
 }
@@ -158,28 +199,92 @@ pub struct QuicTransport {
     config: QuicConfig,
     /// Client configuration for outbound connections
     client_config: ClientConfig,
+    /// SHA-256 of this endpoint's own SPKI DER. Hand this to a peer so it can pin
+    /// us with [`CertPin::Spki`]. Computed with the same helper the client verifier
+    /// uses, so both sides agree byte-for-byte.
+    spki_pin: [u8; 32],
+    /// SHA-256 of this endpoint's own full certificate DER (see [`CertPin::Cert`]).
+    cert_fingerprint: [u8; 32],
 }
 
 impl QuicTransport {
-    /// Create a new QUIC transport
+    /// Create a new QUIC transport.
+    ///
+    /// # Security model
+    ///
+    /// The outbound client authenticates every peer it dials by **SPKI/certificate
+    /// pinning** (see [`PinnedServerVerifier`]) using [`QuicConfig::server_pins`].
+    /// Because IPFRS certificates are ephemeral and self-signed, an empty pin set has
+    /// no safe interpretation, so this constructor **fails closed**: with no pins and
+    /// [`QuicConfig::dangerous_accept_any_cert`] left `false`, it returns an error
+    /// rather than trusting arbitrary peers.
+    ///
+    /// Set [`QuicConfig::dangerous_accept_any_cert`] to `true` only in development to
+    /// restore the old (insecure) "accept any certificate" behaviour.
     pub async fn new(config: QuicConfig) -> Result<Self> {
-        // Install rustcrypto provider for rustls (Pure Rust, no ring/C dependency)
-        let _ = rustls_rustcrypto::provider().install_default();
+        // Explicit QUIC-capable crypto provider. quinn requires TLS 1.3 with a QUIC-capable
+        // initial cipher suite (`TLS13_AES_128_GCM_SHA256`). The pure-Rust `rustls_rustcrypto`
+        // provider sets `quic: None` on every one of its TLS 1.3 suites, so quinn rejects it
+        // ("no initial cipher suite found") and the transport can never be built. We therefore
+        // use `ring`, which is already unconditionally in this crate's dependency graph
+        // (quinn-proto, libp2p-tls, rustls-webpki, snow) — selecting it here adds no new
+        // dependency and is exactly what quinn itself uses internally. Building the provider
+        // explicitly (instead of relying on a process-installed default) keeps this transport's
+        // crypto self-contained and free of global mutable state.
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
 
-        // Create self-signed certificate for development
+        // Ephemeral self-signed certificate for this endpoint's server side.
         let (cert, key) = Self::generate_self_signed_cert()?;
 
-        // Server config with its own transport config
+        // Publish our own pins so a remote peer can pin us. Computed with the SAME
+        // helpers the client verifier uses, guaranteeing client/server agree byte-for-byte.
+        let spki_pin = spki_sha256(&cert)
+            .map_err(|e| Error::Internal(format!("Failed to compute SPKI pin: {}", e)))?;
+        let cert_fingerprint = cert_sha256(&cert);
+
+        // Server rustls config: same explicit provider, TLS 1.3 only (mandatory for QUIC).
         let server_transport = Self::create_transport_config(&config);
-        let mut server_config = ServerConfig::with_single_cert(vec![cert.clone()], key.clone_key())
+        let mut server_crypto = rustls::ServerConfig::builder_with_provider(provider.clone())
+            .with_protocol_versions(&[&rustls::version::TLS13])
+            .map_err(|e| Error::Internal(format!("Failed to set server TLS versions: {}", e)))?
+            .with_no_client_auth()
+            .with_single_cert(vec![cert.clone()], key.clone_key())
             .map_err(|e| Error::Internal(format!("Failed to create server config: {}", e)))?;
+        // QUIC requires the max early-data size to be exactly 0 or u32::MAX; u32::MAX enables 0-RTT.
+        server_crypto.max_early_data_size = u32::MAX;
+        let quic_server_crypto = quinn::crypto::rustls::QuicServerConfig::try_from(server_crypto)
+            .map_err(|e| {
+            Error::Internal(format!("Failed to create QUIC server config: {}", e))
+        })?;
+        let mut server_config = ServerConfig::with_crypto(Arc::new(quic_server_crypto));
         server_config.transport_config(Arc::new(server_transport));
 
-        // Client config with its own transport config (skip verification for development)
+        // Select the server-certificate verifier for our outbound client side.
+        // Default: genuine SPKI/cert pinning. Escape hatch: accept-any (dev only), loudly logged.
+        let verifier: Arc<dyn ServerCertVerifier> = if config.dangerous_accept_any_cert {
+            tracing::warn!(
+                "QUIC: dangerous_accept_any_cert=true — server certificates are NOT verified; \
+                 this disables peer authentication and re-enables man-in-the-middle exposure"
+            );
+            Arc::new(SkipServerVerification)
+        } else {
+            Arc::new(
+                PinnedServerVerifier::new(config.server_pins.clone(), &provider).map_err(|e| {
+                    Error::Internal(format!(
+                        "Failed to build pinned certificate verifier: {}",
+                        e
+                    ))
+                })?,
+            )
+        };
+
+        // Client rustls config: same explicit provider, TLS 1.3 only, with our pinning verifier.
         let client_transport = Self::create_transport_config(&config);
-        let client_crypto = rustls::ClientConfig::builder()
+        let client_crypto = rustls::ClientConfig::builder_with_provider(provider.clone())
+            .with_protocol_versions(&[&rustls::version::TLS13])
+            .map_err(|e| Error::Internal(format!("Failed to set client TLS versions: {}", e)))?
             .dangerous()
-            .with_custom_certificate_verifier(Arc::new(SkipServerVerification))
+            .with_custom_certificate_verifier(verifier)
             .with_no_client_auth();
         let mut client_config = ClientConfig::new(Arc::new(
             quinn::crypto::rustls::QuicClientConfig::try_from(client_crypto).map_err(|e| {
@@ -197,7 +302,26 @@ impl QuicTransport {
             pools: Arc::new(RwLock::new(HashMap::new())),
             config,
             client_config,
+            spki_pin,
+            cert_fingerprint,
         })
+    }
+
+    /// SHA-256 of this endpoint's own `SubjectPublicKeyInfo` (DER).
+    ///
+    /// Give this to a remote peer so it can authenticate us with
+    /// `CertPin::Spki(transport.spki_pin())`. The pin is stable across certificate
+    /// re-issuance as long as this endpoint keeps the same key pair.
+    pub fn spki_pin(&self) -> [u8; 32] {
+        self.spki_pin
+    }
+
+    /// SHA-256 of this endpoint's own full certificate DER (exact-certificate pin).
+    ///
+    /// Give this to a remote peer so it can authenticate us with
+    /// `CertPin::Cert(transport.cert_fingerprint())`.
+    pub fn cert_fingerprint(&self) -> [u8; 32] {
+        self.cert_fingerprint
     }
 
     /// Create transport configuration optimized for bulk transfer
@@ -212,18 +336,32 @@ impl QuicTransport {
         transport
     }
 
-    /// Generate a self-signed certificate for development
+    /// Generate an ephemeral self-signed certificate for this endpoint.
+    ///
+    /// The certificate carries an explicit, absolute validity window (`not_before` /
+    /// `not_after`) rather than relying on wall-clock-relative defaults. This makes the
+    /// client's expiry check ([`PinnedServerVerifier`] step (b)) deterministic so that
+    /// loopback tests cannot flake on a clock boundary. The window is intentionally very
+    /// wide because these certificates are authenticated by *key pin*, not by lifetime.
     fn generate_self_signed_cert() -> Result<(
         rustls::pki_types::CertificateDer<'static>,
         rustls::pki_types::PrivateKeyDer<'static>,
     )> {
-        let rcgen_cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()])
-            .map_err(|e| Error::Internal(format!("Failed to generate certificate: {}", e)))?;
+        let mut params = rcgen::CertificateParams::new(vec!["localhost".to_string()])
+            .map_err(|e| Error::Internal(format!("Failed to build certificate params: {}", e)))?;
+        // Fixed, absolute window well around any realistic handshake clock.
+        params.not_before = rcgen::date_time_ymd(2000, 1, 1);
+        params.not_after = rcgen::date_time_ymd(4096, 1, 1);
 
-        let cert_der = rustls::pki_types::CertificateDer::from(rcgen_cert.cert.der().to_vec());
-        let key_der =
-            rustls::pki_types::PrivateKeyDer::try_from(rcgen_cert.signing_key.serialize_der())
-                .map_err(|e| Error::Internal(format!("Failed to serialize key: {}", e)))?;
+        let signing_key = rcgen::KeyPair::generate()
+            .map_err(|e| Error::Internal(format!("Failed to generate key pair: {}", e)))?;
+        let rcgen_cert = params
+            .self_signed(&signing_key)
+            .map_err(|e| Error::Internal(format!("Failed to self-sign certificate: {}", e)))?;
+
+        let cert_der = rustls::pki_types::CertificateDer::from(rcgen_cert.der().to_vec());
+        let key_der = rustls::pki_types::PrivateKeyDer::try_from(signing_key.serialize_der())
+            .map_err(|e| Error::Internal(format!("Failed to serialize key: {}", e)))?;
 
         Ok((cert_der, key_der))
     }
@@ -406,52 +544,270 @@ pub struct QuicPoolStats {
     pub total_connections: usize,
 }
 
-/// Skip server certificate verification (for development only)
+/// Compute the SHA-256 of a byte slice into a fixed 32-byte array.
+///
+/// `Sha256::digest` yields a length-32 output, so the copy is total and infallible.
+fn sha256_array(bytes: &[u8]) -> [u8; 32] {
+    let digest = Sha256::digest(bytes);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&digest);
+    out
+}
+
+/// SHA-256 of a certificate's `SubjectPublicKeyInfo` (SPKI) in DER form.
+///
+/// This is the canonical input for SPKI pinning: it hashes the full SPKI structure
+/// (algorithm identifier + subject public key), so the pin survives certificate
+/// re-issuance as long as the underlying key pair is unchanged. It matches the value
+/// produced by `openssl x509 -pubkey | openssl pkey -pubin -outform der | sha256sum`.
+///
+/// Only the pure-Rust `x509-parser` DER parser is used here; its `verify` feature is
+/// intentionally not required. The handshake signature is verified separately by rustls.
+///
+/// Returns an error if `cert` is not parseable as X.509 DER.
+fn spki_sha256(cert: &CertificateDer<'_>) -> std::result::Result<[u8; 32], rustls::Error> {
+    let (_, parsed) = x509_parser::parse_x509_certificate(cert.as_ref())
+        .map_err(|e| rustls::Error::General(format!("failed to parse certificate DER: {}", e)))?;
+    Ok(sha256_array(parsed.public_key().raw))
+}
+
+/// SHA-256 of the full end-entity certificate DER (exact-certificate fingerprint).
+fn cert_sha256(cert: &CertificateDer<'_>) -> [u8; 32] {
+    sha256_array(cert.as_ref())
+}
+
+/// A [`ServerCertVerifier`] that authenticates a QUIC peer by **pinning** its
+/// end-entity certificate — either its public key (SPKI) or the exact certificate —
+/// instead of chaining to a public certificate authority / webpki root store.
+///
+/// # Security model
+///
+/// IPFRS peers present *ephemeral, self-signed* certificates that chain to no public
+/// root. Classic webpki path validation is therefore meaningless here: it would reject
+/// every peer (there is no trusted anchor) or, worse, "succeed" only for certificates
+/// issued by unrelated public CAs that have nothing to do with the peer we intend to
+/// reach. The correct trust model for this setting is to authenticate the peer's *key*
+/// directly, exactly as SSH `known_hosts` and HPKP-style pinning do.
+///
+/// [`Self::verify_server_cert`] enforces, in order:
+/// 1. the certificate parses as X.509 DER;
+/// 2. the certificate is temporally valid at the handshake time `now` (not expired,
+///    not yet valid) — see [`UnixTime`];
+/// 3. the SHA-256 of the SPKI DER (for [`CertPin::Spki`]) or of the whole certificate
+///    (for [`CertPin::Cert`]) matches one of the configured pins.
+///
+/// If nothing matches, the handshake is aborted with an error (**fail closed**).
+///
+/// The TLS handshake signature itself is verified *for real* in
+/// [`Self::verify_tls13_signature`] / [`Self::verify_tls12_signature`], which delegate
+/// to rustls' webpki-backed verifiers using the installed [`CryptoProvider`]'s
+/// algorithms. Both checks are required: the pin binds the *identity* of the key, and
+/// the signature check proves the peer actually *holds* the matching private key. A pin
+/// match without a signature check would let an attacker replay a certificate it copied
+/// but does not own.
+///
+/// ## Why is there no hostname / SAN check?
+///
+/// Hostname verification answers "does this CA-issued certificate authorize the DNS
+/// name I dialed?". That question is irrelevant for direct key pinning: the pin already
+/// identifies *the* acceptable key with cryptographic precision, and IPFRS dials peers
+/// by [`SocketAddr`], not by a certificate-bound DNS identity. The peer's certificate
+/// carries a throwaway `localhost` SAN that authenticates nothing. Enforcing SAN
+/// matching here would add no security while coupling us to an irrelevant,
+/// attacker-influenced field. This omission is **deliberate**, not an oversight.
+///
+/// [`CryptoProvider`]: rustls::crypto::CryptoProvider
+pub struct PinnedServerVerifier {
+    /// Accepted pins. Guaranteed non-empty by [`Self::new`].
+    pins: Vec<CertPin>,
+    /// Signature-verification algorithms sourced from the [`CryptoProvider`] passed to
+    /// [`Self::new`] (the same provider that drives the QUIC handshake).
+    ///
+    /// [`WebPkiSupportedAlgorithms`] is `Copy` and holds only `'static` references, so
+    /// snapshotting it at construction is cheap and keeps verification self-contained.
+    ///
+    /// [`CryptoProvider`]: rustls::crypto::CryptoProvider
+    algs: WebPkiSupportedAlgorithms,
+}
+
+impl std::fmt::Debug for PinnedServerVerifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // `WebPkiSupportedAlgorithms` does not implement `Debug`; surface the schemes it
+        // advertises instead of the opaque algorithm table.
+        f.debug_struct("PinnedServerVerifier")
+            .field("pins", &self.pins)
+            .field("supported_schemes", &self.algs.supported_schemes())
+            .finish()
+    }
+}
+
+impl PinnedServerVerifier {
+    /// Build a pinning verifier from a **non-empty** set of [`CertPin`]s.
+    ///
+    /// # Fail closed on an empty pin set
+    ///
+    /// An empty pin set is rejected with an error instead of being interpreted as
+    /// "trust everything" (a MITM footgun) or "trust nothing" (a silent, confusing
+    /// connection failure). Because IPFRS certificates are ephemeral and self-signed,
+    /// there is no meaningful fallback — we cannot "fall back to the platform root
+    /// store", since these certificates chain to no public root. Returning `Err` forces
+    /// the caller to make an explicit choice: populate [`QuicConfig::server_pins`] with
+    /// the expected peer's SPKI/certificate hash, or (development only) set
+    /// [`QuicConfig::dangerous_accept_any_cert`].
+    ///
+    /// `provider` supplies the signature-verification algorithms used by
+    /// [`Self::verify_tls13_signature`] / [`Self::verify_tls12_signature`] and advertised by
+    /// [`Self::supported_verify_schemes`]. Pass the SAME [`CryptoProvider`] that drives the QUIC
+    /// handshake so the enforced and advertised schemes match. Threading it explicitly (rather
+    /// than reading a globally-installed default) avoids any dependence on process-wide state.
+    ///
+    /// [`CryptoProvider`]: rustls::crypto::CryptoProvider
+    pub fn new(
+        pins: Vec<CertPin>,
+        provider: &rustls::crypto::CryptoProvider,
+    ) -> std::result::Result<Self, rustls::Error> {
+        if pins.is_empty() {
+            return Err(rustls::Error::General(
+                "PinnedServerVerifier requires at least one certificate pin: set \
+                 QuicConfig::server_pins to the expected peer's SPKI/certificate hash, or \
+                 (development only) set QuicConfig::dangerous_accept_any_cert = true"
+                    .to_string(),
+            ));
+        }
+        Ok(Self {
+            pins,
+            // `WebPkiSupportedAlgorithms` is `Copy`, so this snapshots the table from the
+            // caller-supplied provider (the same provider that drives the QUIC handshake).
+            algs: provider.signature_verification_algorithms,
+        })
+    }
+}
+
+impl ServerCertVerifier for PinnedServerVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        now: UnixTime,
+    ) -> std::result::Result<ServerCertVerified, rustls::Error> {
+        // (a) Parse the end-entity certificate as X.509 DER.
+        let (_, parsed) =
+            x509_parser::parse_x509_certificate(end_entity.as_ref()).map_err(|e| {
+                rustls::Error::General(format!("failed to parse server certificate: {}", e))
+            })?;
+
+        // (b) Enforce temporal validity against the handshake clock `now`: a pin match on
+        //     an expired or not-yet-valid certificate must still be rejected.
+        let asn1_now = x509_parser::time::ASN1Time::from_timestamp(now.as_secs() as i64)
+            .map_err(|e| rustls::Error::General(format!("invalid handshake timestamp: {}", e)))?;
+        if !parsed.validity().is_valid_at(asn1_now) {
+            return Err(rustls::Error::General(
+                "server certificate is expired or not yet valid".to_string(),
+            ));
+        }
+
+        // (c) Compute the SPKI and full-certificate fingerprints via the shared helpers —
+        //     the exact code path the server side uses to publish its pins, so both ends
+        //     compare identical bytes. (The cheap re-parse inside `spki_sha256` keeps a
+        //     single source of truth for SPKI extraction.)
+        let spki_hash = spki_sha256(end_entity)?;
+        let cert_hash = cert_sha256(end_entity);
+
+        // (d) Accept only if some configured pin matches; otherwise fail closed.
+        let matched = self.pins.iter().any(|pin| match pin {
+            CertPin::Spki(expected) => *expected == spki_hash,
+            CertPin::Cert(expected) => *expected == cert_hash,
+        });
+        if !matched {
+            return Err(rustls::Error::General(
+                "server certificate pin mismatch".to_string(),
+            ));
+        }
+
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> std::result::Result<HandshakeSignatureValid, rustls::Error> {
+        // Real signature verification against the peer's public key — never a blanket
+        // assertion. Proves the peer holds the private key for the pinned certificate.
+        rustls::crypto::verify_tls12_signature(message, cert, dss, &self.algs)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> std::result::Result<HandshakeSignatureValid, rustls::Error> {
+        // Real signature verification against the peer's public key — never a blanket
+        // assertion. QUIC always uses TLS 1.3, so this is the hot path.
+        rustls::crypto::verify_tls13_signature(message, cert, dss, &self.algs)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.algs.supported_schemes()
+    }
+}
+
+/// **Development-only** certificate verifier that disables all authentication.
+///
+/// Every method returns success without inspecting the certificate or verifying any
+/// handshake signature, so a client using it accepts **any** certificate from **any**
+/// peer — full man-in-the-middle exposure. It is reachable only when
+/// [`QuicConfig::dangerous_accept_any_cert`] is explicitly set to `true`, and its use
+/// is logged at `warn`. Never enable it in production; prefer [`PinnedServerVerifier`].
 #[derive(Debug)]
 struct SkipServerVerification;
 
-impl rustls::client::danger::ServerCertVerifier for SkipServerVerification {
+impl ServerCertVerifier for SkipServerVerification {
     fn verify_server_cert(
         &self,
-        _end_entity: &rustls::pki_types::CertificateDer<'_>,
-        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
-        _server_name: &rustls::pki_types::ServerName<'_>,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
         _ocsp_response: &[u8],
-        _now: rustls::pki_types::UnixTime,
-    ) -> std::result::Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
+        _now: UnixTime,
+    ) -> std::result::Result<ServerCertVerified, rustls::Error> {
+        Ok(ServerCertVerified::assertion())
     }
 
     fn verify_tls12_signature(
         &self,
         _message: &[u8],
-        _cert: &rustls::pki_types::CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
-    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> std::result::Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
     }
 
     fn verify_tls13_signature(
         &self,
         _message: &[u8],
-        _cert: &rustls::pki_types::CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
-    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> std::result::Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
     }
 
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
         vec![
-            rustls::SignatureScheme::RSA_PKCS1_SHA256,
-            rustls::SignatureScheme::ECDSA_NISTP256_SHA256,
-            rustls::SignatureScheme::RSA_PKCS1_SHA384,
-            rustls::SignatureScheme::ECDSA_NISTP384_SHA384,
-            rustls::SignatureScheme::RSA_PKCS1_SHA512,
-            rustls::SignatureScheme::ECDSA_NISTP521_SHA512,
-            rustls::SignatureScheme::RSA_PSS_SHA256,
-            rustls::SignatureScheme::RSA_PSS_SHA384,
-            rustls::SignatureScheme::RSA_PSS_SHA512,
-            rustls::SignatureScheme::ED25519,
+            SignatureScheme::RSA_PKCS1_SHA256,
+            SignatureScheme::ECDSA_NISTP256_SHA256,
+            SignatureScheme::RSA_PKCS1_SHA384,
+            SignatureScheme::ECDSA_NISTP384_SHA384,
+            SignatureScheme::RSA_PKCS1_SHA512,
+            SignatureScheme::ECDSA_NISTP521_SHA512,
+            SignatureScheme::RSA_PSS_SHA256,
+            SignatureScheme::RSA_PSS_SHA384,
+            SignatureScheme::RSA_PSS_SHA512,
+            SignatureScheme::ED25519,
         ]
     }
 }
@@ -825,12 +1181,71 @@ impl SequentialPipeline {
 mod tests {
     use super::*;
 
+    /// Build a loopback-bound config with the given pinning policy. `bind_addr` is
+    /// `127.0.0.1:0` so `local_addr()` yields a routable loopback address the peer can dial.
+    fn loopback_config(server_pins: Vec<CertPin>, dangerous_accept_any_cert: bool) -> QuicConfig {
+        QuicConfig {
+            bind_addr: "127.0.0.1:0"
+                .parse()
+                .expect("loopback socket addr literal must parse"),
+            server_pins,
+            dangerous_accept_any_cert,
+            ..QuicConfig::default()
+        }
+    }
+
+    /// A non-empty dummy pin for a transport whose *client* side is never exercised
+    /// (e.g. a pure echo server). It satisfies the fail-closed constructor without
+    /// reaching for the dangerous escape hatch; it is never actually matched.
+    fn unused_server_side_pin() -> Vec<CertPin> {
+        vec![CertPin::Cert([0u8; 32])]
+    }
+
+    /// Accept exactly one connection and echo the first bidirectional stream's payload,
+    /// then hold the connection open until the client closes so the echo is delivered.
+    async fn echo_once(transport: Arc<QuicTransport>) -> Result<()> {
+        let conn = transport
+            .accept()
+            .await?
+            .ok_or_else(|| Error::Internal("no incoming connection".to_string()))?;
+        let (mut send, mut recv) = conn
+            .accept_bi()
+            .await
+            .map_err(|e| Error::Internal(format!("accept_bi failed: {}", e)))?;
+        let req = recv
+            .read_to_end(64 * 1024)
+            .await
+            .map_err(|e| Error::Internal(format!("read failed: {}", e)))?;
+        send.write_all(&req)
+            .await
+            .map_err(|e| Error::Internal(format!("write failed: {}", e)))?;
+        send.finish()
+            .map_err(|e| Error::Internal(format!("finish failed: {}", e)))?;
+        // Keep the connection alive until the client consumes the echo and closes, so the
+        // finished stream is actually delivered before this endpoint is dropped.
+        conn.closed().await;
+        Ok(())
+    }
+
+    /// Drive a single request/echo round-trip from the client side.
+    async fn client_round_trip(client: &QuicTransport, addr: SocketAddr, payload: &[u8]) {
+        let conn = client.connect(addr).await.expect("client connect");
+        let (mut send, mut recv) = client.open_stream(&conn).await.expect("open stream");
+        client.send(&mut send, payload).await.expect("send payload");
+        let response = client.receive(&mut recv).await.expect("receive echo");
+        assert_eq!(response, payload, "echoed payload must match");
+        conn.close(0u32.into(), b"done");
+    }
+
     #[test]
     fn test_quic_config_defaults() {
         let config = QuicConfig::default();
         assert_eq!(config.max_streams, 256);
         assert!(config.enable_0rtt);
         assert_eq!(config.pool_size, 4);
+        // Secure-by-default: no pins, escape hatch disabled -> `new` fails closed.
+        assert!(config.server_pins.is_empty());
+        assert!(!config.dangerous_accept_any_cert);
     }
 
     #[test]
@@ -838,5 +1253,243 @@ mod tests {
         // Note: Full integration tests would require actual QUIC connections
         let pool = PeerPool::new(4, Duration::from_secs(60));
         assert_eq!(pool.connection_count(), 0);
+    }
+
+    /// The client pins the server's real SPKI: the handshake and a message round-trip
+    /// both succeed. Exercises the full happy path including real signature verification.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn spki_pin_roundtrip_ok() {
+        let server = Arc::new(
+            QuicTransport::new(loopback_config(unused_server_side_pin(), false))
+                .await
+                .expect("server transport"),
+        );
+        let server_addr = server.local_addr().expect("server local addr");
+        let server_pin = server.spki_pin();
+
+        let client = QuicTransport::new(loopback_config(vec![CertPin::Spki(server_pin)], false))
+            .await
+            .expect("client transport");
+
+        let server_task = tokio::spawn(echo_once(server.clone()));
+
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            client_round_trip(&client, server_addr, b"ping-roundtrip"),
+        )
+        .await
+        .expect("round-trip timed out");
+
+        let _ = server_task.await;
+    }
+
+    /// The client pins a hash that does not match the server's SPKI: the pin check fails,
+    /// the certificate is rejected, and `connect` returns an error (no MITM slips through).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn pin_mismatch_rejected() {
+        let server = Arc::new(
+            QuicTransport::new(loopback_config(unused_server_side_pin(), false))
+                .await
+                .expect("server transport"),
+        );
+        let server_addr = server.local_addr().expect("server local addr");
+
+        // A pin that cannot match any real certificate's SPKI hash.
+        let client = QuicTransport::new(loopback_config(vec![CertPin::Spki([0u8; 32])], false))
+            .await
+            .expect("client transport");
+
+        // The server must be actively accepting so the handshake advances to certificate
+        // verification (rather than the client merely timing out with no server response).
+        let server_task = tokio::spawn(async move {
+            let _ = echo_once(server).await;
+        });
+
+        let outcome =
+            tokio::time::timeout(Duration::from_secs(10), client.connect(server_addr)).await;
+        match outcome {
+            Ok(result) => assert!(
+                result.is_err(),
+                "connect must fail when the server certificate pin does not match"
+            ),
+            Err(_elapsed) => panic!("connect neither succeeded nor failed within the timeout"),
+        }
+
+        server_task.abort();
+    }
+
+    /// With no pins and `dangerous_accept_any_cert = false`, `QuicTransport::new` refuses
+    /// to build a client that would trust arbitrary peers: it fails closed.
+    #[tokio::test]
+    async fn empty_pins_fail_closed() {
+        let result = QuicTransport::new(loopback_config(vec![], false)).await;
+        assert!(
+            result.is_err(),
+            "empty pins with dangerous_accept_any_cert=false must fail closed"
+        );
+    }
+
+    /// The dangerous escape hatch (`dangerous_accept_any_cert = true`) accepts any
+    /// certificate with no pins configured. This documents the opt-in gate; never use it
+    /// in production.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn dangerous_flag_accepts_any() {
+        let server = Arc::new(
+            QuicTransport::new(loopback_config(unused_server_side_pin(), false))
+                .await
+                .expect("server transport"),
+        );
+        let server_addr = server.local_addr().expect("server local addr");
+
+        // No pins, but the dangerous flag is set: the client accepts the server cert.
+        let client = QuicTransport::new(loopback_config(vec![], true))
+            .await
+            .expect("client transport");
+
+        let server_task = tokio::spawn(echo_once(server.clone()));
+
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            client_round_trip(&client, server_addr, b"dangerous-but-connected"),
+        )
+        .await
+        .expect("dangerous round-trip timed out");
+
+        let _ = server_task.await;
+    }
+
+    /// Cross-check the SPKI extraction: `spki_sha256(cert)` must equal the SHA-256 of the
+    /// canonical `SubjectPublicKeyInfo` DER that rcgen emits for the same key. This proves
+    /// the bytes x509-parser extracts from the certificate are the canonical SPKI bytes.
+    #[test]
+    fn spki_extraction_matches_rcgen() {
+        use rcgen::PublicKeyData;
+
+        let certified = rcgen::generate_simple_self_signed(vec!["localhost".to_string()])
+            .expect("generate self-signed cert");
+        let cert_der = CertificateDer::from(certified.cert.der().to_vec());
+
+        // Canonical SPKI DER straight from rcgen's key material.
+        let rcgen_spki_der = certified.signing_key.subject_public_key_info();
+        let expected = sha256_array(&rcgen_spki_der);
+
+        let extracted = spki_sha256(&cert_der).expect("extract SPKI hash");
+        assert_eq!(
+            extracted, expected,
+            "spki_sha256(cert) must equal SHA-256 of rcgen's canonical SPKI DER"
+        );
+        // The SPKI pin and the full-certificate fingerprint hash different inputs.
+        assert_ne!(
+            extracted,
+            cert_sha256(&cert_der),
+            "SPKI hash must differ from the full-certificate fingerprint"
+        );
+    }
+
+    /// A QUIC-capable crypto provider for the direct verifier unit tests — the same provider
+    /// `QuicTransport::new` uses. These tests need only its signature-algorithm table.
+    fn test_provider() -> rustls::crypto::CryptoProvider {
+        rustls::crypto::ring::default_provider()
+    }
+
+    /// Generate a self-signed certificate valid at "now", returning its DER plus its SPKI and
+    /// full-certificate SHA-256 pins (computed with the production helpers).
+    fn make_test_cert() -> (CertificateDer<'static>, [u8; 32], [u8; 32]) {
+        let mut params = rcgen::CertificateParams::new(vec!["localhost".to_string()])
+            .expect("certificate params");
+        params.not_before = rcgen::date_time_ymd(2000, 1, 1);
+        params.not_after = rcgen::date_time_ymd(4096, 1, 1);
+        let signing_key = rcgen::KeyPair::generate().expect("key pair");
+        let cert = params.self_signed(&signing_key).expect("self-sign");
+        let cert_der = CertificateDer::from(cert.der().to_vec());
+        let spki = spki_sha256(&cert_der).expect("spki hash");
+        let fingerprint = cert_sha256(&cert_der);
+        (cert_der, spki, fingerprint)
+    }
+
+    /// Direct verifier unit test (no live handshake): a matching SPKI pin verifies.
+    #[test]
+    fn verifier_accepts_matching_spki_pin() {
+        let provider = test_provider();
+        let (cert_der, spki, _fingerprint) = make_test_cert();
+        let verifier =
+            PinnedServerVerifier::new(vec![CertPin::Spki(spki)], &provider).expect("verifier");
+        let server_name = ServerName::try_from("localhost").expect("server name");
+        if let Err(e) =
+            verifier.verify_server_cert(&cert_der, &[], &server_name, &[], UnixTime::now())
+        {
+            panic!("a matching SPKI pin must verify, got error: {}", e);
+        }
+    }
+
+    /// Direct verifier unit test: a mismatched pin is rejected (fail closed).
+    #[test]
+    fn verifier_rejects_mismatched_pin() {
+        let provider = test_provider();
+        let (cert_der, _spki, _fingerprint) = make_test_cert();
+        let verifier =
+            PinnedServerVerifier::new(vec![CertPin::Spki([0u8; 32])], &provider).expect("verifier");
+        let server_name = ServerName::try_from("localhost").expect("server name");
+        let result =
+            verifier.verify_server_cert(&cert_der, &[], &server_name, &[], UnixTime::now());
+        assert!(result.is_err(), "a mismatched pin must be rejected");
+    }
+
+    /// Direct verifier unit test: a matching full-certificate fingerprint (`CertPin::Cert`) verifies.
+    #[test]
+    fn verifier_accepts_matching_cert_fingerprint() {
+        let provider = test_provider();
+        let (cert_der, _spki, fingerprint) = make_test_cert();
+        let verifier = PinnedServerVerifier::new(vec![CertPin::Cert(fingerprint)], &provider)
+            .expect("verifier");
+        let server_name = ServerName::try_from("localhost").expect("server name");
+        if let Err(e) =
+            verifier.verify_server_cert(&cert_der, &[], &server_name, &[], UnixTime::now())
+        {
+            panic!(
+                "a matching full-certificate fingerprint must verify, got error: {}",
+                e
+            );
+        }
+    }
+
+    /// An expired certificate is rejected even when its pin matches: the temporal-validity
+    /// check ((b)) runs independently of the pin check ((d)).
+    #[test]
+    fn expired_certificate_rejected() {
+        let provider = test_provider();
+
+        // A certificate whose validity window lies entirely in the past.
+        let mut params = rcgen::CertificateParams::new(vec!["localhost".to_string()])
+            .expect("certificate params");
+        params.not_before = rcgen::date_time_ymd(2000, 1, 1);
+        params.not_after = rcgen::date_time_ymd(2001, 1, 1);
+        let signing_key = rcgen::KeyPair::generate().expect("key pair");
+        let cert = params.self_signed(&signing_key).expect("self-sign");
+        let cert_der = CertificateDer::from(cert.der().to_vec());
+
+        // Pin the real SPKI so ONLY the expiry check can reject the certificate.
+        let spki = spki_sha256(&cert_der).expect("spki hash");
+        let verifier = PinnedServerVerifier::new(vec![CertPin::Spki(spki)], &provider)
+            .expect("build pinned verifier");
+
+        let now = UnixTime::now();
+        let server_name = ServerName::try_from("localhost").expect("server name");
+        let result = verifier.verify_server_cert(&cert_der, &[], &server_name, &[], now);
+        assert!(
+            result.is_err(),
+            "an expired certificate must be rejected even when its pin matches"
+        );
+    }
+
+    /// A `PinnedServerVerifier` built with an empty pin set is rejected at construction —
+    /// the same fail-closed guarantee `QuicTransport::new` relies on.
+    #[test]
+    fn pinned_verifier_rejects_empty_pins() {
+        let provider = test_provider();
+        assert!(
+            PinnedServerVerifier::new(vec![], &provider).is_err(),
+            "PinnedServerVerifier::new must reject an empty pin set"
+        );
     }
 }

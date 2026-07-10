@@ -1,6 +1,6 @@
 {
   "name": "@cool-japan/ipfrs",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "IPFRS - Inter-Planet File RUST System - WebAssembly bindings",
   "main": "ipfrs_wasm.js",
   "module": "ipfrs_wasm.js",

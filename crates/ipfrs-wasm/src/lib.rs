@@ -20,7 +20,7 @@
 //! console.log(new TextDecoder().decode(bytes));
 //!
 //! // Persistent IndexedDB client (browser only)
-//! const persistent = await IpfrsClientPersistent.new("ipfrs-blocks");
+//! const persistent = await IpfrsClientPersistent.open("ipfrs-blocks");
 //! const cid2 = await persistent.add(new TextEncoder().encode("persisted data"));
 //! ```
 
@@ -306,7 +306,7 @@ pub fn compute_cid(data: &[u8]) -> String {
 /// Return the ipfrs-wasm version string.
 #[wasm_bindgen]
 pub fn version() -> String {
-    "ipfrs-wasm 0.2.1".to_string()
+    "ipfrs-wasm 0.3.0".to_string()
 }
 
 /// Verify that `data` matches `cid` (i.e., recomputing the CID yields the
@@ -359,16 +359,76 @@ pub async fn get_bytes(client: &IpfrsClient, cid: &str) -> Result<Option<Vec<u8>
 #[cfg(target_arch = "wasm32")]
 pub mod indexed_db {
     use super::cid_from_bytes;
-    use js_sys::{Array, Uint8Array};
+    use js_sys::Uint8Array;
     use wasm_bindgen::prelude::*;
     use wasm_bindgen_futures::JsFuture;
-    use web_sys::{IdbDatabase, IdbOpenDbRequest, IdbTransactionMode};
+    use web_sys::{IdbDatabase, IdbOpenDbRequest, IdbRequest, IdbTransactionMode};
 
     const STORE_NAME: &str = "blocks";
 
     // -----------------------------------------------------------------------
     // Internal helpers
     // -----------------------------------------------------------------------
+
+    /// Await an [`IdbRequest`] by bridging its `onsuccess` / `onerror` events
+    /// into a [`js_sys::Promise`] that [`JsFuture`] can drive.
+    ///
+    /// `IdbRequest` (and its subtype `IdbOpenDbRequest`) is an `EventTarget`,
+    /// **not** a `Promise`, so it cannot be handed to `JsFuture::from` directly.
+    /// This helper resolves with the request's `result` on success and rejects
+    /// with its `error` (or a generic message) on failure.
+    ///
+    /// The success/error closures are kept alive for exactly the duration of the
+    /// await and dropped once the request has settled, so no closure is leaked
+    /// per request.
+    async fn request_to_future(request: &IdbRequest) -> Result<JsValue, JsValue> {
+        let mut on_success: Option<Closure<dyn FnMut()>> = None;
+        let mut on_error: Option<Closure<dyn FnMut()>> = None;
+
+        let promise = js_sys::Promise::new(&mut |resolve, reject| {
+            // onsuccess: resolve with `request.result()`.
+            let success = {
+                let request = request.clone();
+                let reject = reject.clone();
+                Closure::<dyn FnMut()>::new(move || match request.result() {
+                    Ok(value) => {
+                        let _ = resolve.call1(&JsValue::NULL, &value);
+                    }
+                    Err(err) => {
+                        let _ = reject.call1(&JsValue::NULL, &err);
+                    }
+                })
+            };
+            // onerror: reject with `request.error()` (or a generic message).
+            let error = {
+                let request = request.clone();
+                Closure::<dyn FnMut()>::new(move || {
+                    let err = request
+                        .error()
+                        .ok()
+                        .flatten()
+                        .map(JsValue::from)
+                        .unwrap_or_else(|| JsValue::from_str("IndexedDB request failed"));
+                    let _ = reject.call1(&JsValue::NULL, &err);
+                })
+            };
+
+            request.set_onsuccess(Some(success.as_ref().unchecked_ref()));
+            request.set_onerror(Some(error.as_ref().unchecked_ref()));
+
+            on_success = Some(success);
+            on_error = Some(error);
+        });
+
+        let outcome = JsFuture::from(promise).await;
+
+        // The request has now settled (onsuccess or onerror fired exactly once),
+        // so dropping the closures here frees them without leaking.
+        drop(on_success);
+        drop(on_error);
+
+        outcome
+    }
 
     /// Open (or create) an IndexedDB database with a single "blocks" object store.
     ///
@@ -396,11 +456,7 @@ pub mod indexed_db {
                     .expect("result is IdbDatabase");
 
                 // Only create the store if it does not already exist.
-                let store_names: Array = db.object_store_names().into();
-                let already_exists = (0..store_names.length())
-                    .any(|i| store_names.get(i).as_string().as_deref() == Some(STORE_NAME));
-
-                if !already_exists {
+                if !db.object_store_names().contains(STORE_NAME) {
                     db.create_object_store(STORE_NAME)
                         .expect("create_object_store failed");
                 }
@@ -408,10 +464,15 @@ pub mod indexed_db {
         });
 
         open_req.set_onupgradeneeded(Some(on_upgrade.as_ref().unchecked_ref()));
-        on_upgrade.forget(); // leak the closure — it is only called once during upgrade
 
-        let db_value: JsValue = JsFuture::from(open_req).await?;
-        let db: IdbDatabase = db_value
+        // `IdbOpenDbRequest` derefs to `IdbRequest`; await its onsuccess/onerror.
+        let db_value = request_to_future(&open_req).await;
+
+        // `onupgradeneeded` (if it fired at all) always runs before onsuccess, so
+        // the request has settled and the closure can be dropped rather than leaked.
+        drop(on_upgrade);
+
+        let db: IdbDatabase = db_value?
             .dyn_into()
             .map_err(|_| JsValue::from_str("IdbOpenDbRequest result was not an IdbDatabase"))?;
 
@@ -475,7 +536,7 @@ pub mod indexed_db {
             let cid_key = JsValue::from_str(&cid);
 
             let put_req = store.put_with_key(&js_data, &cid_key)?;
-            JsFuture::from(put_req).await?;
+            request_to_future(&put_req).await?;
 
             Ok(cid)
         }
@@ -491,7 +552,7 @@ pub mod indexed_db {
 
             let key = JsValue::from_str(cid);
             let get_req = store.get(&key)?;
-            let result: JsValue = JsFuture::from(get_req).await?;
+            let result: JsValue = request_to_future(&get_req).await?;
 
             if result.is_undefined() || result.is_null() {
                 return Ok(None);
@@ -525,7 +586,7 @@ pub mod indexed_db {
 
             let key = JsValue::from_str(cid);
             let del_req = store.delete(&key)?;
-            JsFuture::from(del_req).await?;
+            request_to_future(&del_req).await?;
 
             Ok(true)
         }
@@ -538,7 +599,7 @@ pub mod indexed_db {
             let store = tx.object_store(STORE_NAME)?;
 
             let count_req = store.count()?;
-            let result: JsValue = JsFuture::from(count_req).await?;
+            let result: JsValue = request_to_future(&count_req).await?;
 
             result
                 .as_f64()
@@ -559,7 +620,7 @@ pub mod indexed_db {
 ///
 /// # JavaScript
 /// ```javascript
-/// const client = await IpfrsClientPersistent.new("ipfrs-blocks");
+/// const client = await IpfrsClientPersistent.open("ipfrs-blocks");
 /// const cid    = await client.add(new TextEncoder().encode("hello"));
 /// const bytes  = await client.get(cid);
 /// ```
@@ -574,8 +635,11 @@ pub struct IpfrsClientPersistent {
 impl IpfrsClientPersistent {
     /// Open (or initialise) a persistent IPFRS client backed by the IndexedDB
     /// database named `db_name`.
-    #[wasm_bindgen(constructor)]
-    pub async fn new(db_name: &str) -> Result<IpfrsClientPersistent, JsValue> {
+    ///
+    /// This is an async static factory (`IpfrsClientPersistent.open(...)` in JS),
+    /// not a constructor: wasm-bindgen rejects `async` constructors because they
+    /// would generate invalid TypeScript.
+    pub async fn open(db_name: &str) -> Result<IpfrsClientPersistent, JsValue> {
         // Delegate to IndexedDbStore::open to validate availability and run migrations.
         indexed_db::IndexedDbStore::open(db_name).await?;
         Ok(IpfrsClientPersistent {
@@ -773,7 +837,7 @@ mod tests {
     fn test_version() {
         let v = version();
         assert!(v.contains("ipfrs-wasm"));
-        assert!(v.contains("0.2.1"));
+        assert!(v.contains("0.3.0"));
     }
 
     #[test]
@@ -809,7 +873,7 @@ mod tests {
         let parsed: serde_json::Value =
             serde_json::from_str(pkg_json).expect("pkg/package.json must be valid JSON");
         assert_eq!(parsed["name"], "@cool-japan/ipfrs");
-        assert_eq!(parsed["version"], "0.2.1");
+        assert_eq!(parsed["version"], "0.3.0");
         assert_eq!(parsed["license"], "Apache-2.0");
         // Verify required file entries are present
         let files = parsed["files"].as_array().expect("files must be an array");

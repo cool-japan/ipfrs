@@ -15,15 +15,20 @@
 //! ## Example
 //!
 //! ```rust
-//! use ipfrs_semantic::{EmbeddingCompressionCodec, EccMethod, EccCodecConfig};
+//! use ipfrs_semantic::{EmbeddingCompressionCodec, EccMethod};
 //!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut codec = EmbeddingCompressionCodec::new();
 //! let id = codec.register_codec("my-sq8", EccMethod::ScalarQuantization, 8, 64);
 //! let embedding = vec![0.1f64; 128];
-//! let compressed = codec.compress(id, &embedding).unwrap();
-//! let decompressed = codec.decompress(&compressed).unwrap();
-//! let mse = codec.reconstruction_error(&embedding, &decompressed);
+//! let compressed = codec.compress(id, &embedding)?;
+//! let decompressed = codec.decompress(&compressed)?;
+//! // `reconstruction_error` is an associated function (no `self`), so it is
+//! // called on the type, not on the `codec` instance.
+//! let mse = EmbeddingCompressionCodec::reconstruction_error(&embedding, &decompressed);
 //! assert!(mse < 1e-3);
+//! # Ok(())
+//! # }
 //! ```
 
 use std::collections::{HashMap, VecDeque};

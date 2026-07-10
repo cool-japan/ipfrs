@@ -181,11 +181,11 @@ Control which components to include:
 
 ```toml
 [dependencies]
-ipfrs = { version = "0.2.1", features = ["full"] }
+ipfrs = { version = "0.3.0", features = ["full"] }
 
 # Or selectively enable features:
 ipfrs = {
-    version = "0.2.1",
+    version = "0.3.0",
     features = ["storage", "network", "tensorlogic"]
 }
 ```

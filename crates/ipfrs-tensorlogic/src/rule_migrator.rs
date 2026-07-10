@@ -264,16 +264,13 @@ impl RuleVersionMigrator {
         // For each hop, locate the first registered step that covers it.
         let mut plan_steps: Vec<MigrationStep> = Vec::with_capacity(hops.len());
         for (hop_from, hop_to) in hops {
-            let found = self
+            let step = self
                 .steps
                 .iter()
                 .find(|s| s.from_version == hop_from && s.to_version == hop_to)
-                .cloned();
+                .cloned()?; // path is broken
 
-            match found {
-                Some(step) => plan_steps.push(step),
-                None => return None, // path is broken
-            }
+            plan_steps.push(step);
         }
 
         Some(plan_steps)

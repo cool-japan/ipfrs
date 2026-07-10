@@ -28,6 +28,10 @@ tokio-tungstenite = { workspace = true }
 rustls = { workspace = true }
 rustls-rustcrypto = { workspace = true }
 rcgen = { workspace = true }
+x509-parser = { workspace = true }
+
+# Cryptographic hashing (SPKI pinning)
+sha2 = { workspace = true }
 
 # Zero-copy serialization
 arrow = { workspace = true }

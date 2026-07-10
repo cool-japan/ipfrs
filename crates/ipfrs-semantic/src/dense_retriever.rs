@@ -14,7 +14,12 @@
 //! use std::collections::HashMap;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let config = RetrieverConfig::default();
+//! // `RetrieverConfig::default()` expects 128-dim embeddings; override
+//! // `embedding_dim` to match the tiny 4-element vectors used below.
+//! let config = RetrieverConfig {
+//!     embedding_dim: 4,
+//!     ..RetrieverConfig::default()
+//! };
 //! let mut retriever = DenseRetriever::new(config);
 //!
 //! let doc = Document {
@@ -31,7 +36,9 @@
 //!     top_k: 5,
 //!     hybrid_alpha: 0.7,
 //! };
-//! let results = retriever.hybrid_search(&mut query.clone());
+//! let results = retriever.hybrid_search(&query);
+//! assert_eq!(results.len(), 1);
+//! assert_eq!(results[0].doc_id, "doc1");
 //! println!("hits: {}", results.len());
 //! # Ok(())
 //! # }

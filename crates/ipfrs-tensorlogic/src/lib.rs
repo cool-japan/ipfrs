@@ -713,9 +713,11 @@ pub use gradient_sparsify::{
     SparseGradient as SparseGradientV2, SparsifierStats, SparsityConfig,
 };
 
-// Gradient noise injection — training regularization via configurable noise distributions.
+// Gradient noise — training regularization (`GradientNoiseInjector`) and
+// differentially-private SGD (`DpSgdPrivatizer`, clip-then-noise).
 pub use gradient_noise::{
-    GradientNoiseConfig, GradientNoiseInjector, NoiseSample, NoiseStats, NoiseType,
+    DpSgdError, DpSgdPrivatizer, GradientNoiseConfig, GradientNoiseInjector, NoiseSample,
+    NoiseStats, NoiseType,
 };
 
 // Gradient clipping — norm and value clipping strategies to prevent gradient explosion.

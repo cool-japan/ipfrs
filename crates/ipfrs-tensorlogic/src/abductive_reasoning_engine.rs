@@ -384,7 +384,10 @@ impl MinHeapNode {
 /// let mut eng = AbductiveReasoningEngine::new(AbrEngineConfig::default());
 /// let wet    = AbrTerm::prop("wet_grass");
 /// let rain   = AbrTerm::prop("rain");
-/// eng.add_observation(wet.clone());
+/// // Rule: rain implies wet grass — without this, the "rain" hypothesis
+/// // cannot cover the "wet_grass" observation (they are different terms).
+/// eng.add_rule(wet.clone(), vec![rain.clone()], 1.0);
+/// eng.add_observation(wet);
 /// let _hid = eng.add_hypothesis(rain, 1.0, true);
 /// let expls = eng.abduce();
 /// assert!(!expls.is_empty());

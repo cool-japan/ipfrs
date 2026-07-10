@@ -536,10 +536,7 @@ pub fn unify(t1: &Term, t2: &Term, subst: &Substitution) -> Option<Substitution>
         (Term::Fun(f1, args1), Term::Fun(f2, args2)) if f1 == f2 && args1.len() == args2.len() => {
             let mut current_subst = subst.clone();
             for (a1, a2) in args1.iter().zip(args2.iter()) {
-                match unify(a1, a2, &current_subst) {
-                    Some(new_subst) => current_subst = new_subst,
-                    None => return None,
-                }
+                current_subst = unify(a1, a2, &current_subst)?;
             }
             Some(current_subst)
         }
@@ -563,10 +560,7 @@ pub fn unify_predicates(
 
     let mut current_subst = subst.clone();
     for (a1, a2) in p1.args.iter().zip(p2.args.iter()) {
-        match unify(a1, a2, &current_subst) {
-            Some(new_subst) => current_subst = new_subst,
-            None => return None,
-        }
+        current_subst = unify(a1, a2, &current_subst)?;
     }
 
     Some(current_subst)

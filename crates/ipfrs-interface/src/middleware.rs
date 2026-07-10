@@ -521,12 +521,12 @@ impl CompressionConfig {
     }
 
     /// Validate configuration
+    ///
+    /// Disabling gzip is legitimate: the compression middleware honors
+    /// `enable_gzip == false` by skipping compression entirely (serving the
+    /// identity representation), so it is *not* a validation error. Only the
+    /// `min_size` bound is enforced here.
     pub fn validate(&self) -> Result<(), String> {
-        // Gzip must be enabled (only supported algorithm per COOLJAPAN OxiARC policy)
-        if !self.enable_gzip {
-            return Err("At least one compression algorithm must be enabled".to_string());
-        }
-
         // Minimum size should be reasonable
         if self.min_size > 100 * 1024 * 1024 {
             return Err(format!(
@@ -1183,15 +1183,16 @@ mod tests {
 
         let config = CompressionConfig::default().with_gzip(true);
         assert!(config.validate().is_ok());
+
+        // Disabling gzip is legitimate: the middleware honors it by skipping
+        // compression, so it must validate as OK.
+        let config = CompressionConfig::default().with_gzip(false);
+        assert!(config.validate().is_ok());
     }
 
     #[test]
     fn test_compression_config_validation_invalid() {
-        // No algorithms enabled
-        let config = CompressionConfig::default().with_gzip(false);
-        assert!(config.validate().is_err());
-
-        // Min size too large
+        // Min size too large is the only invalid case.
         let config = CompressionConfig::default().with_min_size(200 * 1024 * 1024);
         assert!(config.validate().is_err());
     }

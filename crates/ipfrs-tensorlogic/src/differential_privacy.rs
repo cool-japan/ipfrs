@@ -23,21 +23,12 @@
 //! assert!(result.noisy_value.is_finite());
 //! ```
 
+use rand::distr::Open01;
+use rand::rngs::StdRng;
+use rand::{RngExt, SeedableRng};
 use std::collections::VecDeque;
 use std::f64::consts::PI;
 use thiserror::Error;
-
-// ── xorshift64 PRNG ────────────────────────────────────────────────────────
-
-/// xorshift64 PRNG — fast, deterministic, no external dependencies.
-fn xorshift64(state: &mut u64) -> u64 {
-    let mut x = *state;
-    x ^= x << 13;
-    x ^= x >> 7;
-    x ^= x << 17;
-    *state = x;
-    x
-}
 
 // ── DpError ────────────────────────────────────────────────────────────────
 
@@ -290,6 +281,15 @@ impl BudgetTracker {
 ///
 /// Manages a privacy budget, generates calibrated noise, and records an
 /// auditable history of answered queries.
+///
+/// # Security
+///
+/// The noise source is a cryptographically-secure PRNG (`rand::rngs::StdRng`,
+/// a ChaCha-backed CSPRNG). It is seeded from operating-system entropy in
+/// [`DifferentialPrivacyEngine::new`]. This is a hard requirement: if the noise
+/// stream were predictable (e.g. a hard-coded seed feeding a non-crypto PRNG),
+/// an adversary could reproduce and subtract the noise, voiding the differential
+/// privacy guarantee entirely.
 pub struct DifferentialPrivacyEngine {
     /// Live budget tracker.
     pub budget: BudgetTracker,
@@ -297,20 +297,55 @@ pub struct DifferentialPrivacyEngine {
     answered: VecDeque<DpResult>,
     /// Maximum number of results retained in history.
     max_history: usize,
-    /// xorshift64 PRNG state.
-    rng_state: u64,
+    /// Cryptographically-secure noise source (ChaCha-backed `StdRng`).
+    ///
+    /// Seeded from OS entropy in [`DifferentialPrivacyEngine::new`]; only the
+    /// explicitly named test constructor
+    /// ([`DifferentialPrivacyEngine::with_deterministic_seed_for_testing`]) and
+    /// [`DifferentialPrivacyEngine::reseed`] install a caller-chosen,
+    /// reproducible seed.
+    rng: StdRng,
 }
 
 impl DifferentialPrivacyEngine {
     /// Construct a new engine with the given budget parameters.
     ///
-    /// The PRNG is seeded with `0xDEADBEEF42`.
+    /// The cryptographically-secure noise source is seeded from **operating-system
+    /// entropy** via [`rand::make_rng`]. Two engines constructed with `new` therefore
+    /// emit independent, unpredictable noise streams — a prerequisite for a sound
+    /// differential-privacy guarantee.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the OS entropy source fails to provide seed bytes, which is
+    /// extremely unlikely outside of early boot or a misconfigured system.
     pub fn new(epsilon_budget: f64, delta_budget: f64, max_history: usize) -> Self {
         Self {
             budget: BudgetTracker::new(epsilon_budget, delta_budget),
             answered: VecDeque::new(),
             max_history,
-            rng_state: 0x00DE_ADBE_EF42_u64,
+            rng: rand::make_rng::<StdRng>(),
+        }
+    }
+
+    /// Construct an engine with a caller-chosen, reproducible noise stream.
+    ///
+    /// **TEST ONLY.** This seeds the noise source deterministically so that unit
+    /// tests can make reproducible assertions. A fixed seed produces a fully
+    /// predictable noise sequence; **never** use this constructor for a real
+    /// privacy-sensitive deployment — doing so voids the differential-privacy
+    /// guarantee because an adversary can reproduce and subtract the noise.
+    pub fn with_deterministic_seed_for_testing(
+        epsilon_budget: f64,
+        delta_budget: f64,
+        max_history: usize,
+        seed: u64,
+    ) -> Self {
+        Self {
+            budget: BudgetTracker::new(epsilon_budget, delta_budget),
+            answered: VecDeque::new(),
+            max_history,
+            rng: StdRng::seed_from_u64(seed),
         }
     }
 
@@ -348,62 +383,112 @@ impl DifferentialPrivacyEngine {
 
     // ── Noise sampling ─────────────────────────────────────────────────────
 
-    /// Draw a uniform sample from (0, 1) using xorshift64.
-    fn uniform_sample(&mut self) -> f64 {
-        let raw = xorshift64(&mut self.rng_state);
-        raw as f64 / u64::MAX as f64
+    /// Draw a uniform sample strictly inside the **open** interval `(0, 1)`.
+    ///
+    /// Uses the CSPRNG together with [`rand::distr::Open01`]. Unlike the usual
+    /// `[0, 1)` uniform, `Open01` never returns `0.0` (nor `1.0`); for `f64` its
+    /// smallest value is `2^-53` and its largest is `1 - 2^-53`. Drawing from the
+    /// open interval is what makes the inverse-CDF and Box–Muller samplers below
+    /// numerically safe: the argument of every `ln` is bounded strictly away from
+    /// zero, so the `ln(0) = -inf` hazard cannot occur and no ad-hoc `.max(ε)`
+    /// floor is required.
+    fn next_open01(&mut self) -> f64 {
+        self.rng.sample::<f64, _>(Open01)
     }
 
     /// Sample from Laplace(0, scale) using the inverse-CDF method.
     ///
-    /// Formula: `-scale * sign(u - 0.5) * ln(1 - 2 * |u - 0.5|)`.
-    /// If the argument to `ln` is ≤ 0, uses `1e-10` as a floor.
+    /// With `u` drawn from the open interval `(0, 1)` and `c = u - 0.5`, the noise
+    /// is `-scale * sign(c) * ln(1 - 2|c|)`.
+    ///
+    /// # Numerical stability
+    ///
+    /// Because `u ∈ (0, 1)` strictly (see [`Self::next_open01`]), `|c| < 0.5` and
+    /// therefore `arg = 1 - 2|c| ∈ (0, 1]` — it can never be `0`, so `ln(arg)` is
+    /// always finite. The most extreme draw (`u = 2^-53` or `u = 1 - 2^-53`) gives
+    /// `arg = 2^-52`, hence `|noise| ≤ scale · 52 · ln 2 ≈ 36 · scale`. The
+    /// resulting tail truncation has probability on the order of `2^-52` and is
+    /// negligible for any practical `(ε, δ)`.
     pub fn sample_laplace(&mut self, scale: f64) -> f64 {
-        let u = self.uniform_sample();
+        let u = self.next_open01();
         let centered = u - 0.5;
         let sign = if centered >= 0.0 { 1.0_f64 } else { -1.0_f64 };
-        let arg = (1.0 - 2.0 * centered.abs()).max(1e-10);
+        let arg = 1.0 - 2.0 * centered.abs();
         -scale * sign * arg.ln()
     }
 
     /// Sample from Gaussian(0, scale) using the Box-Muller transform.
     ///
-    /// Draws two uniform samples u1, u2 ∈ (0,1), then:
-    /// `z = sqrt(-2 * ln(u1)) * cos(2π * u2)`.
-    /// If `u1 ≤ 0`, uses `1e-10` as a floor.
+    /// Draws two independent uniforms `u1, u2 ∈ (0, 1)`, then returns
+    /// `scale * sqrt(-2 ln(u1)) * cos(2π u2)`.
+    ///
+    /// # Numerical stability
+    ///
+    /// Because `u1 ∈ (0, 1)` strictly (see [`Self::next_open01`]), `ln(u1)` is
+    /// finite and `-2 ln(u1) ≥ 0`, so the `sqrt` is real and the whole expression
+    /// is finite — the `ln(0) = -inf` hazard cannot arise. The most extreme draw
+    /// (`u1 = 2^-53`) bounds the radius at `sqrt(2 · 53 · ln 2) ≈ 8.57`, so
+    /// `|noise| ≤ 8.57 · scale`; this truncation is negligible.
     pub fn sample_gaussian(&mut self, scale: f64) -> f64 {
-        let u1 = self.uniform_sample().max(1e-10);
-        let u2 = self.uniform_sample();
+        let u1 = self.next_open01();
+        let u2 = self.next_open01();
         let z = (-2.0 * u1.ln()).sqrt() * (2.0 * PI * u2).cos();
         z * scale
     }
 
     /// Sample noise according to the mechanism (Laplace, Gaussian, or
     /// Randomized).
+    ///
+    /// For [`PrivacyMechanism::Randomized`] the input is interpreted as a **single
+    /// bit** thresholded at `0.5` (see [`Self::sample_randomized_response`]); the
+    /// returned "noise" is `output_bit - true_value`, so that
+    /// `true_value + noise == output_bit`.
     fn sample_noise(&mut self, mechanism: &PrivacyMechanism, true_value: f64) -> f64 {
         let ns = Self::compute_noise_scale(mechanism);
         match mechanism {
             PrivacyMechanism::Laplace { .. } => self.sample_laplace(ns.scale),
             PrivacyMechanism::Gaussian { .. } => self.sample_gaussian(ns.scale),
-            PrivacyMechanism::Randomized { epsilon } => {
-                // Randomized response: flip the binary encoding of the value
-                // with probability p = 1/(exp(ε)+1).
-                let flip_prob = ns.scale; // = 1 / (exp(ε) + 1)
-                let u = self.uniform_sample();
-                if u < flip_prob {
-                    // Flip: add a perturbation of magnitude 1.0 in a random direction.
-                    let sign = if self.uniform_sample() < 0.5 {
-                        1.0_f64
-                    } else {
-                        -1.0_f64
-                    };
-                    let _ = epsilon; // used via scale
-                    sign * 1.0 - true_value + true_value // = sign * 1.0 (placeholder)
-                } else {
-                    0.0
-                }
+            // `ns.scale == 1 / (exp(ε) + 1)` is exactly the flip probability, so the
+            // randomized-response mechanism is driven entirely by the shared scale.
+            PrivacyMechanism::Randomized { .. } => {
+                self.sample_randomized_response(ns.scale, true_value)
             }
         }
+    }
+
+    /// Symmetric binary (Warner) randomized response achieving ε-local DP.
+    ///
+    /// This mechanism expects a **binary-valued input**: `true_value` is first
+    /// thresholded to a bit, `true_bit = 1` iff `true_value >= 0.5`, else `0`.
+    ///
+    /// Let `p = flip_prob = 1 / (e^ε + 1)` (the [`NoiseScale::scale`] value for a
+    /// [`PrivacyMechanism::Randomized`] mechanism) and
+    /// `q = keep_prob = e^ε / (e^ε + 1) = 1 - p`. The response is:
+    ///
+    /// - with probability `q`, report `true_bit` unchanged;
+    /// - with probability `p`, report the flipped bit `1 - true_bit`.
+    ///
+    /// # Privacy
+    ///
+    /// For adjacent inputs (bit `0` vs bit `1`) and either output the likelihood
+    /// ratio is `q / p = e^ε`, so the mechanism is ε-differentially private in the
+    /// local model. (`p < q` because `e^ε > 1` for `ε > 0`, so the truthful answer
+    /// is always the more likely one.)
+    ///
+    /// # Return value
+    ///
+    /// Returns the *noise* `output_bit - true_value`, consistent with the additive
+    /// convention of the other mechanisms: the caller computes
+    /// `noisy_value = true_value + noise`, which equals `output_bit ∈ {0.0, 1.0}`.
+    fn sample_randomized_response(&mut self, flip_prob: f64, true_value: f64) -> f64 {
+        let true_bit = if true_value >= 0.5 { 1.0_f64 } else { 0.0_f64 };
+        let u = self.next_open01();
+        let output_bit = if u < flip_prob {
+            1.0 - true_bit
+        } else {
+            true_bit
+        };
+        output_bit - true_value
     }
 
     // ── Query application ──────────────────────────────────────────────────
@@ -534,10 +619,14 @@ impl DifferentialPrivacyEngine {
         &mut self.budget
     }
 
-    /// Reset the PRNG to a known seed for reproducible testing.
+    /// Reset the noise source to a known seed for reproducible testing.
+    ///
+    /// **TEST / DEBUG ONLY.** Installing a caller-chosen seed makes the noise
+    /// stream deterministic and therefore predictable; do not call this in a
+    /// privacy-sensitive deployment. `StdRng` accepts any `u64` seed (including
+    /// `0`), so no special-casing is required.
     pub fn reseed(&mut self, seed: u64) {
-        // Ensure the seed is non-zero (xorshift64 with state=0 always produces 0).
-        self.rng_state = if seed == 0 { 1 } else { seed };
+        self.rng = StdRng::seed_from_u64(seed);
     }
 
     /// Clear the query history.
@@ -551,36 +640,9 @@ impl DifferentialPrivacyEngine {
 #[cfg(test)]
 mod tests {
     use crate::differential_privacy::{
-        xorshift64, BudgetTracker, DifferentialPrivacyEngine, DpError, DpQuery, DpResult,
-        NoiseScale, PrivacyMechanism, PrivacyParameters,
+        BudgetTracker, DifferentialPrivacyEngine, DpError, DpQuery, DpResult, NoiseScale,
+        PrivacyMechanism, PrivacyParameters,
     };
-
-    // ── xorshift64 ─────────────────────────────────────────────────────────
-
-    #[test]
-    fn test_xorshift64_non_zero() {
-        let mut state = 0x00DE_ADBE_EF42_u64;
-        let v = xorshift64(&mut state);
-        assert_ne!(v, 0);
-        assert_ne!(state, 0x00DE_ADBE_EF42_u64);
-    }
-
-    #[test]
-    fn test_xorshift64_deterministic() {
-        let mut s1 = 12345u64;
-        let mut s2 = 12345u64;
-        for _ in 0..100 {
-            assert_eq!(xorshift64(&mut s1), xorshift64(&mut s2));
-        }
-    }
-
-    #[test]
-    fn test_xorshift64_different_outputs() {
-        let mut state = 1u64;
-        let a = xorshift64(&mut state);
-        let b = xorshift64(&mut state);
-        assert_ne!(a, b);
-    }
 
     // ── PrivacyMechanism ───────────────────────────────────────────────────
 
@@ -1076,6 +1138,109 @@ mod tests {
         engine.reseed(42);
         let b = engine.sample_laplace(1.0);
         assert_eq!(a, b);
+    }
+
+    // ── CSPRNG seeding ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_new_uses_os_entropy_distinct_streams() {
+        // Two engines constructed with `new()` must draw from independent,
+        // OS-seeded streams. With the old hard-coded seed both engines emitted
+        // an identical, predictable sequence — the vulnerability this fixes.
+        let mut e1 = DifferentialPrivacyEngine::new(f64::MAX, 0.0, 0);
+        let mut e2 = DifferentialPrivacyEngine::new(f64::MAX, 0.0, 0);
+        let seq1: Vec<f64> = (0..8).map(|_| e1.sample_laplace(1.0)).collect();
+        let seq2: Vec<f64> = (0..8).map(|_| e2.sample_laplace(1.0)).collect();
+        assert_ne!(
+            seq1, seq2,
+            "OS-seeded engines must produce independent noise streams"
+        );
+    }
+
+    #[test]
+    fn test_deterministic_seed_constructor_reproduces() {
+        // The loudly-named test constructor must be reproducible for a fixed
+        // seed, and diverge for a different seed.
+        let mut a =
+            DifferentialPrivacyEngine::with_deterministic_seed_for_testing(f64::MAX, 0.0, 0, 7);
+        let mut b =
+            DifferentialPrivacyEngine::with_deterministic_seed_for_testing(f64::MAX, 0.0, 0, 7);
+        let sa: Vec<f64> = (0..16).map(|_| a.sample_gaussian(1.0)).collect();
+        let sb: Vec<f64> = (0..16).map(|_| b.sample_gaussian(1.0)).collect();
+        assert_eq!(sa, sb, "identical seeds must reproduce the stream");
+
+        let mut c =
+            DifferentialPrivacyEngine::with_deterministic_seed_for_testing(f64::MAX, 0.0, 0, 8);
+        let sc: Vec<f64> = (0..16).map(|_| c.sample_gaussian(1.0)).collect();
+        assert_ne!(sa, sc, "different seeds must diverge");
+    }
+
+    // ── Randomized response (Warner) ───────────────────────────────────────
+
+    #[test]
+    fn test_randomized_response_flip_rate_matches_theory() {
+        // Symmetric binary randomized response flips the truthful bit with
+        // probability p = 1/(e^ε + 1). We verify the empirical flip rate for
+        // both input bits. A deterministic seed keeps the test reproducible;
+        // the tolerance (0.03) is ~9σ for n = 20 000 Bernoulli(p) trials.
+        let eps = 1.0_f64;
+        let flip_prob = 1.0 / (eps.exp() + 1.0);
+        let query = DpQuery {
+            query_id: "rr".to_string(),
+            sensitivity: 1.0,
+            mechanism: PrivacyMechanism::Randomized { epsilon: eps },
+        };
+        let n = 20_000usize;
+
+        // true_value = 1.0 → true_bit = 1; a flip yields output_bit 0.
+        let mut engine_one = DifferentialPrivacyEngine::with_deterministic_seed_for_testing(
+            f64::MAX,
+            0.0,
+            0,
+            1_234_567,
+        );
+        let mut flips_from_one = 0usize;
+        for _ in 0..n {
+            let r = engine_one
+                .apply_mechanism(&query, 1.0)
+                .expect("test: randomized query should succeed");
+            // The reported value must be a clean bit.
+            assert!(
+                r.noisy_value == 0.0 || r.noisy_value == 1.0,
+                "randomized response must report a bit, got {}",
+                r.noisy_value
+            );
+            if r.noisy_value < 0.5 {
+                flips_from_one += 1;
+            }
+        }
+        let empirical_one = flips_from_one as f64 / n as f64;
+        assert!(
+            (empirical_one - flip_prob).abs() < 0.03,
+            "flip rate from bit 1 = {empirical_one}, expected ≈ {flip_prob}"
+        );
+
+        // true_value = 0.0 → true_bit = 0; a flip yields output_bit 1.
+        let mut engine_zero = DifferentialPrivacyEngine::with_deterministic_seed_for_testing(
+            f64::MAX,
+            0.0,
+            0,
+            7_654_321,
+        );
+        let mut flips_from_zero = 0usize;
+        for _ in 0..n {
+            let r = engine_zero
+                .apply_mechanism(&query, 0.0)
+                .expect("test: randomized query should succeed");
+            if r.noisy_value > 0.5 {
+                flips_from_zero += 1;
+            }
+        }
+        let empirical_zero = flips_from_zero as f64 / n as f64;
+        assert!(
+            (empirical_zero - flip_prob).abs() < 0.03,
+            "flip rate from bit 0 = {empirical_zero}, expected ≈ {flip_prob}"
+        );
     }
 
     #[test]

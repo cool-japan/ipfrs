@@ -402,12 +402,9 @@ impl HybridIndex {
             .filter_map(|r| {
                 // Apply metadata filter
                 if let Some(ref filter) = query.filter {
-                    if let Some(meta) = self.metadata_store.get(&r.cid) {
-                        if !filter.matches(&meta) {
-                            return None;
-                        }
-                    } else {
-                        return None; // No metadata, filter out
+                    let meta = self.metadata_store.get(&r.cid)?; // No metadata, filter out
+                    if !filter.matches(&meta) {
+                        return None;
                     }
                 }
 

@@ -16,7 +16,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 authors = ["TensorLogic Architect"]
 license = "Apache-2.0"
@@ -92,7 +92,7 @@ clap = { version = "4.6", features = ["derive"] }
 # Web server
 axum = { version = "0.8", features = ["multipart"] }
 tower = "0.5"
-tower-http = { version = "0.7", features = ["cors", "trace", "compression-gzip"] }
+tower-http = { version = "0.7", features = ["trace"] }
 hyper = "1.10"
 
 # Serialization
@@ -128,6 +128,11 @@ uuid = { version = "1.23", features = ["v4", "serde"] }
 rustls = { version = "0.23", default-features = false, features = ["std"] }
 rustls-rustcrypto = "0.0.2-alpha"
 rcgen = "0.14"
+# X.509 certificate parsing for SPKI pinning. Default features ONLY — do NOT
+# enable `verify` (pulls `ring`) or `verify-aws` (pulls `aws-lc-rs`); both are
+# C-backed and violate the pure-Rust policy. Parsing-only default feature set
+# is sufficient for SPKI extraction.
+x509-parser = "0.18"
 
 # Database
 parity-db = "0.5"
@@ -145,9 +150,11 @@ async-graphql-axum = "7.2"
 
 # gRPC
 tonic = "0.14"
+tonic-prost = "0.14"
 prost = "0.14"
 prost-types = "0.14"
 tonic-build = "0.14"
+tonic-prost-build = "0.14"
 prost-build = "0.14"
 
 # Python bindings
@@ -202,14 +209,14 @@ sysinfo = "0.39"
 fastrand = "2.4"
 
 # Internal IPFRS crates
-ipfrs-core = { path = "crates/ipfrs-core", version = "0.2.1" }
-ipfrs-storage = { path = "crates/ipfrs-storage", version = "0.2.1" }
-ipfrs-network = { path = "crates/ipfrs-network", version = "0.2.1" }
-ipfrs-tensorlogic = { path = "crates/ipfrs-tensorlogic", version = "0.2.1" }
-ipfrs-transport = { path = "crates/ipfrs-transport", version = "0.2.1" }
-ipfrs-semantic = { path = "crates/ipfrs-semantic", version = "0.2.1" }
-ipfrs-interface = { path = "crates/ipfrs-interface", version = "0.2.1" }
-ipfrs = { path = "crates/ipfrs", version = "0.2.1" }
+ipfrs-core = { path = "crates/ipfrs-core", version = "0.3.0" }
+ipfrs-storage = { path = "crates/ipfrs-storage", version = "0.3.0" }
+ipfrs-network = { path = "crates/ipfrs-network", version = "0.3.0" }
+ipfrs-tensorlogic = { path = "crates/ipfrs-tensorlogic", version = "0.3.0" }
+ipfrs-transport = { path = "crates/ipfrs-transport", version = "0.3.0" }
+ipfrs-semantic = { path = "crates/ipfrs-semantic", version = "0.3.0" }
+ipfrs-interface = { path = "crates/ipfrs-interface", version = "0.3.0" }
+ipfrs = { path = "crates/ipfrs", version = "0.3.0" }
 num_cpus = "1.17"
 lazy_static = "1.5"
 bytemuck = "1.25"

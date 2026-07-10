@@ -179,9 +179,9 @@ impl PyClient {
     ///
     /// Example:
     ///     >>> print(client.version())
-    ///     ipfrs-interface 0.2.0
+    ///     ipfrs-interface 0.3.0
     fn version(&self) -> String {
-        "ipfrs-interface 0.2.0".to_string()
+        "ipfrs-interface 0.3.0".to_string()
     }
 
     /// Python context manager support: __enter__
@@ -240,14 +240,31 @@ impl PyBlockInfo {
 /// Initialize the Python module
 ///
 /// This function is called by Python when the module is imported.
+///
+/// # Naming
+///
+/// This pymodule is intentionally named `ipfrs_interface`, NOT `ipfrs`.
+/// `ipfrs-interface` has no `[lib]` section in its `Cargo.toml`, so it is
+/// only ever built as a plain rlib (never as a `cdylib` Python extension
+/// module) — but PyO3's `#[pymodule]` macro still emits a `#[no_mangle]
+/// extern "C" fn PyInit_<name>` symbol unconditionally. The real Python
+/// extension module for this workspace is `ipfrs-python`
+/// (`crates/ipfrs-python/src/lib.rs`), which owns `PyInit_ipfrs` and is
+/// pinned to that name via `crates/ipfrs-python/pyproject.toml`
+/// (`module-name = "ipfrs"`). If this function were also named `ipfrs`,
+/// building with `--all-features` enables this crate's `python` feature
+/// alongside `ipfrs-python`'s tests, and the linker sees two
+/// `PyInit_ipfrs` definitions across the two rlibs, e.g.:
+/// `multiple definition of 'PyInit_ipfrs'`. Do not rename this back to
+/// `ipfrs`.
 #[cfg(feature = "python")]
 #[pymodule]
-fn ipfrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn ipfrs_interface(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyClient>()?;
     m.add_class::<PyBlockInfo>()?;
 
     // Add module-level constants
-    m.add("__version__", "0.2.0")?;
+    m.add("__version__", "0.3.0")?;
     m.add("__author__", "IPFRS Team")?;
 
     Ok(())
@@ -261,7 +278,7 @@ mod tests {
     fn test_client_creation() {
         Python::attach(|_py| {
             let client = PyClient::new(None).expect("test: client creation should succeed");
-            assert_eq!(client.version(), "ipfrs-interface 0.2.0");
+            assert_eq!(client.version(), "ipfrs-interface 0.3.0");
         });
     }
 
