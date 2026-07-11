@@ -1,5 +1,7 @@
 # ipfrs-interface TODO
 
+> **Status: 0.3.0 "Hardening Release" milestone complete.** Items marked ⏳ below are *post-0.3.0 roadmap* — deferred, not release-blocking — with the deferral reason in `_(post-0.3.0: …)_`. They are **honestly deferred, not claimed as done**. Completed work remains marked ✅ / `- [x]`.
+
 ## ✅ Completed (Phases 1-3)
 
 ### Axum Setup
@@ -442,25 +444,25 @@
   - Target: Type-checked Python ✓
 
 ### Node.js Addon (N-API)
-- [ ] **Implement N-API native module** (Future)
+- ⏳ **Implement N-API native module** (Future)  _(post-0.3.0: binding-toolchain)_
   - Node.js integration
   - Async operations
   - Error handling
   - Target: Node.js API
 
-- [ ] **Add JavaScript wrapper** (Future)
+- ⏳ **Add JavaScript wrapper** (Future)  _(post-0.3.0: binding-toolchain)_
   - Friendly API
   - Promise-based
   - EventEmitter integration
   - Target: Idiomatic JavaScript
 
-- [ ] **Create TypeScript definitions** (Future)
+- ⏳ **Create TypeScript definitions** (Future)  _(post-0.3.0: binding-toolchain)_
   - Type declarations
   - JSDoc comments
   - Generic types
   - Target: Type-safe JavaScript
 
-- [ ] **Support async operations** (Future)
+- ⏳ **Support async operations** (Future)  _(post-0.3.0: binding-toolchain)_
   - Libuv integration
   - Promise returns
   - Callback support
@@ -485,7 +487,7 @@
   - Comprehensive unit tests ✓
   - Target: Validated FFI ✓
 
-- [ ] **Add memory leak detection** (Future)
+- ⏳ **Add memory leak detection** (Future)  _(post-0.3.0: external-infra)_
   - Valgrind integration
   - ASAN testing
   - Leak tracking
@@ -546,25 +548,25 @@
   - Target: Extensible events ✓
 
 ### Browser Compatibility
-- [ ] **Test with browser WebSocket clients** (Future)
+- ⏳ **Test with browser WebSocket clients** (Future)  _(post-0.3.0: external-infra)_
   - Chrome/Firefox/Safari testing
   - Mobile browser testing
   - Feature detection
   - Target: Universal browser support
 
-- [ ] **Add CORS for WebSocket** (Future)
+- ⏳ **Add CORS for WebSocket** (Future)  _(post-0.3.0: future-research)_
   - Origin validation
   - Preflight handling
   - Credentials support
   - Target: Secure browser WebSocket
 
-- [ ] **Create JavaScript client library** (Future)
+- ⏳ **Create JavaScript client library** (Future)  _(post-0.3.0: binding-toolchain)_
   - Browser SDK
   - Auto-reconnection
   - Event handling
   - Target: Easy browser integration
 
-- [ ] **Support reconnection logic** (Future)
+- ⏳ **Support reconnection logic** (Future)  _(post-0.3.0: binding-toolchain)_
   - Automatic reconnect
   - Exponential backoff
   - State recovery
@@ -697,15 +699,15 @@
   - Type stubs (ipfrs.pyi) for IDE support
   - Pythonic error handling
 
-- [ ] **Node.js bindings (N-API)** (Planned)
+- ⏳ **Node.js bindings (N-API)** (Planned)  _(post-0.3.0: binding-toolchain)_
   - Promise-based async operations
   - TypeScript type definitions
   - EventEmitter for subscriptions
 
 ### Future Enhancements
-- [ ] **gRPC client SDKs** for Python, Node.js, Go
-- [ ] **GraphQL code generation** for type-safe clients
-- [ ] **OpenAPI client generation** automation
+- ⏳ **gRPC client SDKs** for Python, Node.js, Go  _(post-0.3.0: binding-toolchain)_
+- ⏳ **GraphQL code generation** for type-safe clients  _(post-0.3.0: external-infra)_
+- ⏳ **OpenAPI client generation** automation  _(post-0.3.0: external-infra)_
 
 ---
 
@@ -718,13 +720,13 @@
   - Mutation operations (add_block, index_content, add_fact, add_rule)
   - Target: Flexible queries ✓
 
-- [ ] **WebRTC data channels**
+- ⏳ **WebRTC data channels**  _(post-0.3.0: large-subsystem)_
   - Peer-to-peer transfers
   - Browser to browser
   - NAT traversal
   - Target: Direct transfers
 
-- [ ] **HTTP/3 support**
+- ⏳ **HTTP/3 support**  _(post-0.3.0: large-subsystem)_
   - QUIC-based HTTP
   - Multiplexing
   - 0-RTT

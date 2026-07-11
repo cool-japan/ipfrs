@@ -5,6 +5,80 @@ All notable changes to IPFRS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-07-10 "Hardening Release"
+
+### Security
+
+- **QUIC transport certificate pinning (BREAKING):** replaced the insecure "accept any
+  certificate" verifier with genuine SPKI/certificate pinning. `QuicConfig` gained
+  `server_pins: Vec<CertPin>` (`CertPin::Spki` / `CertPin::Cert`) and a dev-only
+  `dangerous_accept_any_cert` flag; the new `PinnedServerVerifier` performs real TLS
+  1.2/1.3 signature verification (`rustls::crypto::verify_tls12_signature` /
+  `verify_tls13_signature`) in addition to the pin check. A client configured with **no
+  pins and `dangerous_accept_any_cert = false` now fails closed** (`QuicTransport::new`
+  returns an error) instead of silently trusting any peer. This closes a
+  man-in-the-middle vulnerability. (`crates/ipfrs-transport/src/quic.rs`.)
+- **Differential-privacy noise hardened:** `DpSgdPrivatizer`
+  (`ipfrs-tensorlogic/src/gradient_noise.rs`) now clips a gradient's global L2 norm to
+  `clip_bound` *before* adding Gaussian noise (`σ = noise_multiplier · clip_bound`), the
+  correct DP-SGD construction (Abadi et al., 2016). Its noise source is a
+  `rand::rngs::StdRng` seeded from OS entropy via `rand::make_rng` in production (a
+  fixed seed is available only through the explicitly-named
+  `with_deterministic_seed_for_testing` test constructor), so production privacy noise
+  is no longer reproducible. The randomized-response mechanism in
+  `differential_privacy.rs` was also fixed. (`crates/ipfrs-tensorlogic/src/{differential_privacy,gradient_noise}.rs`.)
+- **GossipSub message validation:** `GossipSubManager::validate_message` now performs
+  real structural (non-empty payload), size-bound, subscribed-topic, and ban-list
+  checks — previously a no-op that accepted everything. Added `ban_peer` /
+  `unban_peer` / `is_banned` peer-ban APIs. Message authorship is still not
+  cryptographically verified (`source` remains a self-reported `PeerId`; the libp2p
+  gossipsub swarm behaviour that would carry an authenticated source is not wired up
+  yet) — see the honesty note in `gossipsub.rs`. (`crates/ipfrs-network/src/gossipsub.rs`.)
+
+### Added
+
+- **Real HTTP gzip response compression** for the gateway (new
+  `crates/ipfrs-interface/src/compression.rs`), backed by `oxiarc-deflate` (pure Rust).
+  Implements RFC 9110 `Accept-Encoding` q-value negotiation (`gzip_quality` /
+  `accepts_gzip`), correct `Vary` handling, large-body compression offloaded to a
+  blocking thread, and passthrough when a handler has already set
+  `Content-Encoding`. Wired into `Gateway::router` as an axum middleware layer,
+  replacing a `TODO: integrate OxiARC-based HTTP compression when available` stub.
+
+### Changed
+
+- QUIC transport now explicitly constructs a QUIC-capable rustls `CryptoProvider`
+  (`rustls::crypto::ring::default_provider()`) for both the client and server TLS
+  configs; previously `QuicTransport::new` was non-constructible in practice because
+  the workspace's default pure-Rust `rustls_rustcrypto` provider leaves `quic: None` on
+  its TLS 1.3 cipher suites, which `quinn::crypto::rustls::QuicServerConfig::try_from`
+  requires. This mirrors quinn's own internal default and is a narrow, documented
+  exception to the pure-Rust-preferred policy, scoped to the QUIC handshake.
+- Removed the now-unnecessary `cors` and `compression-gzip` features from
+  `tower-http` — `ipfrs-interface` already has its own hand-rolled `cors_middleware`
+  and now its own OxiARC-backed gzip middleware; `flate2`/`miniz_oxide` do not appear
+  in the dependency graph.
+- Added `SCIRS2_POLICY.md` documenting IPFRS's deliberate exemption from the
+  SciRS2-Core convention (direct `rand` usage instead), including an audit of every
+  security-sensitive randomness call site.
+
+### Fixed
+
+- Fixed the `--all-features` workspace build: `ipfrs-interface`'s PyO3 `#[pymodule]`
+  function was kept named `ipfrs_interface` (not `ipfrs`) to stop colliding with
+  `ipfrs-python`'s `PyInit_ipfrs` symbol at link time.
+- Fixed the `wasm32-unknown-unknown` build (web-sys WebRTC/IndexedDB API drift —
+  `RtcIceCandidateInit`/`RtcDataChannelInit` setters, `DomStringList`,
+  `IdbTransactionMode`); the `@cool-japan/ipfrs` wasm package builds again.
+- Removed a `todo!()` from a `no_run` doc example in
+  `ipfrs_tensorlogic::remote_reasoning::session` (`InferenceResultStream`).
+- Resolved clippy `-D warnings` across the workspace (e.g. `?`-operator
+  simplifications in `proof_storage.rs`, `reasoning.rs`, `rule_migrator.rs`) and fixed
+  several broken doctests (`abductive_reasoning_engine.rs`, `tensor_quantizer.rs`, plus
+  fixes in `ipfrs-network` and `ipfrs-semantic`).
+
+---
+
 ## [0.2.1] - 2026-06-23 "Semantic Release"
 
 ### Added
@@ -447,6 +521,7 @@ IPFRS follows [Semantic Versioning](https://semver.org/):
 
 For questions, issues, or contributions, visit our [GitHub repository](https://github.com/cool-japan/ipfrs).
 
+[0.3.0]: https://github.com/cool-japan/ipfrs/releases/tag/v0.3.0
 [0.2.1]: https://github.com/cool-japan/ipfrs/releases/tag/v0.2.1
 [0.2.0]: https://github.com/cool-japan/ipfrs/releases/tag/v0.2.0
 [0.1.0]: https://github.com/cool-japan/ipfrs/releases/tag/v0.1.0

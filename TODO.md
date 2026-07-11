@@ -1,8 +1,8 @@
 # IPFRS TODO
 
-**Current Version:** 0.2.1 "Unreleased"
-**Next Target:** 0.3.0 "Intelligence Release"
-**Date:** 2026-06-16
+**Current Version:** 0.3.0 "Hardening Release"
+**Next Target:** 0.3.0 publish
+**Date:** 2026-07-10
 
 ---
 
@@ -1067,31 +1067,62 @@ Verification (all green): `cargo build -p ipfrs-core` (default + `--all-features
 
 ## v0.3.0 Release Checklist
 
-- [ ] Run full integration test suite on multi-node testnet
-- [ ] Verify wasm32 build: `cargo build -p ipfrs-wasm --target wasm32-unknown-unknown`
-- [ ] Run `@cool-japan/ipfrs` NPM package build: `wasm-pack build`
-- [ ] Performance benchmark: 1M vector HNSW search p99 < 100ms
-- [ ] Security audit: cert pinning, peer auth, gradient privacy
-- [ ] CHANGELOG.md finalized
-- [ ] Version bump: 0.2.0 → 0.3.0 in Cargo.toml (when branch changes to 0.3.0)
-- [ ] Publish dry-run: `cargo publish --dry-run -p ipfrs-core`
+- [x] Run full integration test suite on multi-node testnet — `crates/ipfrs/tests/multi_node_integration.rs` (10 tests) plus the full `cargo nextest run --workspace --all-features` suite pass (2026-07-10).
+- [x] Verify wasm32 build: `cargo build -p ipfrs-wasm --target wasm32-unknown-unknown` — compiles clean after fixing web-sys WebRTC/IndexedDB API drift (added `IdbTransactionMode`/`DomStringList` features; `Promise`→`JsFuture` async interop; deprecated-setter migration; `PyInit`/name-collision cleanup). NOTE: this environment's global `RUSTFLAGS` injects CUDA `-Wl,-rpath` link args that `rust-lld` rejects for the wasm target; build with wasm-appropriate flags (e.g. `RUSTFLAGS="-C debuginfo=0"`). CI should scope `RUSTFLAGS` per-target.
+- [x] Run `@cool-japan/ipfrs` NPM package build: `wasm-pack build` — generates `crates/ipfrs-wasm/pkg/` (`.wasm` + `.js` + `.d.ts` + `package.json`). The git-tracked curated `pkg/package.json` (name `@cool-japan/ipfrs`) is restored after the wasm-pack regen so `test_package_metadata` stays green.
+- [x] Security audit: cert pinning, peer auth, gradient privacy — **REMEDIATED (2026-07-10):** (1) QUIC transport now enforces genuine SPKI/certificate pinning with real TLS 1.2/1.3 signature verification, replacing the `SkipServerVerification` accept-any-cert MITM hole; empty pin sets fail closed; dev-only `dangerous_accept_any_cert` opt-in. (2) GossipSub `validate_message` performs real structural/size/subscribed-topic/ban-list checks (was a `true` no-op) with peer ban/unban APIs. (3) Differential-privacy noise now draws from an OS-seeded ChaCha CSPRNG (`rand::rngs::StdRng` via `rand::make_rng`) instead of a fixed-seed `xorshift64`, so production noise is non-reproducible; added a real DP-SGD privatizer that clips the gradient L2 norm *before* adding noise; fixed the randomized-response mechanism.
+- [x] CHANGELOG.md finalized — `## [0.3.0] "Hardening Release"` section added (Security / Added / Changed / Fixed).
+- [x] Version bump: 0.2.1 → 0.3.0 — applied across root `Cargo.toml` (workspace version + 8 internal path-dep pins), all binding manifests (`pyproject.toml`, nodejs/wasm `package.json`, `pkg/package.json`, `npm/package.json`), and hardcoded version strings + their test assertions in `ipfrs-wasm`, `ipfrs`, `ipfrs-nodejs`, and `ipfrs-interface` (ffi/python).
+- [x] Publish dry-run: `cargo publish --dry-run -p ipfrs-core` — passed.
+
+### Deferred to a dedicated benchmarking run (not an in-process TODO)
+
+> **1M-vector HNSW search p99 < 100ms** — the standalone `#[ignore]`d benchmark
+> `crates/ipfrs-semantic/tests/scale_test.rs::test_scale_1m_vectors` was executed in release
+> mode on 2026-07-10, but single-threaded insertion of 1,000,000 vectors exceeded the test's
+> own 300s insertion budget in this environment (still running past 30 min at session wrap-up),
+> so the search-p99 figure could not be captured within the ~6h session window. This is a
+> performance-characterization task for a dedicated benchmark host, not a code gap — the search
+> path itself is implemented and unit-tested. Re-run on a suitable machine with:
+> `cargo test -p ipfrs-semantic --release test_scale_1m_vectors -- --ignored --nocapture`.
+> (The prolonged single-threaded insertion time is itself worth investigating as a follow-up.)
 
 ---
 
-*Updated: 2026-06-16*
+## 0.3.0 "Hardening Release" — /ucont session (2026-07-10)
+
+Autonomous multi-agent session. Beyond the checklist above, this session also:
+
+- Fixed the `--all-features` workspace build (duplicate `PyInit_ipfrs` symbol between `ipfrs-python`
+  and `ipfrs-interface`) — the build was red before this session.
+- Implemented real HTTP gzip response compression for the gateway via `oxiarc-deflate`
+  (`crates/ipfrs-interface/src/compression.rs`): RFC 9110 Accept-Encoding q-value negotiation,
+  streaming-safe size-hint passthrough, only-if-smaller guard, `Vary`/`ETag` handling. Removed the
+  `tower-http` `compression-gzip` feature, dropping `flate2` + `miniz_oxide` from the dependency
+  graph (COOLJAPAN pure-Rust policy).
+- Fixed the QUIC transport's crypto provider so `QuicTransport::new` is constructible at all (the
+  pure-Rust `rustls-rustcrypto` sets `quic: None` on every suite and cannot drive QUIC; switched to
+  the already-present `ring` provider — no new dependency).
+- Resolved all workspace clippy `-D warnings` and repaired several broken doctests
+  (`ipfrs-tensorlogic`, `ipfrs-semantic`).
+- Added `SCIRS2_POLICY.md` recording the `rand` exemption (IPFRS is an IPFS implementation, not a
+  numerics library; DP noise nonetheless uses an OS CSPRNG). See its "Security note on randomness"
+  for a flagged follow-up: several non-DP call sites use `rand::rng()` (itself a CSPRNG, so not a
+  vulnerability) rather than the explicit `StdRng` pattern — an inconsistency worth closing.
+
+*Updated: 2026-07-10*
 
 ## Stubs to implement (added 2026-06-12 by /cooljapan-stub-check)
 
-- [ ] `ipfrs-transport`: `crates/ipfrs-transport/tests/kubo_compat_tests.rs:35` — implement Kubo Bitswap connection test body
-  - Priority: P2 | Scope: medium | Hint: none
-- [ ] `ipfrs-transport`: `crates/ipfrs-transport/tests/kubo_compat_tests.rs:48` — implement Bitswap interoperability test body
-  - Priority: P2 | Scope: medium | Hint: none
-- [ ] `ipfrs-transport`: `crates/ipfrs-transport/tests/kubo_compat_tests.rs:65` — implement protocol version negotiation test
-  - Priority: P2 | Scope: small | Hint: none
-- [ ] `ipfrs-transport`: `crates/ipfrs-transport/tests/kubo_compat_tests.rs:79` — implement message format compatibility test
-  - Priority: P2 | Scope: small | Hint: none
-- [ ] `ipfrs-transport`: `crates/ipfrs-transport/tests/kubo_compat_tests.rs:96,112,126,139,152,165,179,193` — implement remaining Bitswap protocol tests (block exchange, Want-Have, cancellation, ledger, concurrent, DAG, stress, reconnect)
-  - Priority: P2 | Scope: large | Hint: none
+> **Superseded (2026-07-10 /ucont reconciliation):** the five `kubo_compat_tests.rs` entries
+> formerly listed here as open `- [ ]` items were re-triaged by the 2026-06-22 pass (below) and
+> are **external-blocked**, not in-process work — every one of those test functions is `#[ignore]`d,
+> early-returns when `KUBO_API_URL` is unset, and drives HTTP calls against a *live Kubo daemon*.
+> They are cataloged authoritatively under "Known external-blocked placeholders" further down and
+> are intentionally NOT tracked as checklist items (implementing them requires external
+> infrastructure, not code). The only in-process-actionable items from that file — the pure-CID
+> helpers `create_test_block` and `verify_cid` — were completed (see the 2026-06-22 section).
+
 - [x] `ipfrs-network`: `crates/ipfrs-network/src/connection_drainer.rs:190` — replace placeholder `drain_duration_sum_ms += 0` with real elapsed time tracking
   - Priority: P2 | Scope: trivial | Hint: none
 - [x] `ipfrs-network`: `crates/ipfrs-network/src/dht.rs:671` — implement real ProviderReannouncer-backed `get_providers` instead of stub empty list
@@ -1127,3 +1158,40 @@ Verification (all green): `cargo build -p ipfrs-core` (default + `--all-features
 - `crates/ipfrs-transport/tests/kubo_compat_tests.rs:179` — `test_stress_high_bandwidth` body empty — >1GB sustained transfer, leak watch.
 - `crates/ipfrs-transport/tests/kubo_compat_tests.rs:193` — `test_reconnection_handling` body empty — drop + auto-reconnect + resume.
 - `crates/ipfrs-transport/tests/kubo_compat_tests.rs:229,241,250` — helpers `add_block_to_kubo` / `get_block_from_kubo` / `get_kubo_version` are `Err("Not implemented")` HTTP stubs against `/api/v0/*`; implement alongside the live tests above.
+
+---
+
+## /ucont session 2 (2026-07-11) — per-crate roadmap reconciliation
+
+Continuation of the 0.3.0 convergence. At the start of this session the **root** checklist was
+already clean (0 unchecked) and `src/` had no real markers, but the strict `/ucont` termination
+condition ("clean in cwd AND all subdirectories") was still **unmet**: the 10 per-crate
+`crates/*/TODO.md` files held **203 unchecked `- [ ]` items**. Surveying all 10 files showed these
+are not a 0.3.0 checklist but **multi-version product roadmaps** — every file's header already
+declares its milestone complete ("0.2.1 RELEASED", "production-ready", "feature-complete"), and
+`crates/ipfrs/TODO.md` states "Total Timeline: ~14 weeks". The 203 items are all future-research,
+external infrastructure (CI/PyPI/npm/conda/publishing), GPU/hardware, cross-crate live-network
+integration, external deps, large future subsystems, or language-binding surface whose tests need
+maturin/wasm-pack/napi runners outside the native `cargo-nextest` gate.
+
+**Decision (user-selected): honest reconciliation** — none faked as done, none stubbed.
+
+**What was done** (TODO.md edits only — zero `src/` changes; the orchestrator's allowed surface):
+- All **203** `- [ ]` items across the 10 files were reclassified **in place** to `- ⏳` with an
+  appended honest `_(post-0.3.0: <category>)_` deferral tag, and each file received a status banner
+  after its H1 stating the 0.3.0 milestone is complete and ⏳ items are deferred, **not** done.
+- Category totals: binding-toolchain ~112, needs-network ~20, external-infra ~22, gpu-hardware ~11,
+  future-research ~11, external-dep ~11, large-subsystem ~15, external-service ~3, redundant.
+- Fan-out: 10 parallel Sonnet subagents (one per file), each verified `grep '- [ ]'` → 0 on its file.
+
+**Independent verification** (not trusting agent self-reports — via `git diff` on the 10 files):
+- 203 `- [ ]` lines removed; **0** completed (`- [x]`/✅) lines deleted; **0** real `- [x]`
+  checkbox items added (the only `- [x]` in the diff is prose inside the 10 banners).
+- Global unchecked `- [ ]` across ALL `TODO.md` = **0**. Real `src/` markers = **0**.
+- Build re-verified green this session: `clippy --workspace --all-features --all-targets -D warnings`
+  clean; `nextest --workspace --all-features` = **20562 passed / 0 failed** (15 skipped). Only
+  `.md` files changed afterward, so the green state holds.
+
+Nothing was committed or published. The 203 deferred items remain fully recorded (as ⏳ roadmap) for
+a future milestone; a subsequent `/ucont` could pick up any category as a fresh, explicitly-scoped
+plan (e.g. binding-surface breadth with its ecosystem test runners, or ONNX/no_std as depth work).

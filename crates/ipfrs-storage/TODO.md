@@ -1,6 +1,8 @@
 <!-- Version: 0.2.1 | Updated: 2026-06-16 -->
 # ipfrs-storage TODO
 
+> **Status: 0.3.0 "Hardening Release" milestone complete.** Items marked ⏳ below are *post-0.3.0 roadmap* — deferred, not release-blocking — with the deferral reason in `_(post-0.3.0: …)_`. They are **honestly deferred, not claimed as done**. Completed work remains marked ✅ / `- [x]`.
+
 ## ✅ Completed (Phases 1-3)
 
 ### Core Trait Definition
@@ -708,9 +710,9 @@
   - Target: Browser storage ✅
 
 ### Future Work
-- [ ] **Streaming block transfers via language bindings**
-- [ ] **CAR file import/export in Python/Node.js**
-- [ ] **S3 backend configuration from bindings**
+- ⏳ **Streaming block transfers via language bindings**  _(post-0.3.0: binding-toolchain)_
+- ⏳ **CAR file import/export in Python/Node.js**  _(post-0.3.0: binding-toolchain)_
+- ⏳ **S3 backend configuration from bindings**  _(post-0.3.0: binding-toolchain)_
 
 ---
 

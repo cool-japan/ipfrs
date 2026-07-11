@@ -643,6 +643,29 @@ mod tests {
         let result = simulator.run(store).await.unwrap();
 
         assert_eq!(result.total_operations, 1_000);
+
+        // This looks like the same instantaneous-throughput race as
+        // `profiling::tests::test_throughput_tracker`, but it is structurally
+        // different and is NOT flaky, so it is intentionally left unchanged:
+        //
+        // Unlike `ThroughputTracker::ops_per_second()` (which has an explicit
+        // `if elapsed > 0.0 {..} else { 0.0 }` guard), `WorkloadResult::ops_per_second`
+        // is computed in `WorkloadSimulator::run` as a raw, unguarded
+        // `total_operations as f64 / duration.as_secs_f64()`. `total_operations` is
+        // fixed to `1_000` by `WorkloadPresets::light_test()` -- a positive constant,
+        // not something timing can zero out. Per IEEE-754 float division, a positive
+        // numerator divided by a non-negative denominator is either a finite positive
+        // number (`duration > 0`) or `+inf` (in the -- here practically unreachable,
+        // but not impossible in general, e.g. `Instant::elapsed()` saturates to
+        // `Duration::ZERO` rather than panicking on non-monotonic clock hardware --
+        // case where `duration == 0`). It can never be `0.0`, negative, or `NaN`,
+        // because the numerator is never `0.0`. Both possible outcomes satisfy
+        // `> 0.0`, so this assertion is already deterministic.
+        //
+        // Do NOT "fix" this by asserting `is_finite()` the way the ThroughputTracker
+        // test does: `+inf` is a legitimate value here (it fails `is_finite()`), so
+        // that change would turn an always-true assertion into a spurious failure on
+        // exactly the zero-duration case it would be trying to guard against.
         assert!(result.ops_per_second > 0.0);
         assert!(!result.operation_counts.is_empty());
     }

@@ -1,5 +1,7 @@
 # ipfrs-tensorlogic TODO — v0.2.1 (2026-06-16)
 
+> **Status: 0.3.0 "Hardening Release" milestone complete.** Items marked ⏳ below are *post-0.3.0 roadmap* — deferred, not release-blocking — with the deferral reason in `_(post-0.3.0: …)_`. They are **honestly deferred, not claimed as done**. Completed work remains marked ✅ / `- [x]`.
+
 ## ✅ Completed (Phases 1-2)
 
 ### TensorLogic IR Codec
@@ -228,7 +230,7 @@
   - Target: Safe recursion
 
 ### Remaining (Network Integration Required)
-- [ ] **Complete network integration**
+- ⏳ **Complete network integration**  _(post-0.3.0: needs-network)_
   - Requires ipfrs-network crate
   - Actual peer-to-peer communication
   - Network-based fact retrieval
@@ -496,13 +498,13 @@
   - 13 comprehensive shape inference tests
 
 ### Remaining Tasks (Lower Priority)
-- [ ] **Implement distributed graph execution**
+- ⏳ **Implement distributed graph execution**  _(post-0.3.0: large-subsystem)_
   - Task scheduling across nodes
   - Data movement optimization
   - Result aggregation
   - Requires: ipfrs-network integration
 
-- [ ] **GPU execution support**
+- ⏳ **GPU execution support**  _(post-0.3.0: gpu-hardware)_
   - CUDA/OpenCL integration
   - Kernel optimization
   - Memory management
@@ -699,7 +701,7 @@
   - Example: `model_quantization.rs` with 7 scenarios
   - Target: Edge deployment ✓
 
-- [ ] **Integration with ONNX format**
+- ⏳ **Integration with ONNX format**  _(post-0.3.0: external-dep)_
   - ONNX model import/export
   - Operator mapping
   - Graph conversion
@@ -728,7 +730,7 @@
   - Example: `proof_explanation_demo.rs` with 6 scenarios
   - Target: Interpretability ✓
 
-- [ ] **Interactive proof debugger**
+- ⏳ **Interactive proof debugger**  _(post-0.3.0: future-research)_
   - Step-through debugging
   - Breakpoints
   - State inspection

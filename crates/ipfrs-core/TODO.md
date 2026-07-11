@@ -1,6 +1,8 @@
 <!-- Version: 0.2.1 | Updated: 2026-06-16 -->
 # ipfrs-core TODO
 
+> **Status: 0.3.0 "Hardening Release" milestone complete.** Items marked ⏳ below are *post-0.3.0 roadmap* — deferred, not release-blocking — with the deferral reason in `_(post-0.3.0: …)_`. They are **honestly deferred, not claimed as done**. Completed work remains marked ✅ / `- [x]`.
+
 ## ✅ Completed (Phases 1-3)
 
 ### CID & Multihash Implementation
@@ -59,7 +61,7 @@
   - CID links encoded as `{"/": "<cid-string>"}`
   - Implemented: `Ipld::to_dag_json()`, `Ipld::from_dag_json()`
 
-- [ ] **Add custom codec for TensorLogic IR** (Future)
+- ⏳ **Add custom codec for TensorLogic IR** (Future)  _(post-0.3.0: future-research)_
   - Optimize term serialization
   - Inline small constants (< 32 bytes)
   - Reference large terms via CID
@@ -194,13 +196,13 @@
   - CID has string representation
   - IPLD has JSON serialization
 
-- [ ] **Add C-compatible API layer**
+- ⏳ **Add C-compatible API layer**  _(post-0.3.0: binding-toolchain)_
   - Opaque pointer types
   - Error codes instead of Result
   - Memory management helpers
   - Target: C/C++ integration
 
-- [ ] **Create bindgen-friendly structures**
+- ⏳ **Create bindgen-friendly structures**  _(post-0.3.0: binding-toolchain)_
   - Repr(C) where needed
   - Stable ABI consideration
   - Header file generation
@@ -223,13 +225,13 @@
 ## Future Considerations
 
 ### no_std Support
-- [ ] **Core types without std**
+- ⏳ **Core types without std**  _(post-0.3.0: large-subsystem)_
   - alloc-only Block and CID
   - Custom error types
   - Target: Embedded systems
 
 ### Formal Verification
-- [ ] **CID invariants**
+- ⏳ **CID invariants**  _(post-0.3.0: large-subsystem)_
   - Prove hash correctness
   - Verify encoding/decoding roundtrip
   - Target: Safety guarantees
@@ -303,7 +305,7 @@
   - Full integration with pluggable hash system
   - Multihash codes: Blake2b256 (0xb220), Blake2b512 (0xb240), Blake2s256 (0xb260)
 
-- [ ] **Quantum-resistant hash functions** (Future research)
+- ⏳ **Quantum-resistant hash functions** (Future research)  _(post-0.3.0: future-research)_
   - Research post-quantum cryptographic options
   - Implement experimental support
   - Future-proof CID generation
@@ -348,7 +350,7 @@
   - 8 benchmark groups covering all major features
 
 ### Security
-- [ ] **Security audit** for cryptographic code
+- ⏳ **Security audit** for cryptographic code  _(post-0.3.0: external-service)_
   - Review hash implementations
   - Check for timing attacks
   - Validate CID parsing

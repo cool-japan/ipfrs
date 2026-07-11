@@ -429,6 +429,29 @@ mod tests {
 
         assert_eq!(tracker.total_ops, 100);
         assert_eq!(tracker.total_bytes, 102400);
+
+        // `ops_per_second()` divides `total_ops` by `start_time.elapsed()`. A tight
+        // 100-iteration counter loop (no I/O, no syscalls) can complete inside the
+        // clock's sub-resolution window, so `elapsed()` occasionally reads exactly
+        // `Duration::ZERO`; the production guard (see `ThroughputTracker::ops_per_second`
+        // above) then returns `0.0` and a bare `> 0.0` assertion becomes a
+        // non-deterministic wall-clock race -- this was the observed flake under a
+        // parallel full-workspace test run.
+        //
+        // Rather than reach for a flaky/slow `thread::sleep`, deterministically
+        // backdate the tracker's `start_time`. This is a same-module white-box
+        // adjustment only: `start_time` is a private field of `ThroughputTracker`,
+        // visible here because `tests` is a submodule of the type's defining module
+        // (Rust privacy is scoped to the defining module and its descendants) -- no
+        // production code is touched. Backdating by a fixed 50ms guarantees
+        // `elapsed() >= 50ms` regardless of how fast the surrounding loop executes, so
+        // the original, meaningful assertion (100 recorded ops over a positive elapsed
+        // time yields a strictly positive rate) now holds deterministically.
+        tracker.start_time = tracker
+            .start_time
+            .checked_sub(Duration::from_millis(50))
+            .expect("backdating start_time by 50ms must not underflow Instant");
+
         assert!(tracker.ops_per_second() > 0.0);
 
         let summary = tracker.summary();

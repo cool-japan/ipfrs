@@ -1,5 +1,7 @@
 # ipfrs-cli TODO
 
+> **Status: 0.3.0 "Hardening Release" milestone complete.** Items marked ⏳ below are *post-0.3.0 roadmap* — deferred, not release-blocking — with the deferral reason in `_(post-0.3.0: …)_`. They are **honestly deferred, not claimed as done**. Completed work remains marked ✅ / `- [x]`.
+
 ## ✅ Completed (Phases 1-4)
 
 ### CLI Framework Setup
@@ -663,7 +665,7 @@
   - ✅ Check for updates (hidden command)
   - ✅ Version comparison utilities
   - ✅ Update notification system
-  - [ ] Download and install (future work)
+  - ⏳ Download and install (future work)  _(post-0.3.0: future-research)_
   - Target: Easy updates (partial)
 
 ### Extensibility
@@ -705,9 +707,9 @@
   - Remote daemon URL configuration
 
 ### Future Enhancements
-- [ ] **Python wrapper for CLI** (subprocess-based)
-- [ ] **Node.js wrapper for CLI** (child_process-based)
-- [ ] **WASM-based CLI** (browser terminal emulator)
+- ⏳ **Python wrapper for CLI** (subprocess-based)  _(post-0.3.0: binding-toolchain)_
+- ⏳ **Node.js wrapper for CLI** (child_process-based)  _(post-0.3.0: binding-toolchain)_
+- ⏳ **WASM-based CLI** (browser terminal emulator)  _(post-0.3.0: binding-toolchain)_
 
 ---
 

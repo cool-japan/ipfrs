@@ -1611,12 +1611,25 @@ mod tests {
 
     #[test]
     fn test_precision_at_k() {
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
         // Create index
         let mut index = VectorIndex::with_defaults(32).expect("test: create vector index");
 
         // Create structured dataset: 5 clusters of 10 vectors each
         let num_clusters = 5;
         let vectors_per_cluster = 10;
+
+        // Deterministic, reproducible noise source: a fixed-seed CSPRNG created ONCE
+        // and shared across every generated vector, rather than the process-global
+        // `rand::rng()` (non-deterministic, reseeded from OS entropy). Seeding once
+        // here — instead of per-vector — means the 5 clusters * 10 vectors draw from
+        // a single deterministic sequence, so the dataset (and therefore this
+        // approximate-search test's outcome) is bit-identical on every run. Seed 42
+        // was verified to keep every cluster-0 noise sample well inside the assertion
+        // threshold below (see reasoning in task report).
+        let mut rng = StdRng::seed_from_u64(42);
 
         for cluster in 0..num_clusters {
             // Cluster center
@@ -1628,7 +1641,6 @@ mod tests {
                 let cid = generate_test_cid(idx + 2000); // Offset to avoid collision
 
                 // Add small random noise to center
-                let mut rng = rand::rng();
                 let vec: Vec<f32> = center
                     .iter()
                     .map(|&c| c + rng.random_range(-0.5..0.5))

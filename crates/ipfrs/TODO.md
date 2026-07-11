@@ -1,5 +1,7 @@
 # ipfrs TODO
 
+> **Status: 0.3.0 "Hardening Release" milestone complete.** Items marked ⏳ below are *post-0.3.0 roadmap* — deferred, not release-blocking — with the deferral reason in `_(post-0.3.0: …)_`. They are **honestly deferred, not claimed as done**. Completed work remains marked ✅ / `- [x]`.
+
 ## 🎯 Version 0.2.1 Milestone - "Network Release" ✅ COMPLETE
 
 ### Status: 100% Complete
@@ -124,7 +126,7 @@
   - Backward chaining search
   - Variable substitution
 
-- [ ] **Distributed query resolution** ⏳ (Future Enhancement)
+- ⏳ **Distributed query resolution** ⏳ (Future Enhancement)  _(post-0.3.0: needs-network)_
   - Query forwarding to peers (requires multi-node setup)
   - Result aggregation  - Proof composition
 
@@ -441,7 +443,7 @@
     - Data persistence across node restarts ✅
     - **Pin management workflow** ✅ NEW
     - **Repository analysis and statistics** ✅ NEW
-  - [ ] Multi-node scenarios - TODO (requires complex network infrastructure setup)
+  - ⏳ Multi-node scenarios - TODO (requires complex network infrastructure setup)  _(post-0.3.0: needs-network)_
 
 #### Benchmarking ✅ COMPLETED
 - [x] **Criterion benchmarks** - DONE
@@ -490,7 +492,7 @@
   - Full rustdoc ✅
   - Examples for all APIs ✅
 
-- [ ] **Video tutorials** - TODO (not code-related)
+- ⏳ **Video tutorials** - TODO (not code-related)  _(post-0.3.0: external-service)_
   - Installation
   - Basic usage
   - Advanced features
@@ -502,7 +504,7 @@
   - Contributing guide ✅
   - CI/CD workflows ✅
 
-- [ ] **Discord/Slack** - TODO (infrastructure, not code)
+- ⏳ **Discord/Slack** - TODO (infrastructure, not code)  _(post-0.3.0: external-service)_
   - Community chat
   - Support channels
 
@@ -641,25 +643,25 @@
 ## 🔮 Future Roadmap (0.2.0+)
 
 ### Distributed Inference at Scale
-- [ ] Multi-node distributed backward chaining
-- [ ] Proof streaming across network
-- [ ] Knowledge base federation
-- [ ] Distributed query routing optimization
+- ⏳ Multi-node distributed backward chaining  _(post-0.3.0: needs-network)_
+- ⏳ Proof streaming across network  _(post-0.3.0: needs-network)_
+- ⏳ Knowledge base federation  _(post-0.3.0: needs-network)_
+- ⏳ Distributed query routing optimization  _(post-0.3.0: needs-network)_
 
 ### Advanced TensorLogic Integration
-- [ ] Native tensor operations in inference
-- [ ] GPU-accelerated reasoning
-- [ ] Differentiable logic programming
-- [ ] Neural-symbolic hybrid queries
+- ⏳ Native tensor operations in inference  _(post-0.3.0: future-research)_
+- ⏳ GPU-accelerated reasoning  _(post-0.3.0: gpu-hardware)_
+- ⏳ Differentiable logic programming  _(post-0.3.0: future-research)_
+- ⏳ Neural-symbolic hybrid queries  _(post-0.3.0: future-research)_
 
 ### Language Bindings Expansion
-- [ ] C/C++ bindings via FFI
-- [ ] Java bindings (JNI)
-- [ ] Go bindings (cgo)
-- [ ] Swift/Kotlin for mobile
+- ⏳ C/C++ bindings via FFI  _(post-0.3.0: binding-toolchain)_
+- ⏳ Java bindings (JNI)  _(post-0.3.0: binding-toolchain)_
+- ⏳ Go bindings (cgo)  _(post-0.3.0: binding-toolchain)_
+- ⏳ Swift/Kotlin for mobile  _(post-0.3.0: binding-toolchain)_
 
 ### Edge & IoT Optimization
-- [ ] Sub-1MB binary for embedded
-- [ ] No-std core for bare metal
-- [ ] Power-aware operation modes
-- [ ] Mesh networking for local clusters
+- ⏳ Sub-1MB binary for embedded  _(post-0.3.0: large-subsystem)_
+- ⏳ No-std core for bare metal  _(post-0.3.0: large-subsystem)_
+- ⏳ Power-aware operation modes  _(post-0.3.0: large-subsystem)_
+- ⏳ Mesh networking for local clusters  _(post-0.3.0: needs-network)_

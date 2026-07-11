@@ -1,5 +1,7 @@
 # ipfrs-semantic TODO — v0.2.1 (2026-06-16)
 
+> **Status: 0.3.0 "Hardening Release" milestone complete.** Items marked ⏳ below are *post-0.3.0 roadmap* — deferred, not release-blocking — with the deferral reason in `_(post-0.3.0: …)_`. They are **honestly deferred, not claimed as done**. Completed work remains marked ✅ / `- [x]`.
+
 ## ✅ Completed (Phases 1-3)
 
 ### HNSW Implementation
@@ -369,20 +371,20 @@
   - Target: Reduce cache misses ✅
   - Implemented in: src/cache.rs
 
-- [ ] **Test on Raspberry Pi/Jetson**
+- ⏳ **Test on Raspberry Pi/Jetson**  _(post-0.3.0: gpu-hardware)_
   - Real-world workloads
   - Power consumption
   - Thermal throttling
   - Target: Edge device readiness
 
 ### GPU Acceleration (Optional)
-- [ ] **Integrate FAISS GPU** support
+- ⏳ **Integrate FAISS GPU** support  _(post-0.3.0: gpu-hardware)_
   - CUDA integration
   - GPU memory management
   - Fallback to CPU
   - Target: 10-100x speedup
 
-- [ ] **Implement CUDA kernels** for HNSW
+- ⏳ **Implement CUDA kernels** for HNSW  _(post-0.3.0: gpu-hardware)_
   - Custom HNSW kernels
   - Graph traversal on GPU
   - Memory coalescing
@@ -399,14 +401,14 @@
   - 3 comprehensive tests passing
   - Complete API documentation with working examples in lib.rs
 
-- [ ] **Create GPU memory management**
+- ⏳ **Create GPU memory management**  _(post-0.3.0: gpu-hardware)_
   - Index paging to/from GPU
   - Multi-GPU support
   - Unified memory
   - Target: Handle large indices
 
 ### Benchmarking
-- [ ] **Compare against FAISS** baseline
+- ⏳ **Compare against FAISS** baseline  _(post-0.3.0: external-dep)_
   - Same datasets
   - Same hardware
   - Multiple metrics
@@ -728,7 +730,7 @@
   - Target: Client-side semantic search ✅
 
 ### External Integration
-- [ ] **Integration with vector databases** (Qdrant, Milvus)
+- ⏳ **Integration with vector databases** (Qdrant, Milvus)  _(post-0.3.0: external-dep)_
   - Backend adapters
   - API compatibility
   - Migration tools
