@@ -162,10 +162,10 @@ pyo3 = { version = "0.29" }
 pyo3-build-config = "0.29"
 
 # Compression — COOLJAPAN Pure Rust via OxiARC (no C/Fortran deps)
-oxiarc-zstd = "0.3.6"
-oxiarc-lz4 = "0.3.6"
-oxiarc-snappy = "0.3.6"
-oxiarc-deflate = "0.3.6"
+oxiarc-zstd = "0.4.0"
+oxiarc-lz4 = "0.4.0"
+oxiarc-snappy = "0.4.0"
+oxiarc-deflate = "0.4.0"
 
 # Encryption
 chacha20poly1305 = "0.11"
